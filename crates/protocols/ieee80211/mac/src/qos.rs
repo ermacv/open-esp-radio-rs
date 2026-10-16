@@ -3,6 +3,9 @@
 //! UP-to-AC and DSCP mappings describe traffic intent. The WMM vendor element
 //! parser lives in `extensions::wmm`; the transmitter still owns admission and
 //! queue selection using these values.
+//! Checked priorities and categories select cells of exact eight- and
+//! four-cell arrays. The selector retains the bounded value and needs no
+//! numeric indexing or repeat validation in a caller.
 
 /// Standard WMM access-category identifier carried in ACI bits 5..6.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -16,6 +19,9 @@ pub enum WmmAccessCategory {
 }
 
 impl WmmAccessCategory {
+    /// Every category, in the order of its ACI (`ALL[c as usize] == c`).
+    pub const ALL: [Self; 4] = [Self::BestEffort, Self::Background, Self::Video, Self::Voice];
+
     pub const fn from_aci(aci: u8) -> Option<Self> {
         match aci {
             0 => Some(Self::BestEffort),
@@ -23,6 +29,26 @@ impl WmmAccessCategory {
             2 => Some(Self::Video),
             3 => Some(Self::Voice),
             _ => None,
+        }
+    }
+
+    /// Select a cell of the exact four-category array without a numeric index.
+    pub const fn select<T>(self, entries: &[T; 4]) -> &T {
+        let [be, bk, vi, vo] = entries;
+        match self {
+            Self::BestEffort => be,
+            Self::Background => bk,
+            Self::Video => vi,
+            Self::Voice => vo,
+        }
+    }
+    pub const fn select_mut<T>(self, entries: &mut [T; 4]) -> &mut T {
+        let [be, bk, vi, vo] = entries;
+        match self {
+            Self::BestEffort => be,
+            Self::Background => bk,
+            Self::Video => vi,
+            Self::Voice => vo,
         }
     }
 
@@ -51,34 +77,105 @@ impl WmmAccessCategory {
 
 /// Valid IEEE 802.1D / IEEE 802.11 user priority and QoS TID.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct WmmUserPriority(u8);
+#[repr(transparent)]
+pub struct WmmUserPriority(UserPriority);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+enum UserPriority {
+    #[default]
+    Up0 = 0,
+    Up1 = 1,
+    Up2 = 2,
+    Up3 = 3,
+    Up4 = 4,
+    Up5 = 5,
+    Up6 = 6,
+    Up7 = 7,
+}
 
 impl WmmUserPriority {
-    pub const UP0: Self = Self(0);
-    pub const UP1: Self = Self(1);
-    pub const UP2: Self = Self(2);
-    pub const UP3: Self = Self(3);
-    pub const UP4: Self = Self(4);
-    pub const UP5: Self = Self(5);
-    pub const UP6: Self = Self(6);
-    pub const UP7: Self = Self(7);
-
+    pub const UP0: Self = Self(UserPriority::Up0);
+    pub const UP1: Self = Self(UserPriority::Up1);
+    pub const UP2: Self = Self(UserPriority::Up2);
+    pub const UP3: Self = Self(UserPriority::Up3);
+    pub const UP4: Self = Self(UserPriority::Up4);
+    pub const UP5: Self = Self(UserPriority::Up5);
+    pub const UP6: Self = Self(UserPriority::Up6);
+    pub const UP7: Self = Self(UserPriority::Up7);
+    /// Every priority, in TID order.
+    pub const ALL: [Self; 8] = [
+        Self::UP0,
+        Self::UP1,
+        Self::UP2,
+        Self::UP3,
+        Self::UP4,
+        Self::UP5,
+        Self::UP6,
+        Self::UP7,
+    ];
     pub const fn new(value: u8) -> Option<Self> {
-        if value <= 7 { Some(Self(value)) } else { None }
+        match value {
+            0 => Some(Self(UserPriority::Up0)),
+            1 => Some(Self(UserPriority::Up1)),
+            2 => Some(Self(UserPriority::Up2)),
+            3 => Some(Self(UserPriority::Up3)),
+            4 => Some(Self(UserPriority::Up4)),
+            5 => Some(Self(UserPriority::Up5)),
+            6 => Some(Self(UserPriority::Up6)),
+            7 => Some(Self(UserPriority::Up7)),
+            _ => None,
+        }
     }
-
     pub const fn value(self) -> u8 {
-        self.0
+        self.0 as u8
     }
-
-    /// Standard UP-to-AC mapping used by WMM and the existing data encoder.
+    /// Select a cell of the exact eight-entry array by the closed identifier.
+    pub const fn select<T>(self, entries: &[T; 8]) -> &T {
+        let [a, b, c, d, e, f, g, h] = entries;
+        match self.0 {
+            UserPriority::Up0 => a,
+            UserPriority::Up1 => b,
+            UserPriority::Up2 => c,
+            UserPriority::Up3 => d,
+            UserPriority::Up4 => e,
+            UserPriority::Up5 => f,
+            UserPriority::Up6 => g,
+            UserPriority::Up7 => h,
+        }
+    }
+    /// Select a cell of the exact eight-entry array by the closed identifier.
+    pub const fn select_mut<T>(self, entries: &mut [T; 8]) -> &mut T {
+        let [a, b, c, d, e, f, g, h] = entries;
+        match self.0 {
+            UserPriority::Up0 => a,
+            UserPriority::Up1 => b,
+            UserPriority::Up2 => c,
+            UserPriority::Up3 => d,
+            UserPriority::Up4 => e,
+            UserPriority::Up5 => f,
+            UserPriority::Up6 => g,
+            UserPriority::Up7 => h,
+        }
+    }
     pub const fn access_category(self) -> WmmAccessCategory {
         match self.0 {
-            0 | 3 => WmmAccessCategory::BestEffort,
-            1 | 2 => WmmAccessCategory::Background,
-            4 | 5 => WmmAccessCategory::Video,
-            6 | 7 => WmmAccessCategory::Voice,
-            _ => unreachable!(),
+            UserPriority::Up0 | UserPriority::Up3 => WmmAccessCategory::BestEffort,
+            UserPriority::Up1 | UserPriority::Up2 => WmmAccessCategory::Background,
+            UserPriority::Up4 | UserPriority::Up5 => WmmAccessCategory::Video,
+            UserPriority::Up6 | UserPriority::Up7 => WmmAccessCategory::Voice,
+        }
+    }
+    const fn from_high_three_bits(value: u8) -> Self {
+        match value >> 5 {
+            0 => Self::UP0,
+            1 => Self::UP1,
+            2 => Self::UP2,
+            3 => Self::UP3,
+            4 => Self::UP4,
+            5 => Self::UP5,
+            6 => Self::UP6,
+            _ => Self::UP7,
         }
     }
 }
@@ -102,7 +199,7 @@ impl Dscp {
 
     /// Widely deployed default mapping based on the three DSCP MSBs.
     pub const fn default_user_priority(self) -> WmmUserPriority {
-        WmmUserPriority(self.0 >> 3)
+        WmmUserPriority::from_high_three_bits(self.0 << 2)
     }
 
     /// RFC 8325 station-safe DSCP mapping.
@@ -192,7 +289,7 @@ pub fn classify_ethernet_wmm(ethernet: &[u8]) -> WmmTrafficClass {
             return WmmTrafficClass::BEST_EFFORT;
         };
         let tci = u16::from_be_bytes([tag[0], tag[1]]);
-        let user_priority = WmmUserPriority((tci >> 13) as u8);
+        let user_priority = WmmUserPriority::from_high_three_bits((tci >> 8) as u8);
         // The explicit outer PCP is authoritative even when it is zero.
         return WmmTrafficClass::from_user_priority(
             user_priority,

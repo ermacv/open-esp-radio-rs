@@ -1,9 +1,9 @@
-//! The station's PMKSA cache.
+//! The station's private PMKSA cache, retained across connections.
 //!
-//! An SAE authentication yields a PMK and its PMKID. The station keeps both
-//! per access point, so a later association with the same access point and
-//! SSID skips SAE: it authenticates by Open System and names the cached
-//! PMKID in its RSN element. The cache holds at most ten entries; adding to a
+//! An SAE authentication yields a PMK and its PMKID. This cache retains both
+//! per access point. Join resumes an SAE association with the same access
+//! point and SSID using Open System authentication and the cached PMKID in
+//! its RSN element. The cache holds at most ten entries; adding to a
 //! full cache replaces the oldest, and an entry does not expire, as the
 //! vendor supplicant's `dot11RSNAConfigPMKLifetime` is `INT32_MAX`. Only SAE
 //! associations are cached: the vendor caches no PSK association
@@ -15,63 +15,64 @@
 //! `pmksa_cache_add`) and `src/rsn_supp/wpa.c` (`wpa_set_bss`, which uses an
 //! entry only for the same BSSID, SSID and AKM and flushes it otherwise).
 
-use core::cell::RefCell;
-
-use oer_ieee80211_mac::scan::ScanRecord;
+use oer_ieee80211_mac::{address::Bssid, management::MAX_SSID_LEN};
 use oer_ieee80211_rsn::Pmk;
 
 /// Entries the vendor's PMKSA cache holds.
 pub const STA_PMKSA_CAPACITY: usize = 10;
 /// The PMKID length.
 pub const STA_PMKID_LEN: usize = 16;
-const MAX_SSID_LEN: usize = 32;
 
 /// One cached SAE security association.
 pub struct StaPmksa {
-    bssid: [u8; 6],
-    ssid: [u8; MAX_SSID_LEN],
-    ssid_len: u8,
+    bssid: Bssid,
+    ssid: heapless::Vec<u8, MAX_SSID_LEN>,
     pmk: Pmk,
     pmkid: [u8; STA_PMKID_LEN],
 }
 
 impl StaPmksa {
-    /// The association an SAE authentication with `bssid` of `ssid`
-    /// derived; `None` when the SSID is longer than an SSID can be.
-    pub fn new(bssid: [u8; 6], ssid: &[u8], pmk: Pmk, pmkid: [u8; STA_PMKID_LEN]) -> Option<Self> {
-        if ssid.len() > MAX_SSID_LEN {
-            return None;
-        }
-        let mut stored = [0; MAX_SSID_LEN];
-        stored[..ssid.len()].copy_from_slice(ssid);
-        Some(Self {
+    /// Retain an authenticated SAE association with its checked SSID.
+    pub fn new(
+        bssid: Bssid,
+        ssid: heapless::Vec<u8, MAX_SSID_LEN>,
+        pmk: Pmk,
+        pmkid: [u8; STA_PMKID_LEN],
+    ) -> Self {
+        Self {
             bssid,
-            ssid: stored,
-            ssid_len: ssid.len() as u8,
+            ssid,
             pmk,
             pmkid,
-        })
+        }
     }
 
+    /// The SAE-derived pairwise master key borrowed for this association.
     pub const fn pmk(&self) -> &Pmk {
         &self.pmk
     }
 
+    /// The identifier advertised in the association request's RSN element.
     pub const fn pmkid(&self) -> [u8; STA_PMKID_LEN] {
         self.pmkid
     }
 
-    fn ssid(&self) -> &[u8] {
-        &self.ssid[..usize::from(self.ssid_len)]
+    fn has_ssid(&self, ssid: &[u8]) -> bool {
+        self.ssid.as_slice() == ssid
     }
 }
 
 /// The station's cached SAE security associations, oldest first.
+///
+/// The station owns this cache by value and retains it across station
+/// connections. Access requires a short exclusive borrow; no shared mutex
+/// owner or implicit synchronization sits in the protocol crate.
 pub struct StaPmksaCache {
     entries: [Option<StaPmksa>; STA_PMKSA_CAPACITY],
 }
 
 impl StaPmksaCache {
+    /// An empty cache, owned across successive connections.
     pub const fn new() -> Self {
         Self {
             entries: [const { None }; STA_PMKSA_CAPACITY],
@@ -81,97 +82,55 @@ impl StaPmksaCache {
     /// The association to resume with `bssid` of `ssid`. An entry of the
     /// same access point under another SSID is flushed, as the vendor
     /// flushes a cached SAE association whose SSID changed.
-    pub fn resume(&mut self, bssid: [u8; 6], ssid: &[u8]) -> Option<&StaPmksa> {
-        let index = self.position(bssid)?;
-        if self.entries[index].as_ref()?.ssid() != ssid {
-            self.remove(bssid);
-            return None;
+    pub fn resume(&mut self, bssid: Bssid, ssid: &[u8]) -> Option<&StaPmksa> {
+        let mut remaining = self.entries.iter_mut();
+        let slot =
+            remaining.find(|slot| slot.as_ref().is_some_and(|entry| entry.bssid == bssid))?;
+        if slot.as_ref().is_some_and(|entry| entry.has_ssid(ssid)) {
+            return slot.as_ref();
         }
-        self.entries[index].as_ref()
+        Self::forget(slot, remaining);
+        None
     }
 
     /// Cache the association `entry` names, replacing an entry of the same
     /// access point; a full cache drops its oldest entry first.
     pub fn insert(&mut self, entry: StaPmksa) {
         self.remove(entry.bssid);
-        if self.entries.iter().all(Option::is_some) {
-            self.entries.rotate_left(1);
-            self.entries[STA_PMKSA_CAPACITY - 1] = None;
+        match self.entries.iter_mut().find(|slot| slot.is_none()) {
+            Some(slot) => *slot = Some(entry),
+            // Full: the oldest goes, the new entry takes the last place.
+            None => {
+                self.entries.rotate_left(1);
+                let [_, _, _, _, _, _, _, _, _, last] = &mut self.entries;
+                *last = Some(entry);
+            }
         }
-        let slot = self
-            .entries
-            .iter_mut()
-            .find(|slot| slot.is_none())
-            .expect("a slot is free after dropping the oldest entry");
-        *slot = Some(entry);
     }
 
     /// Forget the association with `bssid`, keeping the others in order.
-    pub fn remove(&mut self, bssid: [u8; 6]) {
-        let Some(index) = self.position(bssid) else {
-            return;
-        };
-        self.entries[index] = None;
-        self.entries[index..].rotate_left(1);
+    pub fn remove(&mut self, bssid: Bssid) {
+        let mut remaining = self.entries.iter_mut();
+        if let Some(slot) =
+            remaining.find(|slot| slot.as_ref().is_some_and(|entry| entry.bssid == bssid))
+        {
+            Self::forget(slot, remaining);
+        }
     }
 
-    fn position(&self, bssid: [u8; 6]) -> Option<usize> {
-        self.entries
-            .iter()
-            .position(|entry| entry.as_ref().is_some_and(|entry| entry.bssid == bssid))
+    fn forget<'a>(
+        mut empty: &'a mut Option<StaPmksa>,
+        remaining: impl Iterator<Item = &'a mut Option<StaPmksa>>,
+    ) {
+        *empty = None;
+        for next in remaining {
+            *empty = next.take();
+            empty = next;
+        }
     }
 }
 
 impl Default for StaPmksaCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The station's PMKSA cache, shared by every station epoch of one Wi-Fi
-/// owner as the vendor supplicant's `gWpaSm.pmksa` outlives its
-/// associations: a stopped and restarted station still resumes a cached SAE
-/// association.
-pub struct StaSharedPmksa(critical_section::Mutex<RefCell<StaPmksaCache>>);
-
-impl StaSharedPmksa {
-    pub const fn new() -> Self {
-        Self(critical_section::Mutex::new(RefCell::new(
-            StaPmksaCache::new(),
-        )))
-    }
-
-    /// The PMK and PMKID of the cached association with `access_point`.
-    pub fn resume(&self, access_point: &ScanRecord) -> Option<(Pmk, [u8; STA_PMKID_LEN])> {
-        critical_section::with(|cs| {
-            self.0
-                .borrow_ref_mut(cs)
-                .resume(access_point.bssid, access_point.ssid_bytes())
-                .map(|entry| (entry.pmk().duplicate(), entry.pmkid()))
-        })
-    }
-
-    /// Cache the association an SAE authentication with `access_point`
-    /// derived.
-    pub fn insert(&self, access_point: &ScanRecord, pmk: &Pmk, pmkid: [u8; STA_PMKID_LEN]) {
-        let Some(entry) = StaPmksa::new(
-            access_point.bssid,
-            access_point.ssid_bytes(),
-            pmk.duplicate(),
-            pmkid,
-        ) else {
-            return;
-        };
-        critical_section::with(|cs| self.0.borrow_ref_mut(cs).insert(entry));
-    }
-
-    /// Forget the association with `bssid`.
-    pub fn remove(&self, bssid: [u8; 6]) {
-        critical_section::with(|cs| self.0.borrow_ref_mut(cs).remove(bssid));
-    }
-}
-
-impl Default for StaSharedPmksa {
     fn default() -> Self {
         Self::new()
     }

@@ -6,9 +6,9 @@ use super::{
     AmpduFrameLayout, HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduTxError, HtAmpduTxStorage,
     TX_AMPDU_METADATA_SIZE, TX_FCS_SIZE,
 };
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use super::{AmpduFrameSize, HeAmpduPolicy};
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use crate::tx::{HeEdcaTxopLimit, HeRate, HtAmpduDensity};
 use crate::tx::{TxCookie, TxSlotState};
 
@@ -18,7 +18,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `frame_length` is the encoded 802.11 MPDU before the hardware MIC and
     /// FCS. The resulting metadata length is the complete PSDU length used by
     /// the recovered `ppCalTxAMPDULength` accounting.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -141,7 +141,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     fn commit_frame_with_hardware_he_control(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -216,7 +216,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit one HE MPDU with exact PP-blob delimiter padding.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_he_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -236,7 +236,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit one HE MPDU under the complete rate/TXOP duration policy.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_he_frame_with_txop(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -316,7 +316,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// increase the low fourteen-bit DMA MPDU length. It publishes the exact
     /// vendor metadata byte-seven bit and adds four only to assembled APEP
     /// accounting.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_hardware_he_control_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -336,7 +336,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit hardware HE-Control insertion under the complete duration gate.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_hardware_he_control_frame_with_txop(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -385,7 +385,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// across the linked aggregate and publishes it to `WDEVTXQBSR_SW`.
     /// Keeping the value beside the owned encoded MPDU prevents the Trigger
     /// path from substituting the larger 802.11 frame or PSDU length.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_he_msdu_frame(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -407,7 +407,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit a Trigger-eligible HE MPDU with hardware HE-Control insertion.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_hardware_he_control_msdu_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -425,7 +425,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit Trigger metadata and HE-Control under one HE duration policy.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn commit_hardware_he_control_msdu_frame_with_policy(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,

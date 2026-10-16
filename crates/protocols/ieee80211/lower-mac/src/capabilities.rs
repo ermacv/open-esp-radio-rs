@@ -17,14 +17,19 @@ use crate::{
 pub struct BandSet(u8);
 
 impl BandSet {
+    /// No radio bands.
     pub const NONE: Self = Self(0);
+    /// The 2.4 GHz band.
     pub const GHZ2_4: Self = Self(1 << 0);
+    /// The 5 GHz band.
     pub const GHZ5: Self = Self(1 << 1);
 
+    /// All bands present in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// Whether this set includes `band`.
     pub const fn contains(self, band: Band) -> bool {
         let bit = match band {
             Band::Ghz2_4 => Self::GHZ2_4.0,
@@ -39,15 +44,19 @@ impl BandSet {
 pub struct WidthSet(u8);
 
 impl WidthSet {
+    /// No channel widths.
     pub const NONE: Self = Self(0);
+    /// Twenty-megahertz channels.
     pub const MHZ20: Self = Self(1 << 0);
     /// Both forty-megahertz geometries.
     pub const MHZ40: Self = Self(1 << 1);
 
+    /// All widths present in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// Whether this set includes the channel geometry `width`.
     pub const fn contains(self, width: ChannelWidth) -> bool {
         let bit = match width {
             ChannelWidth::Mhz20 => Self::MHZ20.0,
@@ -62,12 +71,16 @@ impl WidthSet {
 pub struct PhyFormatSet(u8);
 
 impl PhyFormatSet {
+    /// No PPDU formats.
     pub const NONE: Self = Self(0);
     /// Non-HT PPDUs: DSSS, CCK and OFDM.
     pub const NON_HT: Self = Self(1 << 0);
+    /// High-throughput PPDUs.
     pub const HT: Self = Self(1 << 1);
+    /// High-efficiency PPDUs.
     pub const HE: Self = Self(1 << 2);
 
+    /// All PPDU formats present in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
@@ -88,6 +101,7 @@ impl PhyFormatSet {
 pub struct CoexPrioritySet(u8);
 
 impl CoexPrioritySet {
+    /// No coexistence priority levels.
     pub const NONE: Self = Self(0);
 
     /// The set of one level.
@@ -95,10 +109,12 @@ impl CoexPrioritySet {
         Self(1 << priority as u8)
     }
 
+    /// All priority levels present in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// Whether this set includes `priority`.
     pub const fn contains(self, priority: CoexPriority) -> bool {
         self.0 & (1 << priority as u8) != 0
     }
@@ -167,6 +183,7 @@ impl RateSupport {
 pub struct HardwareServices(u16);
 
 impl HardwareServices {
+    /// No autonomous hardware services.
     pub const NONE: Self = Self(0);
     /// Append the FCS to every transmitted MPDU and check it on reception.
     pub const FCS: Self = Self(1 << 0);
@@ -196,10 +213,12 @@ impl HardwareServices {
     /// Select the MPDUs a following A-MPDU attempt retransmits.
     pub const AMPDU_RETRY_SELECTION: Self = Self(1 << 12);
 
+    /// All services present in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// Whether every service in `other` is present.
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
@@ -208,20 +227,22 @@ impl HardwareServices {
 /// The parametric limits of a backend: which values of the base port's
 /// operations it accepts. It does not change while the port exists.
 ///
-/// A value outside these limits is refused as `Unsupported`. Optional
-/// operations are not limits: a backend that has one implements its
-/// extension trait (`LowerMacAmpdu`,
-/// `LowerMacBeaconTiming`,
-/// `LowerMacMonitor`,
-/// `LowerMacCancelPublished`,
-/// `LowerMacAirReservation`,
-/// `LowerMacLiveRetune`), whose own
-/// capabilities state that operation's limits.
+/// Constructors of checked values refuse inputs outside these limits.
+/// Optional operations are expressed by extension traits such as
+/// [`AmpduPhase`](crate::AmpduPhase),
+/// [`BeaconTimingPhase`](crate::BeaconTimingPhase),
+/// [`MonitorPhase`](crate::MonitorPhase) and
+/// [`AirReservationPhase`](crate::AirReservationPhase). Each extension's
+/// capabilities state its own limits.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LowerMacCapabilities {
+    /// Radio bands the backend can tune to.
     pub bands: BandSet,
+    /// Supported channel widths and forty-megahertz geometries.
     pub widths: WidthSet,
+    /// Transmit rates and their PHY constraints.
     pub rates: RateSupport,
+    /// MAC work the backend performs autonomously.
     pub services: HardwareServices,
     /// Virtual interfaces the backend configures at once.
     pub vifs: u8,
@@ -230,7 +251,7 @@ pub struct LowerMacCapabilities {
     /// `n`; with one, every access category shares it. See
     /// [`Self::tx_queue`].
     pub tx_queues: u8,
-    /// The longest MPDU a [`TxBuffer`](crate::TxBuffer) holds, without FCS
+    /// The longest MPDU a transmit buffer holds, without FCS
     /// and MIC.
     pub max_mpdu_length: u16,
     /// The largest [`Backoff::Slots`] count.

@@ -162,25 +162,11 @@ pub fn check_registry_schema(registry: &Value) -> Result<()> {
 
 /// The `<family>/<kind>` identity of a schema-5 scenario document.
 pub fn workload(document: &Value) -> Option<String> {
-    // The joint table is one untagged workload over both radio families.
-    if document.get("coexistence").is_some() {
-        return Some(COEXISTENCE_WORKLOAD.to_owned());
-    }
-    ["wifi", "bluetooth", "system", "ieee802154", "phy"]
-        .into_iter()
-        .find_map(|family| {
-            let table = document.get(family)?;
-            let kind = if family == "wifi" {
-                table.pointer("/workload/kind")
-            } else {
-                table.get("kind")
-            }?;
-            Some(format!("{family}/{}", kind.as_str()?))
-        })
+    ["bluetooth", "system"].into_iter().find_map(|family| {
+        let kind = document.get(family)?.get("kind")?;
+        Some(format!("{family}/{}", kind.as_str()?))
+    })
 }
-
-/// The workload identity of a `[coexistence]` scenario.
-pub const COEXISTENCE_WORKLOAD: &str = "coexistence/wifi-bluetooth";
 
 /// Every workload identity the registry classifies.
 pub fn workloads(registry: &Value) -> Result<Vec<String>> {
@@ -301,22 +287,24 @@ mod tests {
     fn registry_schema_and_workloads_come_from_the_family_map() {
         let registry = json!({
             "schema": 4,
-            "timing": {"wifi/station-udp": true, "bluetooth/dtm": true},
-            "dependencies": {"common": ["core"], "wifi": ["wifi"], "bluetooth": ["ble"]},
+            "timing": {"system/watchdog": true, "bluetooth/dtm": true},
+            "dependencies": {"common": ["core"], "system": ["system"], "bluetooth": ["ble"]},
         });
         check_registry_schema(&registry).unwrap();
         assert_eq!(
             workloads(&registry).unwrap(),
-            ["bluetooth/dtm", "wifi/station-udp"]
+            ["bluetooth/dtm", "system/watchdog"]
         );
-        let udp = dependencies(&registry, "wifi/station-udp").unwrap();
-        assert!(udp.contains("core") && udp.contains("wifi") && !udp.contains("ble"));
-        assert!(dependencies(&registry, "wifi/role").is_err());
+        let watchdog = dependencies(&registry, "system/watchdog").unwrap();
+        assert!(
+            watchdog.contains("core") && watchdog.contains("system") && !watchdog.contains("ble")
+        );
+        assert!(dependencies(&registry, "system/boot-smoke").is_err());
         let mut legacy = registry;
         legacy["schema"] = json!(3);
         assert!(check_registry_schema(&legacy).is_err());
-        let document = json!({"wifi": {"image": "correctness", "workload": {"kind": "role"}}});
-        assert_eq!(workload(&document).as_deref(), Some("wifi/role"));
+        let document = json!({"bluetooth": {"kind": "dtm"}});
+        assert_eq!(workload(&document).as_deref(), Some("bluetooth/dtm"));
         let document = json!({"system": {"kind": "boot-smoke"}});
         assert_eq!(workload(&document).as_deref(), Some("system/boot-smoke"));
     }

@@ -1,6 +1,7 @@
 //! Station data encapsulation into caller-owned output and Ethernet allocations.
 
 use super::*;
+use crate::address::{Bssid, OwnAddress};
 
 mod amsdu;
 pub use amsdu::{
@@ -13,8 +14,8 @@ pub use amsdu::{
 /// The caller owns the Ethernet payload and the output DMA buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaDataFrame<'a> {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub destination: [u8; 6],
     pub sequence_number: SequenceNumber,
     pub ether_type: u16,
@@ -23,18 +24,17 @@ pub struct StaDataFrame<'a> {
 
 impl StaDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
-        let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
+        validate_peer(self.bssid.get())?;
+        let ethernet = ethernet_header(self.destination, self.source.get(), self.ether_type);
         let plan = plan_data_encapsulation(
             DataInterfaceRole::Station,
-            self.bssid,
-            self.source,
+            self.bssid.get(),
+            self.source.get(),
             ethernet,
-            7,
+            WmmUserPriority::UP7,
             false,
             false,
-        )
-        .expect("priority seven is a valid recovered queue class");
+        );
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(plan.llc_snap.len())
@@ -56,7 +56,7 @@ impl StaDataFrame<'_> {
     }
 }
 
-/// One protected data MPDU prepared for S31 hardware CCMP encryption.
+/// One protected data MPDU prepared for backend CCMP encryption.
 ///
 /// The CCMP header carries the packet number owned by the installed hardware
 /// key token. The payload remains plaintext in DMA memory; the MAC encrypts it
@@ -66,8 +66,8 @@ impl StaDataFrame<'_> {
 /// boundary as the recovered `net80211_encap::plan_data_encapsulation` path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedDataFrame<'a> {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub destination: [u8; 6],
     pub sequence_number: SequenceNumber,
     pub user_priority: u8,
@@ -85,17 +85,16 @@ impl StaProtectedDataFrame<'_> {
     /// Encode a protected QoS MPDU with a hardware-generated HE-Control field.
     ///
     /// The returned chip-independent DMA image keeps CCMP immediately after
-    /// the 26-byte QoS header. ESP32-S31 accounts for the four bytes inserted
-    /// on air in private TX metadata, not as bytes in this frame.
+    /// the 26-byte QoS header. The backend accounts for the four bytes inserted
+    /// on air through its explicit HE-Control insertion capability.
     pub fn encode_with_he_control(
         self,
         he_control: DataHeControl,
         output: &mut [u8],
     ) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        validate_peer(self.bssid.get())?;
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos
             && matches!(
                 he_control,
@@ -104,18 +103,18 @@ impl StaProtectedDataFrame<'_> {
         {
             return Err(StationFrameError::HeControlRequiresQos);
         }
-        let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
+        let ethernet = ethernet_header(self.destination, self.source.get(), self.ether_type);
         let mut plan = plan_data_encapsulation_with_he_control(
             DataInterfaceRole::Station,
-            self.bssid,
-            self.source,
+            self.bssid.get(),
+            self.source.get(),
             ethernet,
-            self.user_priority,
+            priority,
             self.peer_qos,
             false,
             he_control,
         )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        .map_err(|_| StationFrameError::HeControlRequiresQos)?;
         // Exact `net80211_tx::encapsulate_ordinary` mutation after successful
         // CCMP key selection.
         plan.header[1] |= 0x40;
@@ -199,9 +198,8 @@ impl StaProtectedEthernetFrame {
         he_control: DataHeControl,
     ) -> Result<EncodedStaFrame, StationFrameError> {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos
             && matches!(
                 he_control,
@@ -226,26 +224,23 @@ impl StaProtectedEthernetFrame {
 
         // Preserve the bytes that the new CCMP/LLC prefix overlaps before
         // mutating the shared allocation.
-        let destination = storage[ethernet_offset..ethernet_offset + 6]
-            .try_into()
-            .expect("six-byte Ethernet destination");
-        let source = storage[ethernet_offset + 6..ethernet_offset + 12]
-            .try_into()
-            .expect("six-byte Ethernet source");
-        let ether_type =
-            u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
-        let ethernet = ethernet_header(destination, source, ether_type);
+        let Some(&ethernet) =
+            storage[ethernet_offset..ethernet_end].first_chunk::<ETHERNET_HEADER_LEN>()
+        else {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        };
+        let [_, _, _, _, _, _, source @ .., _, _] = ethernet;
         let mut plan = plan_data_encapsulation_with_he_control(
             DataInterfaceRole::Station,
             self.bssid,
             source,
             ethernet,
-            self.user_priority,
+            priority,
             self.peer_qos,
             false,
             he_control,
         )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        .map_err(|_| StationFrameError::HeControlRequiresQos)?;
         plan.header[1] |= 0x40;
 
         let header_len = usize::from(plan.header_len);
@@ -258,29 +253,23 @@ impl StaProtectedEthernetFrame {
                 available: ethernet_offset,
             },
         )?;
-        let frame_length = ethernet_length + headroom;
-        let frame_end =
-            frame_offset
-                .checked_add(frame_length)
-                .ok_or(StationFrameError::OutputTooSmall {
-                    required: usize::MAX,
-                })?;
-        debug_assert_eq!(frame_end, ethernet_end);
-        debug_assert_eq!(
-            frame_offset + prefix_len,
-            ethernet_offset + ETHERNET_HEADER_LEN
-        );
-
-        let frame = &mut storage[frame_offset..frame_end];
-        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
-        frame[dma_header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
-        frame[ccmp_end..prefix_len].copy_from_slice(&plan.llc_snap);
-
+        // The prefix borrow ends at the original payload boundary. Encoding
+        // cannot reach payload bytes, and the returned frame keeps the input
+        // Ethernet end instead of reconstructing it from a second length.
+        let payload_start = ethernet_offset + ETHERNET_HEADER_LEN;
+        let (before_payload, _) = storage.split_at_mut(payload_start);
+        let prefix = &mut before_payload[frame_offset..];
+        plan.header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        crate::encoding::FrameParts([
+            &plan.header[..header_len],
+            &self.ccmp_header,
+            &plan.llc_snap,
+        ])
+        .write(prefix)
+        .map_err(|required| StationFrameError::OutputTooSmall { required })?;
         Ok(EncodedStaFrame {
             offset: frame_offset,
-            length: frame_length,
+            length: ethernet_end - frame_offset,
         })
     }
 
@@ -289,7 +278,7 @@ impl StaProtectedEthernetFrame {
     ///
     /// The first Ethernet payload is moved forward inside `storage`; the
     /// second frame is copied behind it. The returned MPDU starts at the same
-    /// offset as [`Self::encode_in_place`], so an S31 metadata word can remain
+    /// offset as [`Self::encode_in_place`], so backend metadata can remain
     /// immediately before it. The caller may release the second frame as soon
     /// as this method returns successfully.
     ///
@@ -306,9 +295,8 @@ impl StaProtectedEthernetFrame {
         second_ethernet: &[u8],
     ) -> Result<EncodedStaFrame, StationFrameError> {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         if !self.peer_qos {
             return Err(StationFrameError::AmsduRequiresQos);
         }
@@ -326,13 +314,11 @@ impl StaProtectedEthernetFrame {
             });
         }
 
-        let first_header: [u8; ETHERNET_HEADER_LEN] = storage
-            [ethernet_offset..ethernet_offset + ETHERNET_HEADER_LEN]
-            .try_into()
-            .expect("Ethernet length checked above");
-        let source: [u8; 6] = first_header[6..12]
-            .try_into()
-            .expect("six-byte Ethernet source");
+        let Some(&first_header) = storage[ethernet_offset..].first_chunk::<ETHERNET_HEADER_LEN>()
+        else {
+            return Err(StationFrameError::EthernetFrameTooShort);
+        };
+        let [_, _, _, _, _, _, source @ .., _, _] = first_header;
         let required =
             sta_protected_amsdu_pair_frame_length(ethernet_length, second_ethernet.len())?;
         let frame_offset = ethernet_offset
@@ -358,62 +344,58 @@ impl StaProtectedEthernetFrame {
             self.bssid,
             source,
             first_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        );
         plan.header[1] |= 0x40;
         plan.header[24] |= 0x80;
 
-        let header_len = usize::from(plan.header_len);
-        debug_assert_eq!(header_len, crate::data::IEEE80211_QOS_DATA_HEADER_LEN);
-        let first_subframe = frame_offset + header_len + CCMP_HEADER_LEN;
+        // A station A-MSDU always owns the complete fixed-size QoS header.
+        let mut header = plan.header;
+        header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        let first_prefix_length =
+            header.len() + CCMP_HEADER_LEN + AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN;
         let first_payload_length = ethernet_length - ETHERNET_HEADER_LEN;
-        let first_payload_destination =
-            first_subframe + AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN;
         storage.copy_within(
             ethernet_offset + ETHERNET_HEADER_LEN..ethernet_end,
-            first_payload_destination,
+            frame_offset + first_prefix_length,
         );
 
-        storage[frame_offset..frame_offset + header_len]
-            .copy_from_slice(&plan.header[..header_len]);
-        storage[frame_offset + 22..frame_offset + 24]
-            .copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let ccmp_offset = frame_offset + header_len;
-        storage[ccmp_offset..ccmp_offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
-
+        // Disjoint slices retain the moved first payload while the two
+        // fragment plans write only its prefix and the following subframe.
+        let frame = &mut storage[frame_offset..frame_end];
+        let (first_prefix, body) = frame.split_at_mut(first_prefix_length);
+        let (_, following) = body.split_at_mut(first_payload_length);
         let first_msdu_length = LLC_SNAP_HEADER_LEN + first_payload_length;
-        storage[first_subframe..first_subframe + 12].copy_from_slice(&first_header[..12]);
-        storage[first_subframe + 12..first_subframe + 14]
-            .copy_from_slice(&(first_msdu_length as u16).to_be_bytes());
-        let first_llc = first_subframe + AMSDU_SUBFRAME_HEADER_LEN;
-        storage[first_llc..first_llc + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-        storage[first_llc + 6..first_llc + 8].copy_from_slice(&first_header[12..14]);
-
-        let first_subframe_length =
-            AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + first_payload_length;
+        let first_written = crate::encoding::FrameParts([
+            header.as_slice(),
+            &self.ccmp_header,
+            &first_header[..12],
+            &(first_msdu_length as u16).to_be_bytes(),
+            &crate::data::RFC1042_LLC_SNAP_PREFIX,
+            &first_header[12..14],
+        ])
+        .write(first_prefix)
+        .map_err(|required| StationFrameError::OutputTooSmall { required })?;
+        let first_subframe_length = AMSDU_SUBFRAME_HEADER_LEN + first_msdu_length;
+        let padding = [0; 3];
         let first_padding = (4 - (first_subframe_length & 3)) & 3;
-        let second_subframe = first_subframe + first_subframe_length + first_padding;
-        storage[second_subframe - first_padding..second_subframe].fill(0);
-
         let second_payload = &second_ethernet[ETHERNET_HEADER_LEN..];
         let second_msdu_length = LLC_SNAP_HEADER_LEN + second_payload.len();
-        storage[second_subframe..second_subframe + 12].copy_from_slice(&second_ethernet[..12]);
-        storage[second_subframe + 12..second_subframe + 14]
-            .copy_from_slice(&(second_msdu_length as u16).to_be_bytes());
-        let second_llc = second_subframe + AMSDU_SUBFRAME_HEADER_LEN;
-        storage[second_llc..second_llc + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-        storage[second_llc + 6..second_llc + 8].copy_from_slice(&second_ethernet[12..14]);
-        let second_payload_offset = second_llc + LLC_SNAP_HEADER_LEN;
-        storage[second_payload_offset..second_payload_offset + second_payload.len()]
-            .copy_from_slice(second_payload);
-        debug_assert_eq!(second_payload_offset + second_payload.len(), frame_end);
-
+        let following_written = crate::encoding::FrameParts([
+            &padding[..first_padding],
+            &second_ethernet[..12],
+            &(second_msdu_length as u16).to_be_bytes(),
+            &crate::data::RFC1042_LLC_SNAP_PREFIX,
+            &second_ethernet[12..14],
+            second_payload,
+        ])
+        .write(following)
+        .map_err(|required| StationFrameError::OutputTooSmall { required })?;
         Ok(EncodedStaFrame {
             offset: frame_offset,
-            length: required,
+            length: first_written + first_payload_length + following_written,
         })
     }
 }

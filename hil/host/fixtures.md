@@ -5,6 +5,12 @@ passive observers; Bluetooth and network helpers are installed once per host.
 This guide covers their preparation, evidence boundaries and installation; the
 [host guide](README.md) covers the stand file that names them.
 
+No HIL scenario uses the network fixtures now: the Wi-Fi scenarios, their
+workloads and the target's Wi-Fi protocol were deleted (#762, tag
+`legacy-wifi-2026-10-16`). The fixtures remain (`oer-hil-family-ieee80211-fixture`),
+and the network sections below describe what they do and what the former
+scenarios relied on.
+
 ## Prepare and restore network fixtures
 
 The controlled OpenWrt AP and HIL host share the fixture LAN. Reverse flows
@@ -41,7 +47,7 @@ Fixture preparation can be exercised without opening the serial port, building
 firmware, resetting or transmitting traffic from the DUT:
 
 ```console
-cargo hil fixture check udp-tx-he20
+cargo hil fixture check <scenario>
 ```
 
 This command uses the same prerequisites and profile owner as `run`, opens and
@@ -84,14 +90,6 @@ traffic duration does not set an early capture stop. Independent process
 watchdogs and file limits remain failure bounds. Passive observers use the AP's
 actual primary frequency, width and center frequency, including HE20 geometry.
 Tshark parsing and monitor setup/teardown are invoked by the runner.
-
-AP workload evidence and qualification are separate. The repetition's
-observations keep each cycle's progress (`cycle-NNN-progress`: every available
-traffic, link and teardown result even if another stage fails) and the
-`access-point` observation (completed boots/cycles and the boot error), each
-replaced as the workload advances. Multi-client UDP additionally records its
-delivery progress before applying gates, including partial host sends, target
-evidence and worker errors.
 
 Host UDP collectors finish from the correlated `network::Finished` transport count.
 Complete delivery returns immediately. If packets remain undelivered, a two-second
@@ -340,81 +338,3 @@ HE20 retain normal policy. The selected policy is recorded in fixture evidence.
 Either policy still fails preparation when actual channel geometry differs
 from the scenario: requested 40 MHz never silently becomes an accepted 20 MHz run.
 
-### Controlled probe-request load
-
-`diagnostic-ap-probe-load` combines a 12-second AP two-client UDP TX window
-with a finite Linux probe source. The primary offered rate is 130 Mbit/s;
-the secondary sends one 1472-byte datagram every 50 ms. The scenario requires
-at least 200 secondary datagrams and a maximum 250 ms interarrival gap.
-These are progress gates, not a throughput qualification.
-
-The runner prepares the source after client association and starts it only
-after the device acknowledges the UDP session. Offsets from that Start event
-are: one directed-SSID request at 1 s, 200 requests from one MAC at 3–3.995 s,
-and 200 requests from distinct locally administered MACs at 6–6.995 s.
-The source uses event/deadline waits, rejects pacing lateness above 4 ms,
-and stops on controller EOF or cancellation.
-
-`cargo stand fixture install --provider linux-net` builds and installs the bounded Rust helper
-`open-radio-probe`. The helper accepts no command-line arguments or arbitrary
-frame input. It checks the controlled `wlan0` association SSID/channel, owns
-a temporary monitor interface on the same PHY, and removes it before reporting
-completion. It does not retune the associated interface. Monitor coexistence
-and injection support are requirements of this Linux adapter; creation or
-injection failure fails the scenario. Those capabilities still require an
-actual fixture run; host tests alone do not establish them.
-
-The runner automatically captures management traffic on OpenWrt and invokes
-tshark after capture shutdown. `probe-source.json` records submission,
-associated BSSID, pacing and errors; `probe-air.json` records observed request
-and response counts. All 401 source/sequence pairs must appear in the capture,
-with no reported kernel drops. Responses must come from the associated AP and
-cover both source modes. Retries, duplicate response sequences and more than
-105 responses in any one-second window fail the gate. The five-frame margin
-allows capture timing variation around the driver's 10 ms admission interval.
-Successful socket submission alone cannot satisfy these gates. OpenWrt is a
-separate observer device, but its capture still shares its client PHY.
-
-A private `[air_observer]` section can attach a second OpenWrt host to station
-UDP RX/bidirectional runs: `ssh_target`, `phy` and `interface` name its SSH
-endpoint, dedicated PHY and temporary monitor interface. The PHY must initially
-have no interfaces; the runner refuses to retune an active AP/client. It locks
-both OpenWrt hosts, verifies distinct boot identities, derives the channel from
-the active AP and checks the observer's actual geometry after tcpdump readiness.
-The monitor and capture are owned until explicit Stop and cleaned up on errors.
-`independent-openwrt-air.pcap` and adjacent JSON record passive air evidence;
-the AP's own TX monitor remains a separate observation boundary. Captures with
-socket drops are retained but fail completeness. Fixture checks exercise setup,
-readiness and teardown without requiring a packet to arrive before immediate
-Stop; real traffic captures require at least one frame. Missing passive frames
-alone cannot establish over-the-air loss, and encrypted payloads require either
-a captured handshake/decryption or correlation with the AP's MAC identities.
-
-Independent OpenWrt air runs also collect `host-wire.pcapng` on the selected
-host route, including ARP and both UDP directions. This observes the host packet
-socket boundary, not a hardware transmit acknowledgement. Capture drop counts
-are retained and checked independently from radio and application drops.
-
-Station UDP RX and bidirectional scenarios can require
-`criteria.maximum_rx_silence_ms`. The gate consumes complete-window typed
-transport evidence, including the trailing silence; missing observation fails
-rather than falling back to average throughput. This is a delivery-continuity
-limit, not an RF airtime measurement. Multi-client receive windows do not publish one ambiguous maximum.
-
-Managed OpenWrt RX runs retain `openwrt-wifi-egress.pcap` in the repetition
-artifacts. This is plaintext packet-socket evidence on the AP wireless
-interface, before driver/hardware transmission; it does not prove over-air
-delivery. The existing readiness/Stop capture owner bounds its lifetime,
-retains a 128-byte packet prefix, checks capture drops, and removes its private
-remote files. Same-boot probes keep separate capture directories. Independent
-observer and host clocks are not assumed synchronized; correlate packet
-identities before comparing timestamps across hosts.
-
-An OpenWrt fixture may set `read_only = true` in its private stand file
-when the AP also carries essential connectivity. HIL verifies the existing
-SSID, WPA2 credentials/settings and active PHY/channel geometry; it neither
-applies nor restores AP configuration. A mismatch fails before DUT traffic.
-Scenarios requiring AP stop/restart, an OpenWrt client, rate overrides or an
-AP-side monitor are rejected. Read-only station counters and packet capture on
-an existing interface remain available; independent observers may be used.
-This mode is explicit and never a fallback from failed automatic preparation.

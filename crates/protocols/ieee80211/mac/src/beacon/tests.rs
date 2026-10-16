@@ -271,7 +271,8 @@ const OFDM_ADVERTISEMENT: crate::ap::profile::Advertisement =
         TEST_ADVERTISEMENT.ht,
         TEST_ADVERTISEMENT.wmm,
         0x0001,
-    );
+    )
+    .unwrap();
 
 #[test]
 fn a_5_ghz_beacon_carries_no_dsss_parameter_set_erp_or_dsss_rate() {

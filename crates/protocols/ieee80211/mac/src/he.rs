@@ -9,7 +9,7 @@ pub const HE_OPERATION_EXTENSION_ID: u8 = 36;
 pub const HE_CAPABILITIES_IE_MIN_LEN: usize = 24;
 pub const HE_OPERATION_IE_MIN_LEN: usize = 9;
 
-/// HE resource-unit widths supported by the S31 HE20 profile.
+/// Resource-unit widths representable in the HE20 bandwidth.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HeResourceUnit {
     Ru26,
@@ -276,9 +276,8 @@ pub struct He20MuSigBRuUser {
 /// byte and zero-based user position, then logs the two output bytes as
 /// `ru_size` and `multiplexed`. The helper indexes the two exact ROM objects
 /// above only for encodings 0 through 15 and computes every other class with
-/// bounded branches. RU types four and five are rejected here because the
-/// complete adjacent `rutype2str` supports only types zero through three and
-/// the S31 non-AP profile is HE20.
+/// bounded branches. Wider RUs cannot be represented by this HE20-specific
+/// type; this does not impose a bandwidth limit on the backend.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct He20MuSigBRuAllocation {
     encoding: u8,
@@ -807,9 +806,8 @@ pub struct He20Capabilities {
     pub ldpc_coding_in_payload: bool,
     /// The peer can transmit HE STBC below 80 MHz.
     ///
-    /// HE PHY capability byte 2 bit 2. For the S31 non-AP role this is the
-    /// peer capability required before attempting a controlled downlink RX
-    /// STBC qualification.
+    /// HE PHY capability byte 2 bit 2; local receive support is a separate
+    /// backend capability.
     pub stbc_transmit_under_80_mhz: bool,
     /// The peer can receive HE STBC below 80 MHz.
     ///
@@ -896,7 +894,6 @@ impl He20Operation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct He20PeerState {
     pub capability_prefix: [u8; HE_CAPABILITIES_IE_MIN_LEN],
-    pub max_rate_code: u8,
     pub packet_padding_eight_us: u8,
     pub default_packet_extension_duration: u8,
     pub bss_color: u8,
@@ -994,7 +991,7 @@ pub fn parse_he20_operation(element: &[u8]) -> Result<He20Operation, HeElementEr
 /// `libnet80211[ieee80211_he.o]::ieee80211_parse_hecap,
 /// libnet80211[ieee80211_he.o]::ieee80211_parse_heopr` bodies and their format strings. This function is
 /// deliberately pure; corresponding MMIO transforms are tracked separately
-/// in the S31 MAC.
+/// by the hardware backend.
 pub fn parse_he20_peer_state(
     capability: &[u8],
     operation: &[u8],
@@ -1012,7 +1009,6 @@ pub fn parse_he20_peer_state(
 
     let mut capability_prefix = [0_u8; HE_CAPABILITIES_IE_MIN_LEN];
     capability_prefix.copy_from_slice(&capability[..HE_CAPABILITIES_IE_MIN_LEN]);
-    let max_rate_code = if capability[20] & 0x03 == 0 { 172 } else { 229 };
     let packet_padding_eight_us = if capability[15] & 0x80 == 0 {
         capability[18] >> 6
     } else {
@@ -1033,7 +1029,6 @@ pub fn parse_he20_peer_state(
 
     Ok(He20PeerState {
         capability_prefix,
-        max_rate_code,
         packet_padding_eight_us,
         default_packet_extension_duration: operation[3] & 0x07,
         bss_color: operation[6] & 0x3f,

@@ -209,25 +209,13 @@ pub(crate) fn spec(
         output,
         // HIL images always request every check; each applies where the
         // chip's data names what it checks.
-        checks: Some(Box::new(Gates {
-            // A diagnostic image's observers are not the product's: its
-            // interrupt stacks may be `partial + ?`, with their holes named.
-            audit: Some(Box::new(move |elf: &oer_elf::Elf<'_>| {
-                let critical = elf
-                    .section_by_name(".critical.data")
-                    .map(|section| section.address..section.address + section.size);
-                audit_radio_observers(
-                    class,
-                    critical,
-                    elf.symbols().map(|symbol| (symbol.name, symbol.address)),
-                )
-            }) as oer_image_checks::Audit),
-            ..Gates::all(if class.diagnostic() {
-                Required::Partial
-            } else {
-                Required::Proven
-            })
-        })),
+        // A diagnostic image's interrupt stacks may be `partial + ?`, with
+        // their holes named.
+        checks: Some(Box::new(Gates::all(if class.diagnostic() {
+            Required::Partial
+        } else {
+            Required::Proven
+        }))),
     })
 }
 
@@ -388,62 +376,6 @@ pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
                     .into());
                 }
             }
-        }
-    }
-    Ok(())
-}
-
-/// Radio compositions retain their observer state in critical SRAM. Images
-/// without a radio composition still pass the shared firmware/stack audits,
-/// but have no radio observer storage to require.
-fn audit_radio_observers<'a>(
-    class: ImageClass,
-    critical: Option<std::ops::Range<u64>>,
-    symbols: impl Iterator<Item = (&'a str, u64)>,
-) -> oer_image::Result<()> {
-    if matches!(
-        class,
-        ImageClass::SystemWatchdog
-            | ImageClass::SystemPanicReset
-            | ImageClass::DiagnosticUsbJtagOff
-            | ImageClass::BluetoothGatt
-            | ImageClass::DiagnosticBluetoothGattTrace
-            | ImageClass::BluetoothSecureGatt
-            | ImageClass::BluetoothDtm
-            | ImageClass::BootSmoke
-            | ImageClass::DiagnosticMemoryBenchmark
-    ) {
-        return Ok(());
-    }
-    let aggregate_required = matches!(
-        class,
-        ImageClass::Correctness
-            | ImageClass::DiagnosticPhyTrackingHold
-            | ImageClass::DiagnosticInterruptLatency
-            | ImageClass::DiagnosticMacIrq
-            | ImageClass::DiagnosticTxWait
-            | ImageClass::DiagnosticTaskPoll
-            | ImageClass::DiagnosticCore0RxCycles
-            | ImageClass::DiagnosticRxDelivery
-    );
-    let range = critical.ok_or("missing critical data for HIL radio observers")?;
-    let symbols: Vec<_> = symbols.collect();
-    for expected in ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"] {
-        // Without driver-observation the linker may discard aggregate state.
-        // If retained, its clock pointer still requires initialized SRAM.
-        if expected == "AGGREGATE_TX"
-            && !aggregate_required
-            && !symbols.iter().any(|(name, _)| name.contains(expected))
-        {
-            continue;
-        }
-        if !symbols
-            .iter()
-            .any(|(name, address)| name.contains(expected) && range.contains(address))
-        {
-            return Err(
-                format!("HIL observer {expected} is missing or outside critical data").into(),
-            );
         }
     }
     Ok(())

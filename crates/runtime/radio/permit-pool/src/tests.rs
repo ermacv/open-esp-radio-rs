@@ -14,9 +14,9 @@ use std::{
     task::Wake,
 };
 
-use oer_ieee802154_port::{
-    ClockError, Disabled, EnableResult, Ended, Lent, Owner, PhaseParts, PortBackend, PortBody,
-    RadioPortEvents, Retire, run_port,
+use oer_radio_port::{
+    Call, ClockError, Detached, Disabled, DriverExit, EnableResult, Ended, InstallParts, Installed,
+    Owner, PhaseParts, PortBackend, PortBody, PortPhase, Retire, Retired, run_port,
 };
 use oer_radio_port::{
     EventsLost, Line, Mint, Permit, PermitPool, Poisoned, PortResult, Seat, conformance,
@@ -36,11 +36,14 @@ struct Fault;
 
 struct NoEvents;
 
-impl RadioPortEvents for NoEvents {
+impl PortPhase for NoEvents {
     type Event = ();
     type Fault = Fault;
 
-    fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, Fault>> + '_ {
+    fn next_event(
+        &mut self,
+    ) -> impl Future<Output = Result<Result<(), EventsLost>, oer_radio_port::EventEnd<Fault>>> + '_
+    {
         pending()
     }
 }
@@ -48,7 +51,7 @@ impl RadioPortEvents for NoEvents {
 /// The resources of a probe: `N` permits and the line of `S` seats of one
 /// install.
 type Tokens<'id, const N: usize, const S: usize> = (
-    [Permit<'id, Kind>; N],
+    oer_radio_port::PermitSupply<'id, Kind, N>,
     Line<'id, Kind, S>,
     [Seat<'id, Kind>; S],
 );
@@ -58,37 +61,48 @@ type Tokens<'id, const N: usize, const S: usize> = (
 struct Probe<const N: usize, const S: usize>;
 
 impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
-    type Event = ();
+    type Event<'id> = ();
+    type Terminal<'id> = ();
+    type Phase<'a, 'id>
+        = PhaseParts<NoEvents, (), ()>
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = ();
+    type Driver = ();
     type Domain = Domain;
     type Fault = Fault;
     type Refusal = ();
-    type Setup<'a, 'id> = ();
-    type Events<'a, 'id>
-        = NoEvents
-    where
-        'id: 'a;
-    type Control<'a, 'id>
+    type Setup<'a, 'id>
         = ()
     where
         'id: 'a;
-    type Clients<'a, 'id>
-        = ()
-    where
-        'id: 'a;
+
+    type Pools = oer_radio_port::Permits<Kind, N, S>;
     type Resources<'id> = Tokens<'id, N, S>;
     type Held<'id> = ();
     type State = ();
     type Uninstall = ();
     type Uninstalled = ();
 
-    fn enable(&mut self) -> impl Future<Output = EnableResult<(), Fault>> + '_ {
+    fn enable<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<(), Fault>> + 'a
+    where
+        'id: 'a,
+    {
         ready(Ok(Ok(())))
     }
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         _: &'a (),
-        _: &'a mut dyn FnMut(()),
+        _: &'a mut Self::Local<'id>,
+        _: &'a mut dyn FnMut(()) -> core::ops::ControlFlow<()>,
     ) -> impl Future<Output = Result<(), Poisoned<Fault>>> + 'a
     where
         'id: 'a,
@@ -98,49 +112,81 @@ impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
 
     fn now(
         &self,
+        _: Call,
     ) -> impl Future<Output = PortResult<RadioInstant<Domain>, ClockError, Fault>> + '_ {
         ready(Ok(Ok(RadioInstant::from_micros(0))))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> ((), Tokens<'id, N, S>) {
-        let permits = mint.permits();
-        let (line, seats) = mint.seats();
-        ((), (permits, line, seats))
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
+        let oer_radio_port::PermitTokens {
+            supply,
+            line,
+            seats,
+        } = mint.into_pools();
+        InstallParts {
+            held: (),
+            local: (),
+            resources: (supply, line, seats),
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(())
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
     }
 
-    fn split<'a, 'id>(&'a mut self, _: &'a ()) -> PhaseParts<'a, NoEvents, (), ()>
+    fn phase<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a (),
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(NoEvents),
-            control: Lent::new(()),
-            clients: Lent::new(()),
+            events: NoEvents,
+            control: (),
+            clients: (),
         }
     }
 
-    fn drive<'p, 'id>(
-        &mut self,
-        _: &'p (),
+    async fn drive<'p, 'id>(
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
+        _: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, N, S> {
-        // The probe has nothing to serve: it retires when asked.
-        async move { retire.requested().await }
+    ) -> DriverExit<Self::State, Self::Fault> {
+        DriverExit::Retired {
+            state: (),
+            proof: retire.requested(driver).await,
+        }
     }
 
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(&self, _: Call) -> impl Future<Output = ()> + use<N, S> {
         pending()
     }
 
-    fn detach<'id>(&mut self, (): &()) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, (): &()) {}
 
-    fn uninstall<'id>(self, (): (), (): (), (): ()) {}
+    fn uninstall<'id>(
+        self,
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        _: Retired<'id, (Self::Driver, Self::State)>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) {
+    }
 
-    fn abandon(&mut self) {}
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
+        oer_radio_port::Abandon::Stopped(call.stopped())
+    }
 }
 
 /// Poll `future` once with a waker that does nothing.
@@ -159,19 +205,29 @@ where
     where
         C: for<'id> FnOnce(&FifoPermitPool<'id, Kind, N, S>, [Seat<'id, Kind>; S]),
     {
+        type Output = ();
         async fn run<'id>(
             self,
             owner: Owner<'_, 'id, Probe<N, S>, Disabled>,
             (permits, line, seats): Tokens<'id, N, S>,
-        ) -> Ended<'id, Probe<N, S>> {
+        ) -> Ended<'id, Probe<N, S>, ()> {
             (self.0)(&FifoPermitPool::new(permits, line), seats);
-            owner.uninstall(())
+            Ended::uninstall(owner, (), ())
         }
     }
-    let Poll::Ready(ended) = poll_once(pin!(run_port(Probe::<N, S>, Body(check)))) else {
+    let Poll::Ready(ended) = poll_once(pin!(run_port(
+        Installed::new(Probe::<N, S>, ()),
+        Body(check)
+    ))) else {
         panic!("the probe answers at once");
     };
-    assert_eq!(ended, Some(()));
+    assert!(matches!(
+        ended,
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: (),
+            output: ()
+        }
+    ));
 }
 
 /// Take a free permit at once.
@@ -201,6 +257,37 @@ fn a_pool_with_a_permit_held_aside_serves_takers_in_arrival_order() {
             &mut [first, second, third],
             [held],
         );
+    });
+}
+
+#[test]
+fn out_of_order_returns_preserve_every_permits_capacity() {
+    with_pool::<4, 1, _>(|pool, [mut seat]| {
+        let first = take_now(pool, &mut seat);
+        let second = take_now(pool, &mut seat);
+        let third = take_now(pool, &mut seat);
+        let fourth = take_now(pool, &mut seat);
+        assert_eq!(pool.available(), 0);
+        pool.release(third);
+        pool.release(first);
+        let left = take_now(pool, &mut seat);
+        let right = take_now(pool, &mut seat);
+        assert_ne!(left.index(), right.index());
+        assert!(poll_once(pin!(pool.take(&mut seat))).is_pending());
+        for permit in [fourth, right, second, left] {
+            pool.release(permit);
+        }
+        let returned: [_; 4] = core::array::from_fn(|_| take_now(pool, &mut seat));
+        let mut identities = [false; 4];
+        for permit in &returned {
+            assert!(!identities[usize::from(permit.index())]);
+            identities[usize::from(permit.index())] = true;
+        }
+        assert_eq!(identities, [true; 4]);
+        assert_eq!(pool.available(), 0);
+        for permit in returned {
+            pool.release(permit);
+        }
     });
 }
 
@@ -416,5 +503,37 @@ fn a_leaked_leader_replaced_by_its_seat_wakes_the_taker_behind_it() {
         };
         pool.release(permit);
         assert!(poll_once(again.as_mut()).is_ready());
+    });
+}
+
+#[test]
+fn distinct_permit_pools_share_one_waiter_domain_without_sharing_capacity() {
+    type Layout = (
+        oer_radio_port::Permits<Kind, 1, 1>,
+        oer_radio_port::Permits<Kind, 1, 0>,
+    );
+    let future = oer_radio_port::branded::<Layout, _>(async |mint| {
+        let (a, b) = mint.into_pools();
+        let [mut seat] = a.seats;
+        let line = a.line;
+        let a = FifoPermitPool::new(a.supply, line);
+        let b = FifoPermitPool::new(b.supply, line);
+        let token = a.take(&mut seat).await;
+        assert_eq!(a.available(), 0);
+        let other = b.take(&mut seat).await;
+        assert_eq!(b.available(), 0);
+        b.release(other);
+        a.release(token);
+        assert_eq!(a.available(), 1);
+    });
+    assert!(poll_once(pin!(future)).is_ready());
+}
+
+#[test]
+fn empty_capacity_and_zero_waiters_need_no_special_case() {
+    with_pool::<0, 0, _>(|pool, seats| {
+        assert_eq!(pool.available(), 0);
+        assert_eq!(pool.waiting(), 0);
+        assert!(seats.is_empty());
     });
 }

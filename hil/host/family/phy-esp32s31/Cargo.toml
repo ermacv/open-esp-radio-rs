@@ -11,7 +11,6 @@ readme = "README.md"
 
 [dependencies]
 oer-hil-family-phy = { path = "../phy" }
-oer-hil-workload = { path = "../../workload" }
 oer-phy-calibration-capture = { path = "../../../phy/capture" }
 oer-esp32s31-phy-vendor-calibration = { path = "../../../phy/esp32s31/calibration" }
 serde_json = "1.0"

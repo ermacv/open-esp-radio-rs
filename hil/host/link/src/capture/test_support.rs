@@ -226,14 +226,17 @@ pub fn receive<M: oer_hil_protocol::Message>(writes: &mpsc::Receiver<Vec<u8>>) -
     (request, body)
 }
 
-/// The capabilities of the fake target: the correctness image's of the
+/// The capabilities of the fake target: the Bluetooth GATT image's of the
 /// first chip whose HIL agent builds one.
 pub fn capability_keys() -> Vec<Key> {
     let capabilities = oer_hil_image_class::agent_chips()
         .find_map(|chip| {
-            oer_hil_image_class::image_keys_on(oer_hil_schema::image::ImageClass::Correctness, chip)
+            oer_hil_image_class::image_keys_on(
+                oer_hil_schema::image::ImageClass::BluetoothGatt,
+                chip,
+            )
         })
-        .expect("a chip's HIL agent builds the correctness image");
+        .expect("a chip's HIL agent builds the Bluetooth GATT image");
     capabilities.keys().iter().copied().collect()
 }
 

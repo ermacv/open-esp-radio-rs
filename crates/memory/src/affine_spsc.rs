@@ -9,12 +9,8 @@ use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
     mem::MaybeUninit,
-    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
 };
-
-const PRODUCER_ACTIVE: u8 = 1 << 0;
-const CONSUMER_ACTIVE: u8 = 1 << 1;
-const BOTH_ENDPOINTS_ACTIVE: u8 = PRODUCER_ACTIVE | CONSUMER_ACTIVE;
 
 #[repr(align(64))]
 struct CacheLine<T>(T);
@@ -28,12 +24,35 @@ pub enum AffineSpscTryReceiveError {
     Empty,
 }
 
-/// Static storage for one bounded single-producer/single-consumer stream.
+/// Storage for one bounded single-producer/single-consumer stream.
+///
+/// Endpoint uniqueness is proved by the exclusive storage borrow, including
+/// across lifecycle transitions. Move the receiver itself to the next phase:
+/// a producer cannot manufacture another receiver.
+///
+/// ```compile_fail,E0499
+/// use oer_memory::AffineSpscQueue;
+/// let mut queue = AffineSpscQueue::<u8, 2>::new();
+/// let (first, consumer) = queue.split();
+/// let second = queue.split();
+/// first.try_send(1).unwrap();
+/// ```
+///
+/// Capacity checks run at compile time even in an ordinary function call.
+///
+/// ```compile_fail,E0080
+/// use oer_memory::AffineSpscQueue;
+/// let queue = AffineSpscQueue::<u8, 0>::new();
+/// ```
+///
+/// ```compile_fail,E0080
+/// use oer_memory::AffineSpscQueue;
+/// let queue = AffineSpscQueue::<(), { usize::MAX / 2 + 1 }>::new();
+/// ```
 pub struct AffineSpscQueue<T, const DEPTH: usize> {
     values: [UnsafeCell<MaybeUninit<T>>; DEPTH],
     producer: CacheLine<AtomicUsize>,
     consumer: CacheLine<AtomicUsize>,
-    active_endpoints: AtomicU8,
 }
 
 #[allow(
@@ -47,41 +66,30 @@ unsafe impl<T: Send, const DEPTH: usize> Sync for AffineSpscQueue<T, DEPTH> {}
 
 impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
     pub const fn new() -> Self {
-        assert!(DEPTH != 0, "affine SPSC queue must not be empty");
-        assert!(
-            DEPTH <= usize::MAX / 2,
-            "affine SPSC cursor domain must fit usize"
-        );
+        const {
+            assert!(DEPTH != 0, "affine SPSC queue must not be empty");
+            assert!(
+                DEPTH <= usize::MAX / 2,
+                "affine SPSC cursor domain must fit usize"
+            );
+        }
         Self {
             values: [const { UnsafeCell::new(MaybeUninit::uninit()) }; DEPTH],
             producer: CacheLine(AtomicUsize::new(0)),
             consumer: CacheLine(AtomicUsize::new(0)),
-            active_endpoints: AtomicU8::new(0),
         }
     }
 
-    /// Acquire the only producer and consumer pair for one ownership epoch.
+    /// Exclusively borrow the storage to grant its sole endpoint pair.
+    /// Both endpoints retain this borrow: another split cannot overlap them.
+    /// Values left by an earlier pair stay owned by the queue and are received
+    /// by the next consumer in their original order.
     pub fn split(
-        &self,
+        &mut self,
     ) -> (
         AffineSpscSender<'_, T, DEPTH>,
         AffineSpscReceiver<'_, T, DEPTH>,
     ) {
-        assert_eq!(
-            self.len(),
-            0,
-            "affine SPSC queue must be drained before a new owner epoch"
-        );
-        assert_eq!(
-            self.active_endpoints.compare_exchange(
-                0,
-                BOTH_ENDPOINTS_ACTIVE,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ),
-            Ok(0),
-            "affine SPSC queue already has an active producer or consumer"
-        );
         (
             AffineSpscSender {
                 queue: self,
@@ -94,43 +102,6 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         )
     }
 
-    /// Reacquire the sole consumer beside a producer retained across a
-    /// lifecycle boundary.
-    ///
-    /// The queue must be empty because the old consumer is the only owner
-    /// allowed to drain its epoch before it releases the endpoint. Keeping the
-    /// producer alive preserves the physical DMA owner's affine publication
-    /// capability without manufacturing a second producer.
-    fn resume_consumer(&self) -> AffineSpscReceiver<'_, T, DEPTH> {
-        assert_eq!(
-            self.len(),
-            0,
-            "affine SPSC queue must be drained before resuming its consumer"
-        );
-        assert_eq!(
-            self.active_endpoints.compare_exchange(
-                PRODUCER_ACTIVE,
-                BOTH_ENDPOINTS_ACTIVE,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ),
-            Ok(PRODUCER_ACTIVE),
-            "affine SPSC consumer can only resume beside its retained producer"
-        );
-        AffineSpscReceiver {
-            queue: self,
-            _not_sync: PhantomData,
-        }
-    }
-
-    fn release_endpoint(&self, endpoint: u8) {
-        let previous = self.active_endpoints.fetch_and(!endpoint, Ordering::AcqRel);
-        assert!(
-            previous & endpoint != 0,
-            "affine SPSC endpoint released more than once"
-        );
-    }
-
     fn len(&self) -> usize {
         let consumer = self.consumer.0.load(Ordering::Acquire);
         let producer = self.producer.0.load(Ordering::Acquire);
@@ -141,7 +112,7 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         if producer >= consumer {
             producer - consumer
         } else {
-            producer + DEPTH * 2 - consumer
+            DEPTH * 2 - (consumer - producer)
         }
     }
 
@@ -153,25 +124,25 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         }
     }
 
-    #[inline]
-    fn try_send(&self, value: T) -> Result<(), AffineSpscTrySendError<T>> {
+    fn vacant_slot(&self) -> Option<AffineSpscSendPermit<'_, T, DEPTH>> {
         let producer = self.producer.0.load(Ordering::Relaxed);
         let consumer = self.consumer.0.load(Ordering::Acquire);
         if Self::cursor_distance(consumer, producer) >= DEPTH {
+            return None;
+        }
+        Some(AffineSpscSendPermit {
+            queue: self,
+            producer,
+            _not_sync: PhantomData,
+        })
+    }
+
+    #[inline]
+    fn try_send(&self, value: T) -> Result<(), AffineSpscTrySendError<T>> {
+        let Some(permit) = self.vacant_slot() else {
             return Err(AffineSpscTrySendError(value));
-        }
-        #[allow(
-            unsafe_code,
-            reason = "the single producer owns this unpublished SPSC slot"
-        )]
-        // SAFETY: only the producer writes the slot at its private cursor, and
-        // the Acquire consumer cursor proved the previous value moved out.
-        unsafe {
-            (*self.values[producer % DEPTH].get()).write(value);
-        }
-        self.producer
-            .0
-            .store(Self::advance(producer), Ordering::Release);
+        };
+        permit.send(value);
         Ok(())
     }
 
@@ -236,6 +207,34 @@ impl<'queue, T, const DEPTH: usize> AffineSpscSender<'queue, T, DEPTH> {
         self.queue.try_send(value)
     }
 
+    /// Reserve one vacant cell, exclusively borrowing the producer until
+    /// the permit is sent or dropped. A full queue returns that same borrow,
+    /// allowing a readiness future to keep its sole producer registration.
+    /// Neither refusal nor dropping a permit advances the producer cursor.
+    ///
+    /// ```compile_fail,E0502
+    /// use oer_memory::AffineSpscQueue;
+    /// let mut queue = AffineSpscQueue::<u8, 1>::new();
+    /// let (mut sender, receiver) = queue.split();
+    /// let permit = sender.try_reserve().ok().unwrap();
+    /// sender.try_send(1).unwrap();
+    /// permit.send(2);
+    /// ```
+    ///
+    /// ```
+    /// use oer_memory::AffineSpscQueue;
+    /// let mut queue = AffineSpscQueue::<u8, 1>::new();
+    /// let (mut sender, receiver) = queue.split();
+    /// sender.try_reserve().ok().unwrap().send(1);
+    /// assert_eq!(receiver.try_receive(), Ok(1));
+    /// ```
+    pub fn try_reserve(&mut self) -> Result<AffineSpscSendPermit<'_, T, DEPTH>, &mut Self> {
+        match self.queue.vacant_slot() {
+            Some(permit) => Ok(permit),
+            None => Err(self),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.queue.len()
     }
@@ -247,17 +246,38 @@ impl<'queue, T, const DEPTH: usize> AffineSpscSender<'queue, T, DEPTH> {
     pub fn free_capacity(&self) -> usize {
         DEPTH.saturating_sub(self.len())
     }
-
-    /// Reacquire the sole consumer after the preceding consumer drained and
-    /// ended its lifecycle epoch while this producer remained active.
-    pub fn resume_consumer(&self) -> AffineSpscReceiver<'queue, T, DEPTH> {
-        self.queue.resume_consumer()
-    }
 }
 
-impl<T, const DEPTH: usize> Drop for AffineSpscSender<'_, T, DEPTH> {
-    fn drop(&mut self) {
-        self.queue.release_endpoint(PRODUCER_ACTIVE);
+/// Exclusive right to publish one value into a proven vacant SPSC cell.
+///
+/// The producer endpoint remains borrowed; the consumer can only free more
+/// cells. Dropping an unused permit leaves the cursor and capacity unchanged.
+#[must_use = "send a value or drop the permit to release the producer borrow"]
+pub struct AffineSpscSendPermit<'sender, T, const DEPTH: usize> {
+    queue: &'sender AffineSpscQueue<T, DEPTH>,
+    producer: usize,
+    _not_sync: PhantomData<Cell<()>>,
+}
+
+impl<T, const DEPTH: usize> AffineSpscSendPermit<'_, T, DEPTH> {
+    /// Publish into the reserved cell, transferring the complete owner.
+    pub fn send(self, value: T) {
+        #[allow(
+            unsafe_code,
+            reason = "the sole producer's permit retains its proven vacant cell"
+        )]
+        // SAFETY: vacant_slot acquired the consumer cursor after the previous
+        // value moved out. The permit's exclusive producer borrow prevents a
+        // competing publication or a second permit at this cursor. The only
+        // other endpoint can only advance the consumer, so this cell remains
+        // vacant until this write and its following Release publication.
+        unsafe {
+            (*self.queue.values[self.producer % DEPTH].get()).write(value);
+        }
+        self.queue.producer.0.store(
+            AffineSpscQueue::<T, DEPTH>::advance(self.producer),
+            Ordering::Release,
+        );
     }
 }
 
@@ -281,12 +301,6 @@ impl<T, const DEPTH: usize> AffineSpscReceiver<'_, T, DEPTH> {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-}
-
-impl<T, const DEPTH: usize> Drop for AffineSpscReceiver<'_, T, DEPTH> {
-    fn drop(&mut self) {
-        self.queue.release_endpoint(CONSUMER_ACTIVE);
     }
 }
 

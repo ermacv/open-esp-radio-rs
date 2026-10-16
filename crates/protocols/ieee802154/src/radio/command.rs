@@ -10,7 +10,7 @@ use crate::mac::time_sync::TimeSync;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 ///
 /// Enabling and disabling the radio are the owner's transitions
-/// (`Owner::enable` and `Owner::disable` of `oer-ieee802154-port`), not
+/// (`Owner::enable` and `Owner::disable` of `oer-radio-port`), not
 /// submissions.
 pub enum RadioCommand<'frame> {
     /// Leave receive mode and enter sleep.

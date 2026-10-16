@@ -13,13 +13,12 @@ use oer_hil_schema::image::ImageClass;
 
 use super::firmware;
 use crate::Artifacts;
-use oer_hil_image_class::{NETWORK, NETWORK_FEATURE};
 use oer_image_bundle::{Lock, Staged, files};
 
 /// The Rust target of the fixture images.
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 
-/// Owned-Xarxa correctness artifacts: a staged bundle beside `application`
+/// Bluetooth GATT artifacts: a staged bundle beside `application`
 /// holding the given files, with one lock standing in for both effective
 /// locks and a host-independent environment.
 fn test_artifacts(
@@ -101,7 +100,7 @@ fn firmware_record_archives_the_exact_application() {
         .unwrap();
     firmware::record(
         &mut first_session,
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         &test_artifacts(
             &application,
             &runtime_elf,
@@ -114,7 +113,7 @@ fn firmware_record_archives_the_exact_application() {
     let artifact = &first_session.manifest().firmware[0];
     assert_eq!(
         artifact.application_path,
-        PathBuf::from("firmware/correctness/application.bin")
+        PathBuf::from("firmware/bluetooth-gatt/application.bin")
     );
     assert_eq!(artifact.application_size_bytes, 17);
     assert_eq!(
@@ -171,11 +170,11 @@ fn firmware_record_archives_the_exact_application() {
     // own recipe on it, which links no network.
     assert_eq!(
         provenance.parameters.network.as_deref(),
-        oer_hil_image_class::network_on(ImageClass::Correctness, TEST_CHIP)
+        oer_hil_image_class::network_on(ImageClass::BluetoothGatt, TEST_CHIP)
     );
     assert_eq!(
         provenance.parameters.runtime_features,
-        oer_hil_image_class::build_features_on(ImageClass::Correctness, TEST_CHIP)
+        oer_hil_image_class::build_features_on(ImageClass::BluetoothGatt, TEST_CHIP)
     );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
@@ -190,7 +189,7 @@ fn firmware_record_archives_the_exact_application() {
     assert!(
         firmware::record(
             &mut first_session,
-            ImageClass::Correctness,
+            ImageClass::BluetoothGatt,
             &test_artifacts(
                 &application,
                 &runtime_elf,
@@ -213,7 +212,7 @@ fn firmware_record_archives_the_exact_application() {
     fs::create_dir_all(run_directory.join(&artifacts)).unwrap();
     let result = oer_hil_run_bundle_format::run::ScenarioResult::from_repetitions(
         scenario.id().to_owned(),
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         scenario.repetitions(),
         vec![oer_hil_run_bundle_format::run::RepetitionResult {
             schema: oer_hil_run_bundle_format::run::RUN_SCHEMA,
@@ -249,7 +248,7 @@ fn firmware_record_archives_the_exact_application() {
         .unwrap();
     firmware::record(
         &mut second,
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         &test_artifacts(
             &application,
             &runtime_elf,
@@ -303,7 +302,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
         .unwrap();
     firmware::record(
         &mut source,
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         &test_artifacts(
             &application,
             &runtime_elf,
@@ -321,7 +320,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
         &root,
         "chip-a",
         "source-run",
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();
@@ -356,70 +355,4 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     .unwrap();
     assert_eq!(verified.verified_run_ids, ["replay-run"]);
     fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn provenance_records_the_network_implementation_and_its_feature() {
-    let root = temporary_directory("build-selection");
-    let chip = network_chip();
-    write_build_materials_of(&root, chip);
-    let provenance = firmware::create_provenance(
-        &root,
-        (
-            ImageClass::Correctness,
-            None,
-            &oer_hil_schema::image::FeatureDelta::default(),
-            (chip, TARGET),
-        ),
-        "00".repeat(32),
-        vec![],
-        vec![],
-        vec![],
-        oer_hil_run_bundle::build::synthetic_environment(),
-    )
-    .unwrap();
-    assert_eq!(provenance.parameters.network.as_deref(), Some(NETWORK));
-    assert!(
-        provenance
-            .parameters
-            .runtime_features
-            .split(',')
-            .any(|feature| feature == NETWORK_FEATURE)
-    );
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// A chip whose HIL agent links the network integration.
-fn network_chip() -> &'static str {
-    oer_hil_image_class::agent_chips()
-        .find(|chip| oer_hil_image_class::declares(chip, NETWORK_FEATURE))
-        .expect("a chip's HIL agent declares the network integration")
-}
-
-/// The fixture chip's build materials below `root`, as `chip`'s.
-fn write_build_materials_of(root: &Path, chip: &str) {
-    let fixture = temporary_directory("fixture-materials");
-    write_test_build_materials(&fixture);
-    for directory in ["hil/targets", "platform"] {
-        let from = fixture.join(directory).join(TEST_CHIP);
-        let to = root.join(directory).join(chip);
-        fs::create_dir_all(&to).unwrap();
-        copy_tree(&from, &to, chip);
-    }
-    fs::copy(fixture.join("Cargo.lock"), root.join("Cargo.lock")).unwrap();
-    fs::remove_dir_all(fixture).unwrap();
-}
-
-fn copy_tree(from: &Path, to: &Path, chip: &str) {
-    for entry in fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            fs::create_dir_all(&target).unwrap();
-            copy_tree(&entry.path(), &target, chip);
-        } else {
-            let text = fs::read_to_string(entry.path()).unwrap();
-            fs::write(target, text.replace(TEST_CHIP, chip)).unwrap();
-        }
-    }
 }

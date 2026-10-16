@@ -1,15 +1,6 @@
 //! Deadlines of the station's state machines on the image's monotonic time.
 
-use oer_time::{Duration, Instant};
-
-/// The deadline `duration` after `now`.
-///
-/// A deadline past the representable range of monotonic time never comes, so
-/// it is the end of that range rather than an error: `u64` microseconds last
-/// far longer than any image runs.
-pub(crate) const fn deadline_after(now: Instant, duration: Duration) -> Instant {
-    now.saturating_add(duration)
-}
+use oer_time::Instant;
 
 /// The earlier of two optional deadlines.
 pub const fn earliest(left: Option<Instant>, right: Option<Instant>) -> Option<Instant> {
@@ -27,19 +18,6 @@ pub const fn earliest(left: Option<Instant>, right: Option<Instant>) -> Option<I
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_deadline_past_the_time_range_never_comes() {
-        let late = Instant::from_micros(u64::MAX - 1);
-        assert_eq!(
-            deadline_after(late, Duration::from_secs(1)),
-            Instant::from_micros(u64::MAX)
-        );
-        assert_eq!(
-            deadline_after(Instant::from_micros(5), Duration::from_micros(10)),
-            Instant::from_micros(15)
-        );
-    }
 
     #[test]
     fn earliest_keeps_the_sooner_deadline() {

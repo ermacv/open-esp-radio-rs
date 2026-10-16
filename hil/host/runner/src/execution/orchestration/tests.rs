@@ -157,13 +157,13 @@ fn image_build_and_flash_failures_block_the_group_but_continue_later_classes() {
     let first = catalog
         .all()
         .iter()
-        .find(|scenario| scenario.image() == ImageClass::BootSmoke)
-        .expect("boot-smoke scenario");
+        .find(|scenario| scenario.image() == ImageClass::BluetoothGatt)
+        .expect("Bluetooth GATT scenario");
     let second = catalog
         .all()
         .iter()
-        .find(|scenario| scenario.image() == ImageClass::Performance)
-        .expect("performance scenario");
+        .find(|scenario| scenario.image() == ImageClass::BootSmoke)
+        .expect("boot-smoke scenario");
 
     for kind in [FailureKind::ImageBuild, FailureKind::ImageFlash] {
         let root = tempfile::tempdir().unwrap();
@@ -382,7 +382,7 @@ fn named_scenarios_keep_their_order_and_replay_needs_one_image_class() {
     let other = catalog
         .all()
         .iter()
-        .find(|scenario| scenario.image() != first.image())
+        .find(|scenario| scenario.image() != first.image() && scenario.header.unsupported.is_none())
         .unwrap();
     let mixed = named_scenarios(&catalog, &[first.id().to_owned(), other.id().to_owned()]).unwrap();
     assert!(single_image_class(&mixed).is_err());
@@ -451,8 +451,8 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
             Emits::Noisy
         )));
     }
-    // Scenario ranges follow the family through the registry: 802.15.4 its
-    // channel, a radio-free image none, Wi-Fi its link's channel.
+    // Scenario ranges follow the family through the registry: a radio-free
+    // image none, Bluetooth the band.
     let find = |key: &str, predicate: &dyn Fn(&serde_json::Value) -> bool| {
         catalog
             .all()
@@ -460,19 +460,8 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
             .find(|scenario| scenario.family.key() == key && predicate(&scenario.family.table()))
             .expect("the catalog has such a scenario")
     };
-    let peer = find("ieee802154", &|table| table["kind"] == "peer-exchange");
-    let channel = u8::try_from(peer.family.table()["channel"].as_u64().unwrap()).unwrap();
-    let expected = Spectrum::ieee802154(channel, Need::Tolerant, Emits::Normal);
-    assert_eq!(air_use(&lab, peer), [expected]);
     let watchdog = find("system", &|table| table["kind"] == "watchdog");
     assert!(lease_request(&[watchdog]).air.is_empty());
-    let wifi = find("wifi", &|_| true);
-    let [range] = air_use(&lab, wifi)[..] else {
-        panic!("a Wi-Fi scenario occupies one range");
-    };
-    let (low, high) = (range.low_khz, range.high_khz);
-    assert_eq!((low, high), lab.wifi_range_khz(wifi.plan().wifi));
-    assert!(BAND_2G4.0 <= low && high <= BAND_2G4.1 + 1_000 && high - low <= 42_000);
     let bluetooth = find("bluetooth", &|_| true);
     // Need and emission follow the scenario's air tags; the range is the band.
     let [range] = air_use(&lab, bluetooth)[..] else {
@@ -505,19 +494,19 @@ fn the_then_command_joins_the_lease_and_names_the_run() {
 fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
     let catalog = catalog();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let icmp = catalog.get("icmp-latency").unwrap();
+    let gatt = catalog.get("bluetooth-trouble-gatt").unwrap();
     let watchdog = catalog.get("system-watchdog").unwrap();
     let building = |classes: &[ImageClass]| oer_hil_image::chips_building(&root, classes).unwrap();
-    // Exactly one chip's agent builds the correctness image.
-    let [full] = building(&[ImageClass::Correctness]).try_into().unwrap();
-    assert_eq!(select_chip(&root, &[icmp], None).unwrap(), full);
+    // Exactly one chip's agent builds the Bluetooth GATT image.
+    let [full] = building(&[ImageClass::BluetoothGatt]).try_into().unwrap();
+    assert_eq!(select_chip(&root, &[gatt], None).unwrap(), full);
     let others: Vec<String> = oer_chip_profile::supported(&root)
         .unwrap()
         .into_iter()
         .filter(|chip| *chip != full)
         .collect();
     for other in &others {
-        assert!(select_chip(&root, &[icmp], Some(other)).is_err());
+        assert!(select_chip(&root, &[gatt], Some(other)).is_err());
     }
     // Several chips build the watchdog image: the run names one.
     let watchdogs = building(&[ImageClass::SystemWatchdog]);
@@ -532,7 +521,7 @@ fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
     for chip in &watchdogs {
         assert_eq!(select_chip(&root, &[watchdog], Some(chip)).unwrap(), *chip);
     }
-    assert_eq!(select_chip(&root, &[icmp, watchdog], None).unwrap(), full);
+    assert_eq!(select_chip(&root, &[gatt, watchdog], None).unwrap(), full);
 }
 
 #[test]

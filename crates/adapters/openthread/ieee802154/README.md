@@ -153,9 +153,15 @@ CMake, Clang and libclang; host builds of the workspace do not compile it.
 
 ## Limits
 
-The HIL cell `ieee802154-thread-exchange` attaches an end device over the
-adapter to a network ESP-IDF's OpenThread leads and exchanges UDP both ways;
+The former HIL cell `ieee802154-thread-exchange` (tag `legacy-wifi-2026-10-16`) attached an end
+device over the adapter to a network ESP-IDF's OpenThread leads and exchanged
+UDP both ways; no HIL scenario runs it now;
 CSL, time synchronization and secured enhanced ACKs are not exercised on air.
 The
 [Thread example](../../../../examples/esp32s31/thread/README.md) runs an
 OpenThread end device over it.
+
+The adapter keeps the client's operation-pool path in its waiter seat and
+the interface component's child paths in `PendingSlots`. Returning the
+parts preserves both domains; slots from another component cannot be
+inserted into the configured interface.

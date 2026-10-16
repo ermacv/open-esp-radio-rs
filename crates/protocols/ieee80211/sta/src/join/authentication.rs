@@ -1,5 +1,6 @@
 //! Open Authentication attempts, deadline results and retry ownership.
 
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::{
     StaDisconnect, StaSequenceCounter, parse_open_authentication_response, parse_sta_disconnect,
@@ -27,14 +28,15 @@ pub enum StaAuthenticationFailure {
 }
 
 /// Result of observing a management frame or expiring an attempt deadline.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum StaAuthenticationEvent {
-    Irrelevant,
+    Irrelevant(StaAuthenticationExchange),
     Authenticated {
         attempt: u16,
         total_received_frames: u32,
     },
     Retry {
+        runtime: StaAuthenticationRuntime,
         attempt: u16,
         failure: StaAuthenticationFailure,
         received_frames: u32,
@@ -45,14 +47,6 @@ pub enum StaAuthenticationEvent {
         failure: StaAuthenticationFailure,
         total_received_frames: u32,
     },
-}
-
-/// Invalid executor interaction with [`StaAuthenticationRuntime`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaAuthenticationRuntimeError {
-    AttemptAlreadyActive,
-    NoActiveAttempt,
-    Terminal,
 }
 
 /// Allocation-free owner of the ordinary Open Authentication retry epoch.
@@ -66,142 +60,140 @@ pub enum StaAuthenticationRuntimeError {
 /// ieee80211_sta_new_state` ordinary Authentication branch arms the 1,000-ms
 /// state timer. This runtime owns the open STA policy of at most three
 /// authentication attempts, including sequence allocation and timer outcomes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct StaAuthenticationRuntime {
-    local: [u8; 6],
-    bssid: [u8; 6],
+    local: OwnAddress,
+    bssid: Bssid,
     attempts_started: u16,
-    active: bool,
-    terminal: bool,
-    received_frames: u32,
     total_received_frames: u32,
 }
 
+/// One active exchange. Only this owner accepts received frames or a timeout;
+/// finishing it either consumes the epoch or returns the next retry owner.
+#[derive(Debug)]
+pub struct StaAuthenticationExchange {
+    runtime: StaAuthenticationRuntime,
+    received_frames: u32,
+}
+
 impl StaAuthenticationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6]) -> Self {
+    pub const fn new(local: OwnAddress, bssid: Bssid) -> Self {
         Self {
             local,
             bssid,
             attempts_started: 0,
-            active: false,
-            terminal: false,
-            received_frames: 0,
             total_received_frames: 0,
         }
     }
 
-    /// Start the next bounded attempt and consume exactly one management
-    /// sequence number. Hardware retransmission of the encoded request does
-    /// not call this method again.
+    /// Consume a retry owner and exactly one management sequence. The station
+    /// reserves its TX credit first. No active or terminal epoch has this
+    /// operation; only `Retry` below can produce another runtime owner.
     pub fn begin_attempt(
-        &mut self,
+        mut self,
         sequence: &mut StaSequenceCounter,
-    ) -> Result<StaAuthenticationAttempt, StaAuthenticationRuntimeError> {
-        if self.terminal || self.attempts_started >= STA_AUTHENTICATION_ATTEMPT_LIMIT {
-            return Err(StaAuthenticationRuntimeError::Terminal);
-        }
-        if self.active {
-            return Err(StaAuthenticationRuntimeError::AttemptAlreadyActive);
-        }
-        self.attempts_started += 1;
-        self.active = true;
-        self.received_frames = 0;
-        Ok(StaAuthenticationAttempt {
+    ) -> (StaAuthenticationExchange, StaAuthenticationAttempt) {
+        // Only `new` or a retry below the three-attempt limit creates this
+        // owner, so the increment cannot reach the integer bound.
+        self.attempts_started = self.attempts_started.saturating_add(1);
+        let attempt = StaAuthenticationAttempt {
             ordinal: self.attempts_started,
             sequence_number: sequence.take(),
             response_timeout: STA_RESPONSE_TIMEOUT,
-        })
-    }
-
-    /// Account for one completed RX descriptor, including a frame which is
-    /// not a valid management input. This preserves the diagnostic count while
-    /// keeping frame parsing separately typed.
-    pub fn observe_received_frame(&mut self) -> Result<(), StaAuthenticationRuntimeError> {
-        if !self.active {
-            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
-        }
-        self.received_frames = self.received_frames.saturating_add(1);
-        Ok(())
-    }
-
-    /// Classify one extracted management frame for the active peer exchange.
-    pub fn observe_management_frame(
-        &mut self,
-        frame: &[u8],
-    ) -> Result<StaAuthenticationEvent, StaAuthenticationRuntimeError> {
-        if !self.active {
-            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
-        }
-        if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
-            return Ok(self.finish_retryable(StaAuthenticationFailure::PeerDisconnect(disconnect)));
-        }
-        let Some(response) = parse_open_authentication_response(frame, self.local, self.bssid)
-        else {
-            return Ok(StaAuthenticationEvent::Irrelevant);
         };
-        self.finish_attempt();
-        self.terminal = true;
-        if response.status_code == 0 {
-            Ok(StaAuthenticationEvent::Authenticated {
-                attempt: self.attempts_started,
-                total_received_frames: self.total_received_frames,
-            })
-        } else {
-            Ok(StaAuthenticationEvent::Failed {
-                attempts: self.attempts_started,
-                failure: StaAuthenticationFailure::Rejected {
-                    status_code: response.status_code,
-                },
-                total_received_frames: self.total_received_frames,
-            })
-        }
-    }
-
-    /// Expire the complete vendor state deadline for the active attempt.
-    pub fn response_timed_out(
-        &mut self,
-    ) -> Result<StaAuthenticationEvent, StaAuthenticationRuntimeError> {
-        if !self.active {
-            return Err(StaAuthenticationRuntimeError::NoActiveAttempt);
-        }
-        Ok(self.finish_retryable(StaAuthenticationFailure::Timeout))
+        (
+            StaAuthenticationExchange {
+                runtime: self,
+                received_frames: 0,
+            },
+            attempt,
+        )
     }
 
     pub const fn total_received_frames(&self) -> u32 {
         self.total_received_frames
-            .saturating_add(self.received_frames)
+    }
+}
+
+impl StaAuthenticationExchange {
+    /// Account for one received descriptor while this exchange owns RX.
+    pub fn observe_received_frame(&mut self) {
+        self.received_frames = self.received_frames.saturating_add(1);
     }
 
-    pub const fn active_received_frames(&self) -> u32 {
-        self.received_frames
-    }
-
-    fn finish_retryable(&mut self, failure: StaAuthenticationFailure) -> StaAuthenticationEvent {
-        let received_frames = self.received_frames;
-        self.finish_attempt();
-        if self.attempts_started < STA_AUTHENTICATION_ATTEMPT_LIMIT {
-            StaAuthenticationEvent::Retry {
-                attempt: self.attempts_started,
-                failure,
-                received_frames,
-                total_received_frames: self.total_received_frames,
+    /// Consume the active exchange and classify one management frame.
+    /// An irrelevant input returns this same owner unchanged.
+    pub fn observe_management_frame(self, frame: &[u8]) -> StaAuthenticationEvent {
+        if let Some(disconnect) =
+            parse_sta_disconnect(frame, self.runtime.local, self.runtime.bssid)
+        {
+            return self.finish_retryable(StaAuthenticationFailure::PeerDisconnect(disconnect));
+        }
+        let Some(response) = parse_open_authentication_response(
+            frame,
+            self.runtime.local.get(),
+            self.runtime.bssid.get(),
+        ) else {
+            return StaAuthenticationEvent::Irrelevant(self);
+        };
+        let runtime = self.finish_attempt();
+        if response.status_code == 0 {
+            StaAuthenticationEvent::Authenticated {
+                attempt: runtime.attempts_started,
+                total_received_frames: runtime.total_received_frames,
             }
         } else {
-            self.terminal = true;
             StaAuthenticationEvent::Failed {
-                attempts: self.attempts_started,
-                failure,
-                total_received_frames: self.total_received_frames,
+                attempts: runtime.attempts_started,
+                failure: StaAuthenticationFailure::Rejected {
+                    status_code: response.status_code,
+                },
+                total_received_frames: runtime.total_received_frames,
             }
         }
     }
 
-    fn finish_attempt(&mut self) {
-        self.total_received_frames = self
+    /// Expire this attempt once, returning either its retry owner or failure.
+    pub fn response_timed_out(self) -> StaAuthenticationEvent {
+        self.finish_retryable(StaAuthenticationFailure::Timeout)
+    }
+
+    pub const fn total_received_frames(&self) -> u32 {
+        self.runtime
+            .total_received_frames
+            .saturating_add(self.received_frames)
+    }
+    pub const fn active_received_frames(&self) -> u32 {
+        self.received_frames
+    }
+
+    fn finish_retryable(self, failure: StaAuthenticationFailure) -> StaAuthenticationEvent {
+        let received_frames = self.received_frames;
+        let runtime = self.finish_attempt();
+        let attempt = runtime.attempts_started;
+        let total_received_frames = runtime.total_received_frames;
+        if attempt < STA_AUTHENTICATION_ATTEMPT_LIMIT {
+            StaAuthenticationEvent::Retry {
+                runtime,
+                attempt,
+                failure,
+                received_frames,
+                total_received_frames,
+            }
+        } else {
+            StaAuthenticationEvent::Failed {
+                attempts: attempt,
+                failure,
+                total_received_frames,
+            }
+        }
+    }
+    fn finish_attempt(self) -> StaAuthenticationRuntime {
+        let mut runtime = self.runtime;
+        runtime.total_received_frames = runtime
             .total_received_frames
             .saturating_add(self.received_frames);
-        self.received_frames = 0;
-        self.active = false;
+        runtime
     }
 }
 

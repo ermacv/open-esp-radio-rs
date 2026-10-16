@@ -1,6 +1,6 @@
 use super::{
-    BluetoothTaskRegisters, Ieee802154TaskRegisters, MacInterruptMask, RadioPartitions,
-    SharedRadioParts, SharedRadioRegisters, WifiRadioRegisters,
+    BluetoothTaskRegisters, Ieee802154TaskRegisters, RadioPartitions, SharedRadioParts,
+    SharedRadioRegisters, WifiRadioRegisters,
 };
 
 fn wifi_registers(partitions: RadioPartitions) -> (WifiRadioRegisters, super::MacInterruptSetup) {
@@ -50,22 +50,4 @@ fn ieee802154_register_set_reunites_its_interrupt_owner() {
     let RadioPartitions { ieee802154, .. } = RadioPartitions::for_validation();
     let (task, interrupts) = Ieee802154TaskRegisters::new(ieee802154);
     let _partition = task.into_partition(interrupts);
-}
-
-#[test]
-fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
-    let (mut registers, mut interrupts) = wifi_registers(RadioPartitions::for_validation());
-    assert!(!registers.initialize_mac_hal_tail(
-        &mut interrupts,
-        MacInterruptMask::COLD_RX,
-        0x0004_0000
-    ));
-    assert!(!registers.initialize_mac_hal_tail(&mut interrupts, MacInterruptMask::NONE, u32::MAX));
-}
-
-#[test]
-fn mac_txrx_callbacks_reject_out_of_range_slot_before_mmio() {
-    let (mut registers, _interrupts) = wifi_registers(RadioPartitions::for_validation());
-    assert!(!registers.initialize_mac_txrx_callbacks(11));
-    assert!(!registers.initialize_mac_txrx_callbacks(u8::MAX));
 }

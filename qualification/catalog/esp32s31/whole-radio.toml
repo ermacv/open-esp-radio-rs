@@ -330,9 +330,8 @@ id = "whole-radio-coverage-index-wifi"
 section = "whole-radio-coverage-index"
 title = "Wi-Fi"
 kind = "source-reference"
-details = "Inventory: [IEEE 802.11](ieee80211/FEATURES.md)\n\nCurrent qualification authority: [wifi-sta.toml](../../../../qualification/targets/esp32s31/wifi-sta.toml)"
+details = "Inventory: [IEEE 802.11](ieee80211/FEATURES.md)\n\nCurrent qualification authority: none; no Wi-Fi program exists"
 packages = ["oer-esp32s31-ieee80211"]
-documents = ["qualification/targets/esp32s31/wifi-sta.toml"]
 
 [[references]]
 id = "whole-radio-coverage-index-bluetooth"

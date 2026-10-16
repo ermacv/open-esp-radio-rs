@@ -1,5 +1,34 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![deny(
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unreachable,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::disallowed_macros
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::arithmetic_side_effects,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::disallowed_macros,
+    )
+)]
 
 //! Portable IEEE 802.11 transmit policy above the lower-MAC port.
 //!
@@ -21,9 +50,9 @@
 //!   statistics.
 //!
 //! The package is sans-IO: completions and the radio time enter as values,
-//! attempt plans and reports leave as values, and nothing waits. The driver
-//! that submits the plans to a port and awaits its events is
-//! `oer-ieee80211-upper-mac-service`. Vendor retry schedules, limits and
+//! attempt plans and reports leave as values, and nothing waits. The station
+//! service in `oer-ieee80211-runtime` submits to the port and feeds its
+//! terminals into rate selection. Vendor retry schedules, limits and
 //! duration estimates are parameters a profile supplies, such as
 //! `oer-espressif-ieee80211-policy`.
 
@@ -31,6 +60,7 @@ pub mod aggregate;
 pub mod ampdu;
 pub mod protection;
 pub mod rate_control;
+pub mod rate_selection;
 pub mod retry;
 pub mod tx;
 

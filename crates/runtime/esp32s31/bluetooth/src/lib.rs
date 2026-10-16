@@ -6,16 +6,18 @@
 //!
 //! The radio is a port backend ([`BluetoothBackend`], an
 //! [`oer_bluetooth_radio::LeRadioBackend`]) run under the shared port owner
-//! ([`oer_bluetooth_port::run_port`]), with a driver that owns the radio role
+//! ([`oer_radio_port::run_port`]), with a driver that owns the radio role
 //! and its hardware by value ([`BluetoothDriver`]). [`BluetoothRuntime`] is
 //! the part the backend, the driver and the platform share: the outcome
 //! queue, the request exchange, the poison and the wakes, behind signals,
-//! atomics and short synchronous sections; nothing holds a lock across an
-//! await.
+//! atomics and short synchronous sections. Shared runtime locks end before
+//! awaits. The driver's sole affine loan holds its private `RefCell` borrow
+//! across drive; no other task or ISR can reach that cell. Cancellation ends
+//! this borrow and leaves all radio and hardware owners in the core's driver.
 //!
 //! - [`BluetoothRuntime::install`] publishes the global receive chains, takes
 //!   the first controller-time sample and returns the backend with the
-//!   driver inside, so no call is refused as not installed.
+//!   independent driver in `Installed`, so no call is refused as not installed.
 //! - The driver, which `run_port` joins with the port's body, drives the
 //!   scheduler: it reports finished events, inserts admitted events, starts
 //!   the idle scheduler, carries list transactions through their hardware
@@ -32,6 +34,29 @@
 //!   maintenance never pauses the port: it runs under the radio arbiter's
 //!   lease with the vendor grant-protect brackets, and an event that loses
 //!   RF to it ends as an ordinary outcome.
+//!
+//! A runner or platform fault first ends every admitted event's software
+//! record. An event never exposed to execution ends `NotExecuted`; an event
+//! whose execution may have begun ends `Indeterminate`. These fault terminals
+//! release no hardware memory. The consumer drains them before
+//! `EventEnd::Drained`. Unconfirmed abandonment returns `Quarantined`
+//! immediately without queue or fault locks, retaining unread ownership in
+//! `PortEnd`; commands keep reporting `Poisoned`. The end is final across
+//! repeated calls and phase loans.
+//! A disable sink that rejects an outcome poisons with
+//! `BluetoothRuntimeFault::TerminalRejected`. The scheduler is already
+//! stopped and every admitted event accounted: the driver completes normal
+//! retirement, including PHY-route restoration. `Uninstalled::TerminalsQuarantined`
+//! returns hardware separately from the unread queue; composition can release
+//! its clocks and PHY membership. The stream ends `EventEnd::Quarantined`.
+//! Only the old queue and its affine [`RuntimeQueue`] claim remain retained.
+//! Initial installation consumes a claim from [`BluetoothRuntime::take_queue`];
+//! ordinary uninstall returns it. A rejected queue never issues another claim,
+//! so reinstalling returned hardware needs a fresh runtime and queue.
+//!
+//! Only confirmed retirement returns hardware; `BluetoothRetained`
+//! holds all other role, hardware and PHY-route owners in the shared
+//! `Quarantined`, whose destruction frees nothing and requires chip reset.
 //!
 //! A refused request is an answer to the Controller core, and a fault
 //! poisons the port with its [`BluetoothFault`]. Submission and the clock
@@ -81,7 +106,7 @@ pub use port::{BluetoothBackend, BluetoothClient, BluetoothEvents, BluetoothPhas
 pub use runtime::{
     BluetoothDriver, BluetoothFault, BluetoothInstallError, BluetoothRetained, BluetoothRuntime,
     BluetoothRuntimeFault, BluetoothTimeError, BluetoothUninstallError, HARDWARE_RECHECK,
-    TIME_REFRESH, TRANSITION_BOUND,
+    RuntimeQueue, TIME_REFRESH, TRANSITION_BOUND, Uninstalled,
 };
 
 #[cfg(test)]

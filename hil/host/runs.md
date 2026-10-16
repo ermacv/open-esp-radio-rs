@@ -15,7 +15,7 @@ link, and refuses a checkout whose own run directory holds runs. Qualification r
 per bundle whether it applies to that checkout's sources.
 
 ```console
-cargo hil runs list --scenario station-reconnect --outcome failed --since 7d
+cargo hil runs list --scenario bluetooth-trouble-gatt --outcome failed --since 7d
 cargo hil runs show <run-id>          # where its artifacts are
 cargo hil runs why <run-id>
 cargo hil runs compare <run-a> <run-b> --measurement mbps
@@ -65,12 +65,7 @@ watchdog to reset a stalled image. A post-mortem hang makes the failure
 archived `runtime.elf` (function, the function it was inlined into, and the
 source line), and the code the stalled hart kept running; a core 1 stall seen
 together with a core 0 stall is reported as depending on core 0's timers.
-The watchdog also sees a task that awaits forever while both executors run:
-a task whose work can wait for it owns a named slot (`console`,
-`session-evidence`) in `oer_hil_agent::liveness`, armed while its work
-waits, and a slot armed past its deadline (5 s for the console, 10 s for
-session evidence) is a hang of that task, reported as `hang: task <slot> made
-no progress for N ms while executors ran`. A
+A
 reset the runner did not cause (neither USB Serial/JTAG nor JTAG) makes it
 `unexpected-reset` with the reset reason and code. Both name the last
 checkpoints the ended boot passed. The exchange and the workload's own
@@ -343,8 +338,8 @@ no evidence.
 ## A/B comparison
 
 ```console
-cargo hil ab --a 'rev=main' --b 'rev=main;override:xarxa=/home/me/src/xarxa' \
-  --scenario udp-rx-ht40-task-residence-saturated --repetitions 3 --layout-seeds 2 \
+cargo hil ab --a 'rev=main' --b 'rev=main;override:esp-hal=/home/me/src/esp-hal' \
+  --scenario bluetooth-dtm-bidirectional --repetitions 3 --layout-seeds 2 \
   --order-seed 7
 ```
 
@@ -354,9 +349,8 @@ seed is recorded in the report and every run's manifest.
 
 `ab` compares two variants of the firmware on the same scenarios. A variant
 is a repository revision (`rev=`, HEAD when omitted) and, after `;`, local
-checkouts that replace pinned dependencies (`override:esp-hal=`,
-`override:embassy=`, `override:xarxa=`, the checkouts `ESP_HAL_ROOT`,
-`EMBASSY_ROOT` and `OPEN_RADIO_XARXA_ROOT` name). A variant may also add or remove
+checkouts that replace pinned dependencies (`override:esp-hal=`, the
+checkout `ESP_HAL_ROOT` names). A variant may also add or remove
 runtime features of every image class it builds, `features=+trace,-psram-stack`:
 its runs build with `cargo hil run --features`, which only an experiment
 accepts, the build record keeps the delta, the preflight accepts the flashed
@@ -398,24 +392,20 @@ measurement without one complete pair is reported as `no-pairs`.
 A measurement's direction is the `better` (`higher` or `lower`) its
 producer declares, or its gate's; a significant difference of one without a
 direction is reported as `changed` with the higher arm, never as better.
-Performance and correctness images measure each core's CPU load over the
-traffic window (`cpu.core0.load`, `cpu.core1.load`, lower is better), so a
-change that keeps the throughput but costs more CPU shows as a significant
-load difference; `features=-cpu-load` on one arm compares an image without
-the instrument. `ab-report.json` beside the worktrees
+`ab-report.json` beside the worktrees
 holds the variants, every run and every comparison; the command prints a
 summary.
 
 ## Performance across commits
 
 A scenario's gated measurements, those with an `at-least` or `at-most`
-threshold such as UDP rates, are its performance figures; the threshold also
+threshold, are its performance figures; the threshold also
 fixes which direction is better.
 
 ```console
 cargo hil perf report --since 7d                     # every gated scenario, per commit
-cargo hil perf report udp-tx-ht40-ceiling --measurement host-rate
-cargo hil perf baseline <run-id> --reason "owned-xarxa baseline"
+cargo hil perf report <scenario> --measurement <measurement>
+cargo hil perf baseline <run-id> --reason "<why this run is the baseline>"
 cargo hil perf check <run-id>                        # exit 1 on a regression
 ```
 

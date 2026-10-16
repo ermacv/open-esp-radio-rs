@@ -95,7 +95,11 @@ impl Backend {
             },
         );
         let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-        let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
+        let gtk = RsnGtk::new(
+            oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+            false,
+            &[0x5a; 16],
+        );
         let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
         let frame = RsnTxFrame::<512>::message3(
             Akm::Psk,
@@ -343,7 +347,7 @@ fn key_install_runner_publishes_m4_and_returns_typed_key_ownership() {
     let established = embassy_futures::block_on(runner.run(pending_key_install())).unwrap();
 
     assert_eq!(established.metadata().replay_counter, 8);
-    assert_eq!(established.metadata().group_key_id, 2);
+    assert_eq!(established.metadata().group_key_id.get(), 2);
     assert_eq!(established.metadata().completed_frames, 2);
     assert_eq!(established.metadata().message2_transmissions, 1);
     assert_eq!(established.into_parts().0, 0xa5);

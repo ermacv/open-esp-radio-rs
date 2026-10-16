@@ -23,8 +23,7 @@ mod validation;
 
 pub use oer_hil_link::Result;
 pub use readiness::{
-    TcpReady, UdpRxReady, UdpTxReady, await_network_ready, await_tcp_ready, await_udp_rx_ready,
-    await_udp_tx_ready, prepare_udp_reverse_flow, probe_udp_rx_ready, probe_udp_rx_ready_via,
+    UdpRxReady, prepare_udp_reverse_flow, probe_udp_rx_ready, probe_udp_rx_ready_via,
 };
 pub use session::{NetworkSession, SESSION_START_TIMEOUT, SessionEvidence, SessionHandle};
 pub use validation::validate_stack_usage;

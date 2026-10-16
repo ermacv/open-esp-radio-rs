@@ -3,9 +3,13 @@
 
 //! Source-owned ESP32-S31 Wi-Fi MAC building blocks.
 //!
-//! This crate intentionally contains no ESP-IDF ABI, vendor archive, allocator,
+//! Production builds contain no ESP-IDF ABI, vendor archive, allocator,
 //! executor, or `esp-hal` dependency. Target code supplies volatile MMIO and
 //! owns the interrupt binding; the state machines here stay host-testable.
+//! The explicit `test-support` feature enables synthetic completion evidence
+//! and DMA models on both host and RV32, including A-MPDU formatter buffers
+//! and synthetic RX bindings. These APIs require hardware doubles. Production
+//! builds validate real DMA addresses on every architecture.
 
 #[cfg(test)]
 extern crate std;

@@ -21,7 +21,7 @@ fn deauthentication(mic: [u8; 8], ipn: u8) -> Vec<u8> {
 const MIC: [u8; 8] = [0xeb, 0x79, 0x2a, 0x77, 0x23, 0x5b, 0xf1, 0x7a];
 
 fn receiver(ipn: u8) -> BipReceiver {
-    BipReceiver::new(&RsnIgtk::new(4, [ipn, 0, 0, 0, 0, 0], [0x77; 16]).unwrap())
+    BipReceiver::new(&RsnIgtk::new(4, [ipn, 0, 0, 0, 0, 0], &[0x77; 16]).unwrap())
 }
 
 #[test]
@@ -71,16 +71,16 @@ fn a_repeated_igtk_keeps_its_replay_state_and_a_new_one_resets_it() {
     let mut bip = receiver(8);
     assert_eq!(bip.verify(&deauthentication(MIC, 9)), Ok(()));
     // The same IGTK redelivered with an older IPN.
-    bip.rekey(&RsnIgtk::new(4, [2, 0, 0, 0, 0, 0], [0x77; 16]).unwrap());
+    bip.rekey(&RsnIgtk::new(4, [2, 0, 0, 0, 0, 0], &[0x77; 16]).unwrap());
     assert_eq!(bip.verify(&deauthentication(MIC, 9)), Err(BipError::Replay));
     // Another IGTK starts from its own IPN.
-    bip.rekey(&RsnIgtk::new(5, [2, 0, 0, 0, 0, 0], [0x11; 16]).unwrap());
+    bip.rekey(&RsnIgtk::new(5, [2, 0, 0, 0, 0, 0], &[0x11; 16]).unwrap());
     assert_eq!(bip.key_id(), 5);
 }
 
 #[test]
 fn a_transmitter_reproduces_the_independent_mic_and_advances_its_ipn() {
-    let igtk = RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], [0x77; 16]).unwrap();
+    let igtk = RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], &[0x77; 16]).unwrap();
     let mut transmitter = BipTransmitter::new(&igtk);
     let expected = deauthentication(MIC, 9);
     let mut frame = [0_u8; 26 + MANAGEMENT_MIC_ELEMENT_LEN];
@@ -101,7 +101,7 @@ fn a_transmitter_reproduces_the_independent_mic_and_advances_its_ipn() {
 #[test]
 fn transmit_ipns_never_wrap_and_failed_capacity_checks_consume_nothing() {
     let igtk =
-        crate::frames::RsnIgtk::new(4, [0xfe, 0xff, 0xff, 0xff, 0xff, 0xff], [0x66; 16]).unwrap();
+        crate::frames::RsnIgtk::new(4, [0xfe, 0xff, 0xff, 0xff, 0xff, 0xff], &[0x66; 16]).unwrap();
     let mut sender = BipTransmitter::new(&igtk);
     let mut receiver = BipReceiver::new(&igtk);
     let mut packet = [0; 64];
@@ -115,7 +115,7 @@ fn transmit_ipns_never_wrap_and_failed_capacity_checks_consume_nothing() {
     let saved = packet;
     assert_eq!(sender.protect(&mut packet, 26), None);
     assert_eq!(packet, saved);
-    let exhausted = crate::frames::RsnIgtk::new(4, [0xff; 6], [0x66; 16]).unwrap();
+    let exhausted = crate::frames::RsnIgtk::new(4, [0xff; 6], &[0x66; 16]).unwrap();
     assert_eq!(
         BipTransmitter::new(&exhausted).protect(&mut packet, 26),
         None

@@ -36,9 +36,14 @@ fn sta_group_ccmp_install_uses_the_owned_semantic_slot() {
     let mut mmio = MockMmio::default();
     let temporal_key = core::array::from_fn(|index| 0xf0 | index as u8);
 
-    let slot = install_sta_group_ccmp(&mut mmio, 1, &temporal_key).unwrap();
+    let slot = install_sta_group_ccmp(
+        &mut mmio,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(1).unwrap(),
+        &temporal_key,
+    )
+    .unwrap();
     assert_eq!(slot.hardware_index(), 1);
-    assert_eq!(slot.key_id(), 1);
+    assert_eq!(slot.key_id().get(), 1);
     assert_eq!(
         mmio.operations(),
         &[Operation::InstallCcmp(
@@ -50,17 +55,19 @@ fn sta_group_ccmp_install_uses_the_owned_semantic_slot() {
 
     slot.clear(&mut mmio);
     assert!(!mmio.ccmp_valid[1]);
-    assert_eq!(
-        install_sta_group_ccmp(&mut mmio, 4, &temporal_key).err(),
-        Some(CryptoKeyError::InvalidGroupKeyId)
-    );
+    assert!(oer_ieee80211_mac::ccmp::GroupKeyId::new(4).is_none());
 }
 
 #[test]
 fn station_key_teardown_consumes_and_clears_both_hardware_slots() {
     let mut mmio = MockMmio::default();
     let pairwise = install_sta_pairwise_ccmp(&mut mmio, [1, 2, 3, 4, 5, 6], &[0x55; 16]).unwrap();
-    let group = install_sta_group_ccmp(&mut mmio, 2, &[0xaa; 16]).unwrap();
+    let group = install_sta_group_ccmp(
+        &mut mmio,
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        &[0xaa; 16],
+    )
+    .unwrap();
     assert!(mmio.ccmp_valid[4]);
     assert!(mmio.ccmp_valid[1]);
 

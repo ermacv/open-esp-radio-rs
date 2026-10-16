@@ -1,6 +1,6 @@
 //! The runtime on the IEEE 802.15.4 owner shape ([`oer_ieee802154::owner`]):
 //! [`Ieee802154RuntimeBackend`] is the `PortBackend` a composition hands to
-//! [`run_port`](oer_ieee802154_port::run_port).
+//! [`run_port`](oer_radio_port::run_port).
 //!
 //! The engine stays in the runtime's blocking mutex, shared with the MAC
 //! interrupt entry: an interim critical section the owner allowed until
@@ -52,15 +52,17 @@ use oer_ieee802154::{
         SupportedHeaderIes, SupportedPower, SupportedScheduledReceive, SupportedTransmit,
     },
 };
-use oer_ieee802154_port::{
-    CancelError, ClockError, EnableResult, Lent, PhaseParts, PortBackend, RadioPortClient,
-    RadioPortEvents, RadioWork, Retire, Work,
-};
 use oer_radio_permit_pool::FifoPermitPool;
-use oer_radio_port::{EventsLost, Mint, PermitPool, Poisoned, PortResult, Seat, Slot};
+use oer_radio_port::{
+    Call, CancelError, ClockError, Detached, DriverExit, EnableResult, InstallParts, Installed,
+    PhaseParts, PortBackend, PortPhase, RadioPortClient, RadioWork, Retire, Retired, Work,
+};
+use oer_radio_port::{
+    Child, EventsLost, Mint, PermitPool, Poisoned, PoolPath, PortResult, Root, Seat, Slot,
+};
 use oer_time::Timer;
 
-use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts};
+use crate::{Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeParts, Uninstalled};
 
 /// The most interfaces a runtime serves: the engine's multi-PAN contexts.
 pub const RUNTIME_INTERFACES: usize = 4;
@@ -68,11 +70,10 @@ pub const RUNTIME_INTERFACES: usize = 4;
 /// What a composition's capabilities marker adds for the runtime: how many
 /// interfaces it mints resources for, as a type.
 pub trait Ieee802154RuntimeCaps: Ieee802154Caps {
-    /// The interfaces' port-lifetime resources.
-    type Interfaces<'id>;
-
-    /// Mint the interfaces' resources.
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id>;
+    /// The complete layout of the interfaces' port-lifetime resources.
+    type Interfaces: oer_radio_port::PoolSet;
+    /// Path of interface I inside the complete runtime layout.
+    type InterfacePath<const I: u8>: PoolPath;
 }
 
 /// What one interface asks of the radio's resting state.
@@ -100,7 +101,11 @@ enum OperationKind {
 /// The runtime's held part of the install: the operation permit, the
 /// interfaces' wishes and the wakers of their waiting futures.
 pub struct RuntimeHeld<'id> {
-    permits: OperationPermits<'id, FifoPermitPool<'id, Operation, 1, RUNTIME_INTERFACES>>,
+    permits: OperationPermits<
+        'id,
+        FifoPermitPool<'id, Operation, 1, RUNTIME_INTERFACES, Child<Root, 1>>,
+        Child<Root, 1>,
+    >,
     kind: Cell<Option<OperationKind>>,
     wishes: RefCell<[Wish; RUNTIME_INTERFACES]>,
     waiters: RefCell<[Option<Waker>; RUNTIME_INTERFACES]>,
@@ -154,7 +159,7 @@ pub struct RuntimeResources<'r, 'id, I, Rt> {
     /// The interfaces' configuration and pending-table slots.
     pub interfaces: I,
     /// One operation seat per interface, by its index.
-    pub operation: [Seat<'id, Operation>; RUNTIME_INTERFACES],
+    pub operation: [Seat<'id, Operation, Child<Root, 1>>; RUNTIME_INTERFACES],
     /// The recent-RSSI reader.
     pub rssi: RuntimeRssi<'r, Rt>,
 }
@@ -252,6 +257,15 @@ impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize>
 impl<'r, 'storage, K, M: RawMutex, H, T, R, const EVENTS: usize, D>
     Ieee802154RuntimeBackend<'r, 'storage, K, M, H, T, R, EVENTS, D>
 {
+    /// Move the backend and its unbranded runtime driver into one install.
+    pub fn installed(self) -> Installed<Self>
+    where
+        Self: PortBackend<Driver = &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS>>,
+    {
+        let driver = self.runtime;
+        Installed::new(self, driver)
+    }
+
     /// The runtime it serves.
     pub const fn runtime(&self) -> &'r Ieee802154Runtime<'storage, M, H, T, R, EVENTS> {
         self.runtime
@@ -269,27 +283,97 @@ where
     /// Take the engine and the hardware back from a backend that never ran
     /// a port, as a bring-up failure after the install does, with its route
     /// not yet detached.
-    pub fn uninstall_unused(self) -> (Ieee802154RuntimeParts<'storage, H>, Option<D>) {
-        (self.runtime.uninstall(), self.route)
+    pub fn uninstall_unused(
+        self,
+    ) -> Uninstalled<
+        (Ieee802154RuntimeParts<'storage, H>, Option<D>),
+        crate::MacStoppedParts<'storage, H>,
+        Self,
+    > {
+        match self.runtime.uninstall() {
+            Uninstalled::Reusable(parts) => Uninstalled::Reusable((parts, self.route)),
+            Uninstalled::TerminalsQuarantined { parts, terminals } => {
+                drop(terminals);
+                Uninstalled::TerminalsQuarantined {
+                    parts,
+                    terminals: oer_radio_port::Quarantined::new(self),
+                }
+            }
+            Uninstalled::Quarantined(receipt) => {
+                // The runtime still owns the hardware. Retain the backend's
+                // route too, without invoking its destructor.
+                drop(receipt);
+                Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self))
+            }
+        }
     }
 }
 
-/// The port's owned event: the runtime's event and, for a terminal, the
-/// interface whose operation it ends.
+/// An owned receive frame or an admitted operation's terminal.
+///
+/// Every terminal names its interface. Lifecycle completions and faults
+/// stay inside the runtime; faults are reported through `Poisoned` after
+/// preceding events have drained.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ieee802154PortEvent {
-    /// Whose operation the event ends; `None` for a received frame.
-    pub interface: Option<Interface>,
-    /// The event.
-    pub event: Ieee802154RadioEvent,
+pub enum Ieee802154PortEvent {
+    /// A frame was received in receive mode.
+    Received(crate::Ieee802154OwnedFrame),
+    /// Terminal transmit completion.
+    TransmitDone {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+        /// Completion category.
+        status: oer_ieee802154::TxStatus,
+        /// The received acknowledgement.
+        acknowledgement: Option<crate::Ieee802154OwnedFrame>,
+        /// The security header fields the radio wrote into the frame.
+        security: Option<oer_ieee802154::AppliedSecurity>,
+    },
+    /// Terminal energy scan completion.
+    EnergyScanDone {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+        /// Measured channel energy in dBm.
+        energy_dbm: i8,
+    },
+    /// The energy scan was aborted.
+    EnergyScanFailed {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+    },
+    /// Terminal standalone CCA completion.
+    ClearChannelAssessmentDone {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+        /// The channel was idle.
+        idle: bool,
+    },
+    /// The standalone CCA was aborted.
+    ClearChannelAssessmentFailed {
+        /// The interface whose admitted operation completed.
+        interface: Interface,
+        /// The request.
+        id: RequestId,
+    },
 }
 
 /// A configured interface `I` of the runtime.
-pub struct RuntimeConfigured<'id, const I: u8> {
-    slot: Slot<'id, InterfaceKind<I>>,
+pub struct RuntimeConfigured<'id, const I: u8, Path: PoolPath> {
+    slot: Slot<'id, InterfaceKind<I>, Child<Path, 0>>,
 }
 
-impl<'id, const I: u8> ConfiguredInterface<'id, I> for RuntimeConfigured<'id, I> {}
+impl<'id, const I: u8, Path: PoolPath> ConfiguredInterface<'id, I>
+    for RuntimeConfigured<'id, I, Path>
+{
+}
 
 /// The runtime's disabled-only settings.
 pub struct RuntimeSetup<'a, 'id, Rt, K> {
@@ -308,6 +392,7 @@ pub struct RuntimeControl<'a, Rt, K> {
 pub struct RuntimeEvents<'a, 'id, Rt> {
     runtime: &'a Rt,
     held: &'a RuntimeHeld<'id>,
+    end: &'a mut Option<oer_radio_port::EventEnd<RadioFault>>,
 }
 
 /// The runtime's clients: one per configured interface.
@@ -339,14 +424,14 @@ impl RadioWork for RuntimeToken {
 }
 
 /// An installed short-address pending entry of interface `I`.
-pub struct RuntimeShortEntry<'id, const I: u8> {
-    slot: Slot<'id, ShortPending<I>>,
+pub struct RuntimeShortEntry<'id, const I: u8, Path: PoolPath> {
+    slot: Slot<'id, ShortPending<I>, Child<Path, 1>>,
     address: [u8; 2],
 }
 
 /// An installed extended-address pending entry of interface `I`.
-pub struct RuntimeExtendedEntry<'id, const I: u8> {
-    slot: Slot<'id, ExtendedPending<I>>,
+pub struct RuntimeExtendedEntry<'id, const I: u8, Path: PoolPath> {
+    slot: Slot<'id, ExtendedPending<I>, Child<Path, 2>>,
     address: [u8; 8],
 }
 
@@ -357,6 +442,17 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
+    /// Keep the foreign event and the real admitted owner. This is an
+    /// accounting failure, not a hardware-stop outcome: only `abandon`
+    /// decides whether stopping the installation can be confirmed.
+    fn retain_foreign(&self, event: Ieee802154RadioEvent) {
+        self.events.owed(|owed| {
+            // The sole consumer just took this event, leaving `held` free.
+            owed.held = Some(crate::HeldEvent::AccountingViolation(event));
+        });
+        self.poison(RadioFault::AccountingViolation);
+    }
+
     /// A request identifier of the runtime's own.
     fn mint_id(&self) -> RequestId {
         self.next_id.lock(|next| {
@@ -367,7 +463,12 @@ where
     }
 
     /// The radio's fault, once it poisoned the port.
-    fn poisoned(&self) -> Result<(), Poisoned<RadioFault>> {
+    pub(super) fn poisoned(&self) -> Result<(), Poisoned<RadioFault>> {
+        if self.abandoned.load(core::sync::atomic::Ordering::Acquire) {
+            return Err(Poisoned {
+                cause: RadioFault::StateLost,
+            });
+        }
         match self.fault.lock(Cell::get) {
             Some(cause) => Err(Poisoned { cause }),
             None => Ok(()),
@@ -467,7 +568,7 @@ where
         &self,
         held: &RuntimeHeld<'id>,
         interface: Interface,
-        permit: OperationPermit<'_, 'id>,
+        permit: OperationPermit<'_, 'id, Child<Root, 1>>,
         kind: OperationKind,
         id: RequestId,
         command: RadioCommand<'_>,
@@ -499,7 +600,19 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
-    type Event = Ieee802154PortEvent;
+    type Event<'id> = Ieee802154PortEvent;
+    type Terminal<'id> = Ieee802154PortEvent;
+    type Phase<'a, 'id>
+        = PhaseParts<
+        RuntimeEvents<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>>,
+        RuntimeControl<'a, Rt<'storage, M, H, T, R, EVENTS>, K>,
+        RuntimeClients<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = Option<oer_radio_port::EventEnd<RadioFault>>;
+    type Driver = &'r Rt<'storage, M, H, T, R, EVENTS>;
     type Domain = oer_ieee802154::Ieee802154Radio;
     type Fault = RadioFault;
     /// The radio was not in a state to enable.
@@ -507,30 +620,37 @@ where
     type Setup<'a, 'id>
         = RuntimeSetup<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
     where
-        Self: 'a;
-    type Events<'a, 'id>
-        = RuntimeEvents<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>>
-    where
         Self: 'a,
         'id: 'a;
-    type Control<'a, 'id>
-        = RuntimeControl<'a, Rt<'storage, M, H, T, R, EVENTS>, K>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Clients<'a, 'id>
-        = RuntimeClients<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
-    where
-        Self: 'a,
-        'id: 'a;
-    type Resources<'id> =
-        RuntimeResources<'r, 'id, K::Interfaces<'id>, Rt<'storage, M, H, T, R, EVENTS>>;
+
+    type Pools = (
+        K::Interfaces,
+        oer_radio_port::Permits<Operation, 1, RUNTIME_INTERFACES>,
+    );
+    type Resources<'id> = RuntimeResources<
+        'r,
+        'id,
+        oer_radio_port::Pools<'id, K::Interfaces, Child<Root, 0>>,
+        Rt<'storage, M, H, T, R, EVENTS>,
+    >;
     type Held<'id> = RuntimeHeld<'id>;
     type State = ();
     type Uninstall = ();
-    type Uninstalled = Ieee802154RuntimeParts<'storage, H>;
+    type Uninstalled = Uninstalled<
+        Ieee802154RuntimeParts<'storage, H>,
+        crate::MacStoppedParts<'storage, H>,
+        &'r Rt<'storage, M, H, T, R, EVENTS>,
+    >;
 
-    fn enable(&mut self) -> impl Future<Output = EnableResult<(), RadioFault>> + '_ {
+    fn enable<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<(), RadioFault>> + 'a
+    where
+        'id: 'a,
+    {
         ready(
             self.runtime
                 .poisoned()
@@ -540,8 +660,10 @@ where
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         held: &'a RuntimeHeld<'id>,
-        sink: &'a mut dyn FnMut(Ieee802154PortEvent),
+        _: &'a mut Self::Local<'id>,
+        sink: &'a mut dyn FnMut(Ieee802154PortEvent) -> core::ops::ControlFlow<Ieee802154PortEvent>,
     ) -> impl Future<Output = Result<(), Poisoned<RadioFault>>> + 'a
     where
         'id: 'a,
@@ -550,21 +672,37 @@ where
         // Disabling ends the operation in flight with its terminal; every
         // queued terminal goes to the sink, its permit back first.
         runtime.disable_locked();
-        while let Some(taken) = runtime.events.take() {
-            if let Ok(event) = taken
-                && let Some(port) = take_terminal(runtime, held, event)
-            {
-                sink(port);
-            }
-        }
         *held.wishes.borrow_mut() = [Wish::Sleep; RUNTIME_INTERFACES];
         held.applied.set(None);
+        while let Some(taken) = runtime.events.take() {
+            let Ok(event) = taken else { continue };
+            let port = match take_terminal(runtime, held, event) {
+                Ok(Some(port)) => port,
+                Ok(None) => continue,
+                Err(foreign) => {
+                    runtime.retain_foreign(foreign);
+                    held.wake_all();
+                    return ready(runtime.poisoned());
+                }
+            };
+            if let core::ops::ControlFlow::Break(terminal) = sink(port) {
+                // `take` emptied this slot; there is no second consumer
+                // during disable. Remaining entries stay in their queue.
+                runtime.events.owed(|owed| {
+                    owed.held = Some(crate::HeldEvent::Rejected { terminal });
+                });
+                runtime.poison(RadioFault::TerminalRejected);
+                held.wake_all();
+                return ready(runtime.poisoned());
+            }
+        }
         held.wake_all();
         ready(runtime.poisoned())
     }
 
     fn now(
         &self,
+        _: Call,
     ) -> impl Future<Output = PortResult<Ieee802154Instant, ClockError, RadioFault>> + '_ {
         ready(self.runtime.poisoned().map(|()| {
             Ok(Ieee802154Instant::from_micros(
@@ -573,10 +711,9 @@ where
         }))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> (RuntimeHeld<'id>, Self::Resources<'id>) {
-        let (permits, operation) = OperationPermits::new(&mut mint, |permit, line| {
-            FifoPermitPool::new([permit], line)
-        });
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
+        let (interfaces, work) = mint.into_pools();
+        let (permits, operation) = OperationPermits::new(work, FifoPermitPool::new);
         let held = RuntimeHeld {
             permits,
             kind: Cell::new(None),
@@ -585,87 +722,133 @@ where
             applied: Cell::new(None),
         };
         let resources = RuntimeResources {
-            interfaces: K::interfaces(&mut mint),
+            interfaces,
             operation,
             rssi: RuntimeRssi {
                 runtime: self.runtime,
             },
         };
-        (held, resources)
+        InstallParts {
+            held,
+            local: None,
+            resources,
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(RuntimeSetup {
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
+        RuntimeSetup {
             runtime: self.runtime,
             brand: PhantomData,
             caps: PhantomData,
-        })
+        }
     }
 
-    fn split<'a, 'id>(
+    fn phase<'a, 'id>(
         &'a mut self,
+        _: Call,
         held: &'a RuntimeHeld<'id>,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+        end: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(RuntimeEvents {
+            events: RuntimeEvents {
                 runtime: self.runtime,
                 held,
-            }),
-            control: Lent::new(RuntimeControl {
+                end,
+            },
+            control: RuntimeControl {
                 runtime: self.runtime,
                 caps: PhantomData,
-            }),
-            clients: Lent::new(RuntimeClients {
+            },
+            clients: RuntimeClients {
                 runtime: self.runtime,
                 held,
                 caps: PhantomData,
-            }),
+            },
         }
     }
 
     /// The CSMA-CA backoff and the retry delays, until the port retires.
-    fn drive<'p, 'id>(
-        &mut self,
+    async fn drive<'p, 'id>(
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
         _: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, 'r, 'storage, K, M, H, T, R, EVENTS, D> {
-        let runtime = self.runtime;
-        async move {
-            select(runtime.run(), retire.requested()).await;
+    ) -> DriverExit<Self::State, Self::Fault> {
+        match select(retire.wait(), driver.run()).await {
+            embassy_futures::select::Either::First(()) => (),
+            embassy_futures::select::Either::Second(never) => match never {},
+        };
+        DriverExit::Retired {
+            state: (),
+            proof: retire.requested(driver).await,
         }
     }
 
     /// The driver retires at its next poll.
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+    fn retire_bound(
+        &self,
+        _: Call,
+    ) -> impl Future<Output = ()> + use<'r, 'storage, K, M, H, T, R, EVENTS, D> {
         core::future::pending()
     }
 
     /// Mask the MAC interrupt's route, so the interrupt entry never runs
     /// again before the uninstall takes the engine.
-    fn detach<'id>(&mut self, _: &RuntimeHeld<'id>) {
-        if let Some(route) = self.route.as_mut() {
+    fn detach<'id>(&mut self, call: oer_radio_port::Detach<'_>, _: &RuntimeHeld<'id>) {
+        // The current route's detach takes the ISR lock. An unconfirmed
+        // installation retains its route and backing until chip reset.
+        if !self
+            .runtime
+            .abandoned
+            .load(core::sync::atomic::Ordering::Acquire)
+            && let oer_radio_port::Detach::Retired(_) = call
+            && let Some(route) = self.route.as_mut()
+        {
             route.detach();
         }
     }
 
     fn uninstall<'id>(
         self,
-        _: RuntimeHeld<'id>,
-        (): (),
-        (): (),
-    ) -> Ieee802154RuntimeParts<'storage, H> {
-        self.runtime.uninstall()
+        held: Self::Held<'id>,
+        local: Self::Local<'id>,
+        retired: Retired<'id, (Self::Driver, Self::State)>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) -> Self::Uninstalled {
+        let uninstalled = self.runtime.uninstall();
+        match &uninstalled {
+            Uninstalled::Quarantined(_) => {
+                drop(oer_radio_port::Quarantined::new((
+                    self.route, held, local, retired,
+                )));
+            }
+            Uninstalled::TerminalsQuarantined { .. } => {
+                // The detached route is ordinary stopped hardware. Only
+                // the undelivered operation's accounting stays retained.
+                drop(oer_radio_port::Quarantined::new((held, local, retired)));
+            }
+            Uninstalled::Reusable(_) => {}
+        }
+        uninstalled
     }
 
-    fn abandon(&mut self) {
-        self.runtime.poison(RadioFault::StateLost);
-        self.runtime.disable_locked();
-        if let Some(route) = self.route.as_mut() {
-            route.detach();
-        }
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
+        self.runtime
+            .abandoned
+            .store(true, core::sync::atomic::Ordering::Release);
+        // No engine, event-queue or route mutex here: the ISR may hold it.
+        oer_radio_port::Abandon::Unconfirmed(call)
     }
 }
 
@@ -685,34 +868,90 @@ where
 /// Take one queued runtime event for the port: give a terminal's permit
 /// back and name its interface; mark an ended window; poison on a fault,
 /// handing out the failed terminal of the operation it ended. `None` for
-/// what the port does not hand out.
+/// what the port does not hand out. An accounting violation returns the
+/// event intact, without releasing the real operation's permit.
+#[allow(
+    clippy::result_large_err,
+    reason = "a foreign event keeps its owned frame without allocation"
+)]
 fn take_terminal<M, H, T, R, const EVENTS: usize>(
     runtime: &Rt<'_, M, H, T, R, EVENTS>,
     held: &RuntimeHeld<'_>,
     event: Ieee802154RadioEvent,
-) -> Option<Ieee802154PortEvent>
+) -> Result<Option<Ieee802154PortEvent>, Ieee802154RadioEvent>
 where
     M: RawMutex,
     H: Ieee802154LowLevel,
     T: Timer,
     R: Ieee802154Random,
 {
-    let ended = match &event {
-        Ieee802154RadioEvent::Received(_) => {
-            return Some(Ieee802154PortEvent {
-                interface: None,
-                event,
-            });
+    let complete = |id| {
+        held.permits
+            .complete(id)
+            .map(|completed| completed.interface())
+    };
+    let port = match event {
+        Ieee802154RadioEvent::Received(frame) => {
+            return Ok(Some(Ieee802154PortEvent::Received(frame)));
         }
-        Ieee802154RadioEvent::TransmitDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanFailed { id }
-        | Ieee802154RadioEvent::ClearChannelAssessmentDone { id, .. }
-        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => *id,
+        Ieee802154RadioEvent::TransmitDone {
+            id,
+            status,
+            acknowledgement,
+            security,
+        } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::TransmitDone {
+                    id,
+                    status,
+                    acknowledgement,
+                    security,
+                });
+            };
+            Ieee802154PortEvent::TransmitDone {
+                interface,
+                id,
+                status,
+                acknowledgement,
+                security,
+            }
+        }
+        Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm });
+            };
+            Ieee802154PortEvent::EnergyScanDone {
+                interface,
+                id,
+                energy_dbm,
+            }
+        }
+        Ieee802154RadioEvent::EnergyScanFailed { id } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::EnergyScanFailed { id });
+            };
+            Ieee802154PortEvent::EnergyScanFailed { interface, id }
+        }
+        Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle });
+            };
+            Ieee802154PortEvent::ClearChannelAssessmentDone {
+                interface,
+                id,
+                idle,
+            }
+        }
+        Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => {
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::ClearChannelAssessmentFailed { id });
+            };
+            Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id }
+        }
         Ieee802154RadioEvent::ScheduledReceiveDone { id } => {
             let mut ended = false;
             for wish in held.wishes.borrow_mut().iter_mut() {
-                if matches!(*wish, Wish::Window(window) if window.id == *id) {
+                if matches!(*wish, Wish::Window(window) if window.id == id) {
                     *wish = Wish::Sleep;
                     ended = true;
                 }
@@ -722,43 +961,57 @@ where
                 held.wake_all();
                 runtime.rest(held);
             }
-            return None;
+            return Ok(None);
         }
         Ieee802154RadioEvent::Fault { id, fault } => {
-            runtime.poison(*fault);
-            let id = (*id)?;
-            let kind = held.kind.get()?;
-            let interface = held.permits.in_flight().map(|(interface, _)| interface);
-            if let Some(interface) = interface {
-                held.permits.complete(interface, id);
-            }
+            let Some(id) = id else {
+                if held.permits.in_flight().is_some() {
+                    return Err(Ieee802154RadioEvent::Fault { id: None, fault });
+                }
+                runtime.poison(fault);
+                return Ok(None);
+            };
+            let Some(kind) = held.kind.get() else {
+                return Err(Ieee802154RadioEvent::Fault {
+                    id: Some(id),
+                    fault,
+                });
+            };
+            let Ok(interface) = complete(id) else {
+                return Err(Ieee802154RadioEvent::Fault {
+                    id: Some(id),
+                    fault,
+                });
+            };
+            runtime.poison(fault);
+            held.kind.set(None);
             held.wake_all();
-            let event = match kind {
-                OperationKind::Transmit => Ieee802154RadioEvent::TransmitDone {
+            return Ok(Some(match kind {
+                OperationKind::Transmit => Ieee802154PortEvent::TransmitDone {
+                    interface,
                     id,
                     status: oer_ieee802154::TxStatus::HardwareFailure,
                     acknowledgement: None,
                     security: None,
                 },
-                OperationKind::EnergyScan => Ieee802154RadioEvent::EnergyScanFailed { id },
-                OperationKind::Cca => Ieee802154RadioEvent::ClearChannelAssessmentFailed { id },
-            };
-            return Some(Ieee802154PortEvent { interface, event });
+                OperationKind::EnergyScan => {
+                    Ieee802154PortEvent::EnergyScanFailed { interface, id }
+                }
+                OperationKind::Cca => {
+                    Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id }
+                }
+            }));
         }
-        Ieee802154RadioEvent::Lifecycle(_) => return None,
+        Ieee802154RadioEvent::Lifecycle(_) => return Ok(None),
     };
-    let interface = held.permits.in_flight().map(|(interface, _)| interface);
-    if let Some(interface) = interface {
-        held.permits.complete(interface, ended);
-    }
     held.kind.set(None);
     // A wish made while the operation ran takes effect now.
     held.applied.set(None);
     runtime.rest(held);
-    Some(Ieee802154PortEvent { interface, event })
+    Ok(Some(port))
 }
 
-impl<M, H, T, R, const EVENTS: usize> RadioPortEvents
+impl<M, H, T, R, const EVENTS: usize> PortPhase
     for RuntimeEvents<'_, '_, Rt<'_, M, H, T, R, EVENTS>>
 where
     M: RawMutex,
@@ -769,25 +1022,54 @@ where
     type Event = Ieee802154PortEvent;
     type Fault = RadioFault;
 
-    async fn next_event(&mut self) -> PortResult<Ieee802154PortEvent, EventsLost, RadioFault> {
-        loop {
+    async fn next_event(
+        &mut self,
+    ) -> Result<Result<Ieee802154PortEvent, EventsLost>, oer_radio_port::EventEnd<RadioFault>> {
+        if let Some(end) = *self.end {
+            return Err(end);
+        }
+        let end = loop {
+            // Abandonment may race an entered ISR. Do not take even the
+            // event queue's mutex on this path; its owners stay in PortEnd.
+            if self
+                .runtime
+                .abandoned
+                .load(core::sync::atomic::Ordering::Acquire)
+            {
+                break oer_radio_port::EventEnd::Quarantined {
+                    cause: RadioFault::StateLost,
+                };
+            }
             match self.runtime.events.take() {
                 Some(Err(EventsLost)) => return Ok(Err(EventsLost)),
-                Some(Ok(event)) => {
-                    if let Some(port) = take_terminal(self.runtime, self.held, event) {
-                        return Ok(Ok(port));
+                Some(Ok(event)) => match take_terminal(self.runtime, self.held, event) {
+                    Ok(Some(port)) => return Ok(Ok(port)),
+                    Ok(None) => continue,
+                    Err(foreign) => {
+                        self.runtime.retain_foreign(foreign);
+                        self.held.wake_all();
+                        break oer_radio_port::EventEnd::Quarantined {
+                            cause: RadioFault::AccountingViolation,
+                        };
                     }
-                    continue;
-                }
+                },
                 None => {}
             }
-            self.runtime.poisoned()?;
+            if self.held.permits.in_flight().is_none()
+                && let Err(poisoned) = self.runtime.poisoned()
+            {
+                break oer_radio_port::EventEnd::Drained {
+                    cause: poisoned.cause,
+                };
+            }
             select(
                 self.runtime.events.entries.ready_to_receive(),
                 self.runtime.events.changed.wait(),
             )
             .await;
-        }
+        };
+        *self.end = Some(end);
+        Err(end)
     }
 }
 
@@ -800,16 +1082,16 @@ where
     R: Ieee802154Random,
 {
     fn view(event: &Ieee802154PortEvent) -> PhaseEvent<'_> {
-        let interface = event.interface.unwrap_or(Interface::PRIMARY);
-        match &event.event {
-            Ieee802154RadioEvent::Received(frame) => PhaseEvent::Received(frame.received()),
-            Ieee802154RadioEvent::TransmitDone {
+        match event {
+            Ieee802154PortEvent::Received(frame) => PhaseEvent::Received(frame.received()),
+            Ieee802154PortEvent::TransmitDone {
+                interface,
                 id,
                 status,
                 acknowledgement,
                 security,
             } => PhaseEvent::TransmitDone {
-                interface,
+                interface: *interface,
                 id: *id,
                 status: *status,
                 acknowledgement: acknowledgement
@@ -817,30 +1099,35 @@ where
                     .map(crate::Ieee802154OwnedFrame::received),
                 security: *security,
             },
-            Ieee802154RadioEvent::EnergyScanDone { id, energy_dbm } => PhaseEvent::EnergyScanDone {
+            Ieee802154PortEvent::EnergyScanDone {
                 interface,
+                id,
+                energy_dbm,
+            } => PhaseEvent::EnergyScanDone {
+                interface: *interface,
                 id: *id,
                 energy_dbm: *energy_dbm,
             },
-            Ieee802154RadioEvent::EnergyScanFailed { id } => {
-                PhaseEvent::EnergyScanFailed { interface, id: *id }
-            }
-            Ieee802154RadioEvent::ClearChannelAssessmentDone { id, idle } => {
-                PhaseEvent::ClearChannelAssessmentDone {
-                    interface,
+            Ieee802154PortEvent::EnergyScanFailed { interface, id } => {
+                PhaseEvent::EnergyScanFailed {
+                    interface: *interface,
                     id: *id,
-                    idle: *idle,
                 }
             }
-            Ieee802154RadioEvent::ClearChannelAssessmentFailed { id } => {
-                PhaseEvent::ClearChannelAssessmentFailed { interface, id: *id }
-            }
-            // The port hands out neither a window's end, a fault nor a
-            // lifecycle terminal ([`take_terminal`]).
-            Ieee802154RadioEvent::ScheduledReceiveDone { .. }
-            | Ieee802154RadioEvent::Fault { .. }
-            | Ieee802154RadioEvent::Lifecycle(_) => {
-                unreachable!("the port hands out frames and operation terminals only")
+            Ieee802154PortEvent::ClearChannelAssessmentDone {
+                interface,
+                id,
+                idle,
+            } => PhaseEvent::ClearChannelAssessmentDone {
+                interface: *interface,
+                id: *id,
+                idle: *idle,
+            },
+            Ieee802154PortEvent::ClearChannelAssessmentFailed { interface, id } => {
+                PhaseEvent::ClearChannelAssessmentFailed {
+                    interface: *interface,
+                    id: *id,
+                }
             }
         }
     }
@@ -852,7 +1139,7 @@ macro_rules! radio_settings {
         impl<$($lt,)* 'storage, K, M, H, T, R, const EVENTS: usize> RadioSettings
             for $part<$($lt,)* Rt<'storage, M, H, T, R, EVENTS>, K>
         where
-            K: Ieee802154Caps,
+            K: Ieee802154RuntimeCaps,
             M: RawMutex,
             H: Ieee802154LowLevel,
             T: Timer,
@@ -920,7 +1207,7 @@ macro_rules! radio_settings {
 radio_settings!(RuntimeSetup<'a, 'id>);
 radio_settings!(RuntimeControl<'a>);
 
-impl<M, H, T, R, const EVENTS: usize, K: Ieee802154Caps> Ieee802154Control
+impl<M, H, T, R, const EVENTS: usize, K: Ieee802154RuntimeCaps> Ieee802154Control
     for RuntimeControl<'_, Rt<'_, M, H, T, R, EVENTS>, K>
 where
     M: RawMutex,
@@ -930,7 +1217,7 @@ where
 {
 }
 
-impl<'id, M, H, T, R, const EVENTS: usize, K: Ieee802154Caps> Ieee802154Setup<'id>
+impl<'id, M, H, T, R, const EVENTS: usize, K: Ieee802154RuntimeCaps> Ieee802154Setup<'id>
     for RuntimeSetup<'_, 'id, Rt<'_, M, H, T, R, EVENTS>, K>
 where
     M: RawMutex,
@@ -938,12 +1225,13 @@ where
     T: Timer,
     R: Ieee802154Random,
 {
-    type Configured<const I: u8> = RuntimeConfigured<'id, I>;
+    type InterfacePath<const I: u8> = K::InterfacePath<I>;
+    type Configured<const I: u8> = RuntimeConfigured<'id, I, K::InterfacePath<I>>;
 
     fn configure<const I: u8>(
         &mut self,
-        slot: Slot<'id, InterfaceKind<I>>,
-    ) -> RuntimeConfigured<'id, I> {
+        slot: Slot<'id, InterfaceKind<I>, Child<K::InterfacePath<I>, 0>>,
+    ) -> RuntimeConfigured<'id, I, K::InterfacePath<I>> {
         self.runtime
             .configure_interface(Interface::new(I), InterfaceSetting::Enabled(true));
         RuntimeConfigured { slot }
@@ -951,8 +1239,8 @@ where
 
     fn remove<const I: u8>(
         &mut self,
-        interface: RuntimeConfigured<'id, I>,
-    ) -> Slot<'id, InterfaceKind<I>> {
+        interface: RuntimeConfigured<'id, I, K::InterfacePath<I>>,
+    ) -> Slot<'id, InterfaceKind<I>, Child<K::InterfacePath<I>, 0>> {
         self.runtime
             .configure_interface(Interface::new(I), InterfaceSetting::Enabled(false));
         interface.slot
@@ -962,19 +1250,22 @@ where
 impl<'a, 'id, 'storage, M, H, T, R, const EVENTS: usize, K> Ieee802154Clients<'id>
     for RuntimeClients<'a, 'id, Rt<'storage, M, H, T, R, EVENTS>, K>
 where
-    K: Ieee802154Caps,
+    K: Ieee802154RuntimeCaps,
     M: RawMutex,
     H: Ieee802154LowLevel,
     T: Timer,
     R: Ieee802154Random,
 {
-    type Configured<const I: u8> = RuntimeConfigured<'id, I>;
+    type Configured<const I: u8> = RuntimeConfigured<'id, I, K::InterfacePath<I>>;
     type Client<'c, const I: u8>
         = RuntimeClient<'c, 'id, Rt<'storage, M, H, T, R, EVENTS>, K, I>
     where
         Self: 'c;
 
-    fn client<'c, const I: u8>(&'c self, _: &RuntimeConfigured<'id, I>) -> Self::Client<'c, I> {
+    fn client<'c, const I: u8>(
+        &'c self,
+        _: &RuntimeConfigured<'id, I, K::InterfacePath<I>>,
+    ) -> Self::Client<'c, I> {
         RuntimeClient {
             runtime: self.runtime,
             held: self.held,
@@ -1020,15 +1311,17 @@ where
 impl<'c, 'id, M, H, T, R, const EVENTS: usize, K, const I: u8> Ieee802154Client<'id, I>
     for RuntimeClient<'c, 'id, Rt<'_, M, H, T, R, EVENTS>, K, I>
 where
-    K: Ieee802154Caps,
+    K: Ieee802154RuntimeCaps,
     M: RawMutex,
     H: Ieee802154LowLevel,
     T: Timer,
     R: Ieee802154Random,
 {
+    type InterfacePath = K::InterfacePath<I>;
+    type OperationPath = Child<Root, 1>;
     type Caps = K;
-    type ShortEntry = RuntimeShortEntry<'id, I>;
-    type ExtendedEntry = RuntimeExtendedEntry<'id, I>;
+    type ShortEntry = RuntimeShortEntry<'id, I, K::InterfacePath<I>>;
+    type ExtendedEntry = RuntimeExtendedEntry<'id, I, K::InterfacePath<I>>;
 
     fn set_pan_id(&self, pan_id: u16) {
         self.runtime
@@ -1085,9 +1378,9 @@ where
 
     fn add_pending_short(
         &self,
-        slot: Slot<'id, ShortPending<I>>,
+        slot: Slot<'id, ShortPending<I>, Child<K::InterfacePath<I>, 1>>,
         address: [u8; 2],
-    ) -> RuntimeShortEntry<'id, I> {
+    ) -> RuntimeShortEntry<'id, I, K::InterfacePath<I>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::AddPendingAddress(FrameAddress::Short(address)),
@@ -1097,9 +1390,9 @@ where
 
     fn add_pending_extended(
         &self,
-        slot: Slot<'id, ExtendedPending<I>>,
+        slot: Slot<'id, ExtendedPending<I>, Child<K::InterfacePath<I>, 2>>,
         address: [u8; 8],
-    ) -> RuntimeExtendedEntry<'id, I> {
+    ) -> RuntimeExtendedEntry<'id, I, K::InterfacePath<I>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::AddPendingAddress(FrameAddress::Extended(address)),
@@ -1107,7 +1400,10 @@ where
         RuntimeExtendedEntry { slot, address }
     }
 
-    fn remove_pending_short(&self, entry: RuntimeShortEntry<'id, I>) -> Slot<'id, ShortPending<I>> {
+    fn remove_pending_short(
+        &self,
+        entry: RuntimeShortEntry<'id, I, K::InterfacePath<I>>,
+    ) -> Slot<'id, ShortPending<I>, Child<K::InterfacePath<I>, 1>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::RemovePendingAddress(FrameAddress::Short(entry.address)),
@@ -1117,8 +1413,8 @@ where
 
     fn remove_pending_extended(
         &self,
-        entry: RuntimeExtendedEntry<'id, I>,
-    ) -> Slot<'id, ExtendedPending<I>> {
+        entry: RuntimeExtendedEntry<'id, I, K::InterfacePath<I>>,
+    ) -> Slot<'id, ExtendedPending<I>, Child<K::InterfacePath<I>, 2>> {
         self.runtime.configure_interface(
             Interface::new(I),
             InterfaceSetting::RemovePendingAddress(FrameAddress::Extended(entry.address)),
@@ -1186,8 +1482,8 @@ where
 
     fn operation<'o, 's>(
         &'o self,
-        seat: &'s mut Seat<'id, Operation>,
-    ) -> impl Future<Output = OperationPermit<'o, 'id>> + 's
+        seat: &'s mut Seat<'id, Operation, Child<Root, 1>>,
+    ) -> impl Future<Output = OperationPermit<'o, 'id, Child<Root, 1>>> + 's
     where
         'id: 'o,
         'o: 's,
@@ -1201,7 +1497,7 @@ where
 
     fn transmit<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 1>>,
         transmission: SupportedTransmit<'_, K>,
     ) -> Result<Work<'o, Self>, Poisoned<RadioFault>>
     where
@@ -1232,7 +1528,7 @@ where
 
     fn energy_scan<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 1>>,
         scan: SupportedEnergyScan<K>,
     ) -> Result<Work<'o, Self>, Poisoned<RadioFault>>
     where
@@ -1257,7 +1553,7 @@ where
 
     fn clear_channel_assessment<'o>(
         &'o self,
-        permit: OperationPermit<'o, 'id>,
+        permit: OperationPermit<'o, 'id, Child<Root, 1>>,
         cca: SupportedCca<K>,
     ) -> Result<Work<'o, Self>, Poisoned<RadioFault>>
     where

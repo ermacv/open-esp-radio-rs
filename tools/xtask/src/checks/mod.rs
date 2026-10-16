@@ -9,6 +9,7 @@ pub mod metadata;
 pub mod network;
 pub mod phy;
 pub mod standalone;
+pub mod ui;
 
 pub(crate) mod common;
 

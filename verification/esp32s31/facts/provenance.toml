@@ -1641,12 +1641,6 @@ code = "87434affc8653669f9e6430c74bfd45ed5dffe84edd9eaee9503c35ae5b9a11d"
 
 [[function]]
 artifact = "libnet80211"
-member = "ieee80211_action.o"
-symbol = "ieee80211_send_action"
-code = "048e57c04daefe447bc7314081872d0d44c8d80547fc79071e4d40a719a9168d"
-
-[[function]]
-artifact = "libnet80211"
 member = "ieee80211_api.o"
 symbol = "esp_wifi_config_11b_rate"
 code = "1528c64005a82939b2e65e6984a2708ba5aa9d2d6542acc894fe84b06bbfa4c9"
@@ -1674,6 +1668,12 @@ artifact = "libnet80211"
 member = "ieee80211_api.o"
 symbol = "esp_wifi_set_inactive_time"
 code = "7c050f1cea86a37301fc1ec15c17ab0e2d39602e251181b0b4309b5ebaa6a53a"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_api.o"
+symbol = "wifi_assert"
+code = "5eeec31b06ef92db53dd9e2251302f4da1b63f41091973fcca3dc62bf564aa51"
 
 [[function]]
 artifact = "libnet80211"
@@ -1787,12 +1787,6 @@ code = "dd98991236f101d0584239e2f460a658dfb0c35b26bbcea9c96d6d99cae1d1eb"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ht.o"
-symbol = "ieee80211_add_htcap_body"
-code = "6b05c7451821062bc2658b7262ea8589f45a6a015474b051ed9dbcd6f9313e35"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_ht.o"
 symbol = "ieee80211_ampdu_reorder"
 code = "c641c025704b4c86b99f1f113372a607dedf788a46ef9c5a61be976a39e60bf2"
 
@@ -1825,12 +1819,6 @@ artifact = "libnet80211"
 member = "ieee80211_input.o"
 symbol = "ieee80211_parse_rsn"
 code = "17e65359f373432d452f37db4ca9bb61c91192516aef214d3576d89925df6124"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_ioctl.o"
-symbol = "ieee80211_sta_disconnect"
-code = "521105c8611db38cf6a1e78da1caeb3003b3317dc2ba8f95c56ed253d1a424d4"
 
 [[function]]
 artifact = "libnet80211"
@@ -1879,12 +1867,6 @@ code = "ad1068c8ee57ba621df8763bacc122ab9db12e690481c3dc78f25eb2800b413a"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_output.o"
-symbol = "ieee80211_add_extcap"
-code = "4a514955cdd2d9b5409a55be47b49ace07d83f4db5bd59f66d46225d95e3d7ed"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
 symbol = "ieee80211_alloc_tx_buf"
 code = "ee053cdf63bdd7fba8ad8596fc9033ea5b3d4d81b5b2ac36ecac3fc02699970c"
 
@@ -1911,18 +1893,6 @@ artifact = "libnet80211"
 member = "ieee80211_output.o"
 symbol = "ieee80211_recycle_cache_eb"
 code = "e4c6e50229a6ce3261f3b8ce298c92b0c2130abea7bc8c7eea831c269143341d"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
-symbol = "ieee80211_send_mgmt"
-code = "f3eca92c93a3f454724dce591995005e307fb21114026b438fac511aa4f694c3"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
-symbol = "ieee80211_send_probereq"
-code = "eede7e4b6fda3aae1f51171ab540d9b6296070aa728957fffceb259e6c263c38"
 
 [[function]]
 artifact = "libnet80211"
@@ -1987,18 +1957,6 @@ code = "379f571bf6dd69aff1d8d91f2bc94b0d7bcc1fa7e9f3acff9a0e3a699b13932e"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_sta.o"
-symbol = "sta_bip_check"
-code = "26c4fd6f526be163d9f728c54a14a74a30f9a84eefbd1ef5975d22d2854955da"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_sta.o"
-symbol = "sta_input"
-code = "920a9120e90b18155fd00f3e7d02862544f7560f88e1cb0cc0ff1f85768a1246"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_sta.o"
 symbol = "sta_recv_assoc"
 code = "cbeaa9e2b7a5e99f826110c871523d05594e7a2123235a572ca132caccf0e75a"
 
@@ -2031,6 +1989,12 @@ artifact = "libnet80211"
 member = "ieee80211_sta.o"
 symbol = "sta_try_sa_query_process"
 code = "54aa547f67604149b60b319d298604194d0f7f89cf5d5b58a7b7972169a15f89"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_supplicant.o"
+symbol = "ieee80211_get_spp"
+code = "003d39a2e4b854dbd472454dbe010092f903cf36748a3911d055542d5f85fd18"
 
 [[function]]
 artifact = "libnet80211"
@@ -3959,6 +3923,12 @@ code = "274db8e6faf8b53f6e67be75ffd48d65b670e605b14b77d2493d54a4345d01b7"
 [[function]]
 artifact = "libpp"
 member = "if_hwctrl.o"
+symbol = "ic_set_key"
+code = "acb94bd31b3ada9188d94847544ff18e3b63b01ce8c07f67989294997eed7a31"
+
+[[function]]
+artifact = "libpp"
+member = "if_hwctrl.o"
 symbol = "ic_set_mac"
 code = "e0ebb2ce22443b93423a2aa10cfc227b75cd454381a5346e6a6867b4b764f14a"
 decisions = ["coverage.toml"]
@@ -4117,6 +4087,18 @@ code = "0559fef06bab407ceb14400a469bb1445ea504db4a718bd66fdf53ee2cff433b"
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
+symbol = "lmacProcessTxError"
+code = "039855052b3efd306806e72603bbbe77976e3b68d0fb346b1f02afc07c1a8e79"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
+symbol = "lmacProcessTxRtsError"
+code = "ffe2cc462d6a55e6d94e6f22608a1946e2eb185786db04847ad2488fb5e8284f"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
 symbol = "lmacProcessTxSuccess"
 code = "ec7260bc2880e4e3e05749a0056467c02b65b6ecd9c9561f70d8ec1332899e37"
 decisions = ["coverage.toml"]
@@ -4127,6 +4109,12 @@ member = "lmac.o"
 symbol = "lmacProcessTxopQComplete"
 code = "cbde0f1ade14f73b184be9f9bd87b265454bba5f3e5a478a8cbd33e3b561bbf4"
 decisions = ["coverage.toml"]
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
+symbol = "lmacProcessTxseckiderr"
+code = "92c011f797b379df062d10b35258e72cb9ffd0dfce105798d34c851ae6bc3446"
 
 [[function]]
 artifact = "libpp"
@@ -4591,12 +4579,6 @@ code = "8be0e43fd3685bad58f42cbf74019557c360dac189bea64143d9cca642531864"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
-symbol = "rc11AXRate2SchedIdx"
-code = "a3c5568e6dcc7fe1aef082eaa8ad5b27f5422a73e18f175b41be1c2d20397716"
-
-[[function]]
-artifact = "libpp"
-member = "trc.o"
 symbol = "rc11GRate2SchedIdx"
 code = "bc891d5f2cf1761a6c4e8085e7bf4d3c5f5ed2a7548d398d34129034ec3e7118"
 
@@ -4702,12 +4684,6 @@ code = "d553a697bc3647209b03a133425af8893b0680f34c0c57dbb64b7160687899ea"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
-symbol = "trc_set_per_pkt_rate"
-code = "6261a05e42cc855772f92fb39982a8b579c55c1daf82ad35fcb5ae5a00d23e41"
-
-[[function]]
-artifact = "libpp"
-member = "trc.o"
 symbol = "trc_tid_isTxAmpduOperational"
 code = "4e549d60c4e236b88fe9d2b88190e584829a7332b5587d7f2e7a3457556bf010"
 
@@ -4751,8 +4727,20 @@ code = "97aea622fac41fc200a1d1b011448e49bde08963b2dc6406837227bb94f487a2"
 [[function]]
 artifact = "libpp"
 member = "wdev.o"
+symbol = "wDev_remove_KeyEntry"
+code = "9c4285ebd44f9f5738b1a5057562152e69fb0ad86f98c62f179c4f3ef5f81487"
+
+[[function]]
+artifact = "libpp"
+member = "wdev.o"
 symbol = "wdevProcessRxSucDataAll"
 code = "d8efee1e8731a5e5f4a5dfdfe8fd02a3494c3a898038712d12b2d2030fbe9606"
+
+[[function]]
+artifact = "libpp"
+member = "wdev.o"
+symbol = "wdev_funcs_init"
+code = "977a523d5e4a2f3993c60b2214919d0156dd88eac34a787bc586e7b6d4a2aa4d"
 
 [[function]]
 artifact = "libpp"
@@ -5043,6 +5031,12 @@ member = ""
 symbol = "lmacProcessShortFrameSuccess"
 code = "eb06e0ee3d5fb73d6c2530bb90eea527f1fb33a4810afe2db5861a0e9ce1d1d6"
 decisions = ["coverage.toml"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "lmacProcessTxComplete"
+code = "83e1d892883146ed6e33f60be2d8fad9bfd63f1389495384ee50e5fb1ab61a5a"
 
 [[function]]
 artifact = "rom"

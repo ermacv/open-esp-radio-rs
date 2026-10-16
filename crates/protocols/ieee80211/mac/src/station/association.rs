@@ -1,6 +1,7 @@
 //! Station association request construction and response admission.
 
 use super::*;
+use crate::address::OwnAddress;
 
 /// Relative HE UL-MU transmit-power capability for MAC rates 16 through 25.
 ///
@@ -12,7 +13,6 @@ use super::*;
 /// subtracts every rate 17..=25 primary byte from rate 16, then writes the
 /// nine differences after Extension ID 60 and two reserved zero bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-802-11ax-he-uplink-power-headroom
 pub struct HeUlMuPowerCapability {
     relative_to_rate_16: [u8; 9],
 }
@@ -158,7 +158,7 @@ pub struct AssociationCapabilities {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssociationRequest<'a> {
-    pub source: [u8; 6],
+    pub source: OwnAddress,
     pub access_point: &'a ScanRecord,
     pub sequence_number: SequenceNumber,
     pub listen_interval: u16,
@@ -179,7 +179,7 @@ impl AssociationRequest<'_> {
         output: &mut [u8],
         capabilities: &AssociationCapabilities,
     ) -> Result<usize, AssociationRequestError> {
-        validate_peer(self.access_point.bssid).map_err(AssociationRequestError::Frame)?;
+        validate_peer(self.access_point.bssid.get()).map_err(AssociationRequestError::Frame)?;
         let ssid = self.access_point.ssid_bytes();
         if ssid.len() > MAX_SSID_LEN {
             return Err(AssociationRequestError::Frame(
@@ -247,113 +247,69 @@ impl AssociationRequest<'_> {
                 return Err(AssociationRequestError::UnexpectedHeUlMuPowerCapability);
             }
         }
-        let phy_information_len = if let Some(capability) = ht_capability {
-            capability.len()
-                + he_capability.map_or(0, |capability| capability.len())
-                + he_ul_mu_power.map_or(0, |_| HE_UL_MU_POWER_CAPABILITY_IE_LEN)
-                + capabilities.wmm.len()
-                + usize::from(he_capability.is_some()) * capabilities.he20_extended.len()
-        } else {
-            0
-        };
-        let required = MANAGEMENT_HEADER_LEN
-            + ASSOCIATION_FIXED_BODY_LEN
-            + 2
-            + ssid.len()
-            + 2
-            + first_rates_len
-            + usize::from(extended_rates_len != 0) * (2 + extended_rates_len)
-            + selected_rsn.as_bytes().len()
-            + power_capability.map_or(0, |_| POWER_CAPABILITY_IE_LEN)
-            + phy_information_len;
-        if output.len() < required {
-            return Err(AssociationRequestError::Frame(
-                StationFrameError::OutputTooSmall { required },
-            ));
-        }
-
-        let frame = &mut output[..required];
-        frame.fill(0);
+        let mut fixed = [0; MANAGEMENT_HEADER_LEN + ASSOCIATION_FIXED_BODY_LEN];
         write_management_header(
-            frame,
+            &mut fixed,
             ASSOCIATION_REQUEST_FRAME_CONTROL,
-            self.access_point.bssid,
-            self.source,
-            self.access_point.bssid,
+            self.access_point.bssid.get(),
+            self.source.get(),
+            self.access_point.bssid.get(),
             self.sequence_number,
         );
-        // Derive Privacy from the exact requested mode, rather than merely
-        // reflecting an untrusted scan record. Candidate admission already
-        // requires the same value; this keeps the transmitted request
-        // fail-closed if a record is ever assembled outside that path.
+        // Privacy comes from the selected security mode, not an untrusted
+        // scan record, even if that record bypassed candidate admission.
         let capability = ((self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1)
             & !0x0010
             | match self.security.security().link_protection() {
                 LinkProtection::Open => 0,
                 LinkProtection::Ccmp => 0x0010,
             };
-        frame[24..26].copy_from_slice(&capability.to_le_bytes());
-        frame[26..28].copy_from_slice(&self.listen_interval.to_le_bytes());
-
-        let mut offset = MANAGEMENT_HEADER_LEN + ASSOCIATION_FIXED_BODY_LEN;
-        write_element(frame, &mut offset, 0, ssid);
-
-        frame[offset] = 1;
-        frame[offset + 1] = first_rates_len as u8;
-        offset += 2;
-        copy_rates(
-            self.access_point,
-            0,
-            &mut frame[offset..offset + first_rates_len],
-        );
-        offset += first_rates_len;
-
-        let rsn = selected_rsn.as_bytes();
-        frame[offset..offset + rsn.len()].copy_from_slice(rsn);
-        offset += rsn.len();
-        if let Some(capability) = power_capability {
-            let capability = capability.encode();
-            frame[offset..offset + capability.len()].copy_from_slice(&capability);
-            offset += capability.len();
-        }
-
+        fixed[24..26].copy_from_slice(&capability.to_le_bytes());
+        fixed[26..28].copy_from_slice(&self.listen_interval.to_le_bytes());
+        let mut rates = [0; MAX_SUPPORTED_RATES_LEN];
+        copy_rates(self.access_point, 0, &mut rates[..rates_len]);
+        let extended_header = [50, extended_rates_len as u8];
+        let power_capability = power_capability.map(|value| value.encode());
+        let he_ul_mu_power = he_ul_mu_power.map(|value| value.encode());
         // SOURCE(esp32s31): complete `libnet80211.a[ieee80211_output.o]::
         // ieee80211_assoc_req_construct` appends Extended Supported Rates
         // only after the selected RSN and the HE Power Capability.
-        if extended_rates_len != 0 {
-            frame[offset] = 50;
-            frame[offset + 1] = extended_rates_len as u8;
-            offset += 2;
-            copy_rates(
-                self.access_point,
-                first_rates_len,
-                &mut frame[offset..offset + extended_rates_len],
-            );
-            offset += extended_rates_len;
-        }
-
-        if let Some(capability) = ht_capability {
-            frame[offset..offset + capability.len()].copy_from_slice(capability);
-            offset += capability.len();
-            if let Some(capability) = he_capability {
-                frame[offset..offset + capability.len()].copy_from_slice(capability);
-                offset += capability.len();
-            }
-            if let Some(capability) = he_ul_mu_power {
-                let capability = capability.encode();
-                frame[offset..offset + capability.len()].copy_from_slice(&capability);
-                offset += capability.len();
-            }
-            frame[offset..offset + capabilities.wmm.len()].copy_from_slice(&capabilities.wmm);
-            offset += capabilities.wmm.len();
+        crate::encoding::FrameParts([
+            fixed.as_slice(),
+            &[0, ssid.len() as u8],
+            ssid,
+            &[1, first_rates_len as u8],
+            &rates[..first_rates_len],
+            selected_rsn.as_bytes(),
+            power_capability
+                .as_ref()
+                .map_or(&[], |value| value.as_slice()),
+            if extended_rates_len == 0 {
+                &[]
+            } else {
+                &extended_header
+            },
+            &rates[first_rates_len..rates_len],
+            ht_capability.map_or(&[], |value| value.as_slice()),
+            he_capability.map_or(&[], |value| value.as_slice()),
+            he_ul_mu_power
+                .as_ref()
+                .map_or(&[], |value| value.as_slice()),
+            if ht_capability.is_some() {
+                &capabilities.wmm
+            } else {
+                &[]
+            },
             if he_capability.is_some() {
-                frame[offset..offset + capabilities.he20_extended.len()]
-                    .copy_from_slice(&capabilities.he20_extended);
-                offset += capabilities.he20_extended.len();
-            }
-        }
-        debug_assert_eq!(offset, required);
-        Ok(required)
+                &capabilities.he20_extended
+            } else {
+                &[]
+            },
+        ])
+        .write(output)
+        .map_err(|required| {
+            AssociationRequestError::Frame(StationFrameError::OutputTooSmall { required })
+        })
     }
 }
 
@@ -462,14 +418,6 @@ pub fn parse_association_response(
 const TIMEOUT_INTERVAL_ELEMENT_ID: u8 = 56;
 /// Timeout Interval type of the association comeback time.
 const TIMEOUT_INTERVAL_ASSOCIATION_COMEBACK: u8 = 3;
-
-fn write_element(frame: &mut [u8], offset: &mut usize, id: u8, value: &[u8]) {
-    frame[*offset] = id;
-    frame[*offset + 1] = value.len() as u8;
-    *offset += 2;
-    frame[*offset..*offset + value.len()].copy_from_slice(value);
-    *offset += value.len();
-}
 
 fn copy_rates(access_point: &ScanRecord, start: usize, output: &mut [u8]) {
     let ordinary = access_point.supported_rates_bytes();

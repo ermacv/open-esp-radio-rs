@@ -28,4 +28,4 @@ first PHY registration instead of calibrating. The returned
 composition. A second call returns `RadioStartError::AlreadyStarted`.
 
 The `oer` facade exposes the crate as `oer::systems::esp32s31::embassy::radio`
-with the `owned-xarxa` or `embassy-ieee802154` feature.
+with the `embassy-ieee802154` feature.

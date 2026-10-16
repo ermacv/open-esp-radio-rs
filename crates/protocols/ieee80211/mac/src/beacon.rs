@@ -1,9 +1,8 @@
 //! Bounded, allocation-free AP beacon field ownership.
 //!
-//! The S31 vendor builder derives DTIM from a ROM TSF leaf which remains zero
-//! in the strict runtime. This module owns only the stateless correction:
-//! locate the fixed-size TIM element and derive its phase from the executor
-//! timestamp and the beacon's advertised interval.
+//! Locate the fixed-size TIM element and derive its DTIM phase from the
+//! supplied timestamp and the beacon's advertised interval. The caller owns
+//! the clock relation; this codec does not read a backend or executor clock.
 
 use crate::{
     ap::profile::Advertisement,
@@ -112,17 +111,14 @@ impl<const OCTETS: usize> TimVirtualBitmap<OCTETS> {
     /// Derive canonical N1/N2 bounds for the Partial Virtual Bitmap field.
     /// N1 is even, so a set bit in odd octet 1 still retains octet 0.
     pub fn partial(&self) -> TimPartialVirtualBitmap<'_> {
-        let Some(first) = self.octets.iter().position(|octet| *octet != 0) else {
+        let first = self.octets.iter().position(|octet| *octet != 0);
+        let last = self.octets.iter().rposition(|octet| *octet != 0);
+        let (Some(first), Some(last)) = (first, last) else {
             return TimPartialVirtualBitmap {
                 bitmap_offset: 0,
                 octets: &self.octets[..1],
             };
         };
-        let last = self
-            .octets
-            .iter()
-            .rposition(|octet| *octet != 0)
-            .expect("a first nonzero TIM octet has a last nonzero octet");
         let first = first & !1;
         TimPartialVirtualBitmap {
             bitmap_offset: first as u8,
@@ -196,72 +192,40 @@ pub fn write_ht_beacon(
     let ht_operation = ht_operation_ie(channel, protection.ht);
     let advertised = security.advertisement();
     let (rsn, rsnx) = (advertised.rsne, advertised.rsnxe);
-    let required = MANAGEMENT_HEADER_LEN
-        + BEACON_FIXED_BODY_LEN
-        + 2
-        + ssid.as_bytes().len()
-        + 2
-        + profile.legacy_rates.supported().len()
-        + if ghz2_4 { 3 } else { 0 }
-        + 7
-        + if ghz2_4 { 3 } else { 0 }
-        + rsn.len()
-        + 2
-        + profile.legacy_rates.extended().len()
-        + wmm_parameter_ie.len()
-        + ht_capability.len()
-        + ht_operation.len()
-        + rsnx.len();
-    if output.len() < required {
-        return Err(ApBeaconBuildError::OutputTooSmall { required });
-    }
-
-    let frame = &mut output[..required];
-    frame.fill(0);
-    frame[..2].copy_from_slice(&0x0080_u16.to_le_bytes());
-    frame[4..10].fill(0xff);
-    frame[10..16].copy_from_slice(&access_point);
-    frame[16..22].copy_from_slice(&access_point);
-    frame[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
-    frame[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
+    let mut fixed = [0; MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN];
+    fixed[..2].copy_from_slice(&0x0080_u16.to_le_bytes());
+    fixed[4..10].fill(0xff);
+    fixed[10..16].copy_from_slice(&access_point);
+    fixed[16..22].copy_from_slice(&access_point);
+    fixed[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
+    fixed[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
     let capabilities = profile.capabilities(security.link_protection());
-    frame[34..36].copy_from_slice(&capabilities.to_le_bytes());
-
-    let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
-    write_element(frame, &mut offset, 0, ssid.as_bytes());
-    write_element(frame, &mut offset, 1, profile.legacy_rates.supported());
-    if ghz2_4 {
-        write_element(frame, &mut offset, 3, &[channel.number()]);
-    }
+    fixed[34..36].copy_from_slice(&capabilities.to_le_bytes());
+    let dsss = [3, 1, channel.number()];
+    let erp = [ERP_ELEMENT_ID, 1, protection.erp_information()];
     // Bitmap offset zero plus two octets covers AID 1..=15 without aliasing
     // AID 8..=15 onto the first byte. Bit zero of bitmap control remains the
     // independent DTIM multicast indication maintained by `stamp`.
-    write_element(
-        frame,
-        &mut offset,
-        5,
-        &[dtim_period - 1, dtim_period, 0, 0, 0],
-    );
-    if ghz2_4 {
-        write_element(
-            frame,
-            &mut offset,
-            ERP_ELEMENT_ID,
-            &[protection.erp_information()],
-        );
-    }
-    if !rsn.is_empty() {
-        copy_record(frame, &mut offset, rsn);
-    }
-    write_element(frame, &mut offset, 50, profile.legacy_rates.extended());
-    copy_record(frame, &mut offset, &wmm_parameter_ie);
-    copy_record(frame, &mut offset, &ht_capability);
-    copy_record(frame, &mut offset, &ht_operation);
-    if !rsnx.is_empty() {
-        copy_record(frame, &mut offset, rsnx);
-    }
-    debug_assert_eq!(offset, required);
-    Ok(required)
+    let tim = [5, 5, dtim_period - 1, dtim_period, 0, 0, 0];
+    crate::encoding::FrameParts([
+        fixed.as_slice(),
+        &[0, ssid.as_bytes().len() as u8],
+        ssid.as_bytes(),
+        &[1, profile.legacy_rates.supported().len() as u8],
+        profile.legacy_rates.supported(),
+        if ghz2_4 { &dsss } else { &[] },
+        &tim,
+        if ghz2_4 { &erp } else { &[] },
+        rsn,
+        &[50, profile.legacy_rates.extended().len() as u8],
+        profile.legacy_rates.extended(),
+        &wmm_parameter_ie,
+        &ht_capability,
+        &ht_operation,
+        rsnx,
+    ])
+    .write(output)
+    .map_err(|required| ApBeaconBuildError::OutputTooSmall { required })
 }
 
 const ERP_ELEMENT_ID: u8 = 42;
@@ -317,19 +281,6 @@ pub fn update_bss_protection(
 pub enum ApBeaconProtectionError {
     MalformedElement,
     MissingProtectionElement,
-}
-
-fn write_element(frame: &mut [u8], offset: &mut usize, id: u8, value: &[u8]) {
-    frame[*offset] = id;
-    frame[*offset + 1] = value.len() as u8;
-    *offset += 2;
-    frame[*offset..*offset + value.len()].copy_from_slice(value);
-    *offset += value.len();
-}
-
-fn copy_record(frame: &mut [u8], offset: &mut usize, record: &[u8]) {
-    frame[*offset..*offset + record.len()].copy_from_slice(record);
-    *offset += record.len();
 }
 
 /// Locate the TIM element in one bounded AP beacon.

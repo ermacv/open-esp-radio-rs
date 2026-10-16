@@ -5,277 +5,274 @@
 //! authenticates both peers and yields the PMK. An anti-clogging refusal
 //! (status 76) makes the station repeat the same commit with the access
 //! point's token. There are no retransmissions inside one exchange: the
-//! vendor arms a 4000 ms authentication timer for the commit exchange and
-//! rearms it for 2000 ms after sending the Confirm, and a timeout ends the
-//! attempt.
+//! vendor uses 4000 ms for the commit exchange and 2000 ms for confirmation.
+//! This owner starts each checked deadline when it produces that phase's
+//! transmission. Waiting for a frame credit or a TX terminal cannot extend it.
 //!
 //! SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_sta.o]::sta_auth_sae`
 //! and the SAE branch of `ieee80211_sta_new_state`; ESP-IDF
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
 //! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c`.
 
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::security::SaePwe;
-use oer_time::{Duration, Instant};
-
-use crate::time::deadline_after;
 use oer_ieee80211_mac::station::{
     SAE_COMMIT_TRANSACTION, SAE_CONFIRM_TRANSACTION, StaDisconnect, parse_sae_authentication,
     parse_sta_disconnect,
 };
+use oer_ieee80211_rsn::Pmk;
 use oer_ieee80211_rsn::sae::{
-    SAE_COMMIT_LEN, SAE_CONFIRM_LEN, SAE_KEY_LEN, SAE_PMKID_LEN, SaeCommit, SaeCommitValues,
-    SaeError, SaeKeys, anti_clogging_token,
+    SAE_COMMIT_LEN, SAE_PMKID_LEN, SaeCommit, SaeCommitValues, SaeError, SaeKeys,
+    anti_clogging_token,
 };
+use oer_time::{Duration, Instant};
 
-/// Authentication timer of the commit exchange.
 pub const STA_SAE_COMMIT_TIMEOUT: Duration = Duration::from_secs(4);
-/// Authentication timer rearmed after the station sent its Confirm.
 pub const STA_SAE_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
-/// The longest anti-clogging token the station repeats.
 pub const STA_SAE_TOKEN_CAPACITY: usize = 64;
-/// The longest SAE body the station sends: a commit with a token container.
 pub const STA_SAE_BODY_CAPACITY: usize = SAE_COMMIT_LEN + 3 + STA_SAE_TOKEN_CAPACITY;
 
 const STATUS_SUCCESS: u16 = 0;
 const STATUS_ANTI_CLOGGING_TOKEN_REQUIRED: u16 = 76;
 const STATUS_SAE_HASH_TO_ELEMENT: u16 = 126;
 
-/// One SAE Authentication frame body the station sends.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// One owned Authentication body, retained until a TX credit is available.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use]
 pub struct StaSaeTransmission {
     pub transaction: u16,
     pub status_code: u16,
-    body: [u8; STA_SAE_BODY_CAPACITY],
-    length: usize,
+    body: heapless::Vec<u8, STA_SAE_BODY_CAPACITY>,
 }
 
 impl StaSaeTransmission {
     pub fn body(&self) -> &[u8] {
-        &self.body[..self.length]
+        &self.body
     }
 }
 
-/// The PMK and PMKID an accepted SAE exchange yields.
-#[derive(Clone, Copy, Eq, PartialEq)]
+/// Successful authentication transfers the zeroizing PMK to the association.
+#[must_use]
 pub struct StaSaePmk {
-    pub pmk: [u8; SAE_KEY_LEN],
+    pub pmk: Pmk,
     pub pmkid: [u8; SAE_PMKID_LEN],
 }
 
 impl core::fmt::Debug for StaSaePmk {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("StaSaePmk")
+        formatter.write_str("StaSaePmk(<redacted>)")
     }
 }
 
-/// Why one SAE Authentication attempt ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaSaeFailure {
     Timeout,
+    DeadlineOverflow,
     PeerDisconnect(StaDisconnect),
-    Rejected {
-        status_code: u16,
-    },
+    Rejected { status_code: u16 },
     Protocol(SaeError),
-    /// The anti-clogging token exceeds what the station repeats.
     TokenTooLong,
 }
 
-/// Result of observing a frame or completing a millisecond.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Only continuing results return an exchange. Terminal results consume it.
+#[derive(Debug)]
+#[must_use]
 pub enum StaSaeEvent {
-    Irrelevant,
-    Transmit(StaSaeTransmission),
+    Irrelevant(StaSaeAuthentication),
+    Transmit {
+        authentication: StaSaeAuthentication,
+        transmission: StaSaeTransmission,
+    },
     Authenticated(StaSaePmk),
     Failed(StaSaeFailure),
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "the allocation-free exchange keeps the derived keys inline"
-)]
 enum StaSaePhase {
-    Committed,
+    Committed { commit: SaeCommit, pwe: SaePwe },
     Confirmed(SaeKeys),
-    Terminal,
 }
 
-/// The SAE Authentication exchange of one attempt.
-// CAPABILITY: wifi-security-wpa3-personal-wpa3-enterprise
+/// One live SAE exchange. Its checked deadline includes waiting for TX credit
+/// and completion. Neither failure nor success leaves a usable exchange behind.
+#[must_use]
 pub struct StaSaeAuthentication {
-    local: [u8; 6],
-    bssid: [u8; 6],
-    commit: SaeCommit,
-    pwe: SaePwe,
-    token: [u8; STA_SAE_TOKEN_CAPACITY],
-    token_length: usize,
+    local: OwnAddress,
+    bssid: Bssid,
     phase: StaSaePhase,
-    /// When the authentication timer of the current phase expires; `None`
-    /// until [`Self::start`] after the commit left.
-    deadline: Option<Instant>,
+    deadline: Instant,
+}
+
+impl core::fmt::Debug for StaSaeAuthentication {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StaSaeAuthentication")
+            .field("deadline", &self.deadline)
+            .finish_non_exhaustive()
+    }
 }
 
 impl StaSaeAuthentication {
-    /// Start with this station's commit, derived with the password element
-    /// method `pwe`.
-    pub fn new(local: [u8; 6], bssid: [u8; 6], commit: SaeCommit, pwe: SaePwe) -> Self {
-        Self {
-            local,
-            bssid,
-            commit,
-            pwe,
-            token: [0; STA_SAE_TOKEN_CAPACITY],
-            token_length: 0,
-            phase: StaSaePhase::Committed,
-            deadline: None,
-        }
+    /// Start the bounded commit exchange and transfer its first frame.
+    pub fn new(
+        local: OwnAddress,
+        bssid: Bssid,
+        commit: SaeCommit,
+        pwe: SaePwe,
+        now: Instant,
+    ) -> Result<(Self, StaSaeTransmission), StaSaeFailure> {
+        let deadline = now
+            .checked_add(STA_SAE_COMMIT_TIMEOUT)
+            .ok_or(StaSaeFailure::DeadlineOverflow)?;
+        let transmission = encode_commit(&commit, pwe, None)?;
+        Ok((
+            Self {
+                local,
+                bssid,
+                phase: StaSaePhase::Committed { commit, pwe },
+                deadline,
+            },
+            transmission,
+        ))
     }
 
-    /// Arm the commit timer once the station's commit left at `now`.
-    pub fn start(&mut self, now: Instant) {
-        self.deadline = Some(deadline_after(now, STA_SAE_COMMIT_TIMEOUT));
+    pub const fn next_deadline(&self) -> Instant {
+        self.deadline
     }
 
-    /// When the authentication timer expires, while the exchange runs.
-    pub fn next_deadline(&self) -> Option<Instant> {
-        match self.phase {
-            StaSaePhase::Terminal => None,
-            _ => self.deadline,
-        }
-    }
-
-    /// Whether the exchange uses the hash-to-element frame format.
-    const fn hash_to_element(&self) -> bool {
-        matches!(self.pwe, SaePwe::HashToElement)
-    }
-
-    /// The commit to send, with the current anti-clogging token.
-    pub fn commit(&self) -> StaSaeTransmission {
-        let mut body = [0; STA_SAE_BODY_CAPACITY];
-        let token = (self.token_length != 0).then_some(&self.token[..self.token_length]);
-        let length = self
-            .commit
-            .values()
-            .encode(token, self.hash_to_element(), &mut body)
-            .expect("the body capacity holds a commit with the largest token");
-        StaSaeTransmission {
-            transaction: SAE_COMMIT_TRANSACTION,
-            status_code: self.commit_status(),
-            body,
-            length,
-        }
-    }
-
-    const fn commit_status(&self) -> u16 {
-        if self.hash_to_element() {
-            STATUS_SAE_HASH_TO_ELEMENT
-        } else {
-            STATUS_SUCCESS
-        }
-    }
-
-    /// Classify one management frame from the access point, received at
-    /// `now`.
-    pub fn observe_management_frame(&mut self, frame: &[u8], now: Instant) -> StaSaeEvent {
-        if matches!(self.phase, StaSaePhase::Terminal) {
-            return StaSaeEvent::Irrelevant;
+    /// Consume one observation; a continuing result returns the same owner.
+    pub fn observe_management_frame(self, frame: &[u8], now: Instant) -> StaSaeEvent {
+        if now >= self.deadline {
+            return StaSaeEvent::Failed(StaSaeFailure::Timeout);
         }
         if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
-            return self.fail(StaSaeFailure::PeerDisconnect(disconnect));
+            return StaSaeEvent::Failed(StaSaeFailure::PeerDisconnect(disconnect));
         }
-        let Some(frame) = parse_sae_authentication(frame, self.local, self.bssid) else {
-            return StaSaeEvent::Irrelevant;
+        let Some(frame) = parse_sae_authentication(frame, self.local.get(), self.bssid.get())
+        else {
+            return StaSaeEvent::Irrelevant(self);
         };
         match (frame.transaction, &self.phase) {
-            (SAE_COMMIT_TRANSACTION, StaSaePhase::Committed) => {
+            (SAE_COMMIT_TRANSACTION, StaSaePhase::Committed { .. }) => {
                 self.receive_commit(frame.status_code, frame.body, now)
             }
             (SAE_CONFIRM_TRANSACTION, StaSaePhase::Confirmed(_)) => {
                 self.receive_confirm(frame.status_code, frame.body)
             }
-            // A commit after this station confirmed, or a confirm before it
-            // committed, is discarded as the vendor discards it.
-            _ => StaSaeEvent::Irrelevant,
+            _ => StaSaeEvent::Irrelevant(self),
         }
     }
 
-    fn receive_commit(&mut self, status_code: u16, body: &[u8], now: Instant) -> StaSaeEvent {
-        if status_code == STATUS_ANTI_CLOGGING_TOKEN_REQUIRED {
-            let token = match anti_clogging_token(body, self.hash_to_element()) {
-                Ok(token) => token,
-                Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
+    fn receive_commit(mut self, status: u16, body: &[u8], now: Instant) -> StaSaeEvent {
+        let StaSaePhase::Committed { commit, pwe } = &self.phase else {
+            return StaSaeEvent::Irrelevant(self);
+        };
+        let h2e = matches!(pwe, SaePwe::HashToElement);
+        if status == STATUS_ANTI_CLOGGING_TOKEN_REQUIRED {
+            let token = match anti_clogging_token(body, h2e) {
+                Ok(token) if token.len() <= STA_SAE_TOKEN_CAPACITY => token,
+                Ok(_) => return StaSaeEvent::Failed(StaSaeFailure::TokenTooLong),
+                Err(error) => return StaSaeEvent::Failed(StaSaeFailure::Protocol(error)),
             };
-            if token.len() > STA_SAE_TOKEN_CAPACITY {
-                return self.fail(StaSaeFailure::TokenTooLong);
-            }
-            self.token[..token.len()].copy_from_slice(token);
-            self.token_length = token.len();
-            return StaSaeEvent::Transmit(self.commit());
+            return match encode_commit(commit, *pwe, Some(token)) {
+                Ok(transmission) => StaSaeEvent::Transmit {
+                    authentication: self,
+                    transmission,
+                },
+                Err(error) => StaSaeEvent::Failed(error),
+            };
         }
-        if status_code != self.commit_status() {
-            return self.fail(
-                if matches!(status_code, STATUS_SUCCESS | STATUS_SAE_HASH_TO_ELEMENT) {
+        if status != commit_status(*pwe) {
+            return StaSaeEvent::Failed(
+                if matches!(status, STATUS_SUCCESS | STATUS_SAE_HASH_TO_ELEMENT) {
                     StaSaeFailure::Protocol(SaeError::Malformed)
                 } else {
-                    StaSaeFailure::Rejected { status_code }
+                    StaSaeFailure::Rejected {
+                        status_code: status,
+                    }
                 },
             );
         }
-        let peer = match SaeCommitValues::parse(body, self.hash_to_element()) {
+        let peer = match SaeCommitValues::parse(body, h2e) {
             Ok(peer) => peer,
-            Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
+            Err(error) => return StaSaeEvent::Failed(StaSaeFailure::Protocol(error)),
         };
-        let keys = match self.commit.process(peer) {
+        let keys = match commit.process(peer) {
             Ok(keys) => keys,
-            // A reflected commit is silently discarded.
-            Err(SaeError::Reflection) => return StaSaeEvent::Irrelevant,
-            Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
+            Err(SaeError::Reflection) => return StaSaeEvent::Irrelevant(self),
+            Err(error) => return StaSaeEvent::Failed(StaSaeFailure::Protocol(error)),
         };
-        let confirm = keys.own_confirm(1);
-        let mut body = [0; STA_SAE_BODY_CAPACITY];
-        body[..SAE_CONFIRM_LEN].copy_from_slice(&confirm);
+        let body = match heapless::Vec::from_slice(&keys.own_confirm(1)) {
+            Ok(body) => body,
+            Err(_) => return StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::Malformed)),
+        };
+        let Some(deadline) = now.checked_add(STA_SAE_CONFIRM_TIMEOUT) else {
+            return StaSaeEvent::Failed(StaSaeFailure::DeadlineOverflow);
+        };
         self.phase = StaSaePhase::Confirmed(keys);
-        self.deadline = Some(deadline_after(now, STA_SAE_CONFIRM_TIMEOUT));
-        StaSaeEvent::Transmit(StaSaeTransmission {
-            transaction: SAE_CONFIRM_TRANSACTION,
-            status_code: STATUS_SUCCESS,
-            body,
-            length: SAE_CONFIRM_LEN,
-        })
+        self.deadline = deadline;
+        StaSaeEvent::Transmit {
+            authentication: self,
+            transmission: StaSaeTransmission {
+                transaction: SAE_CONFIRM_TRANSACTION,
+                status_code: STATUS_SUCCESS,
+                body,
+            },
+        }
     }
 
-    fn receive_confirm(&mut self, status_code: u16, body: &[u8]) -> StaSaeEvent {
+    fn receive_confirm(self, status_code: u16, body: &[u8]) -> StaSaeEvent {
         if status_code != STATUS_SUCCESS {
-            return self.fail(StaSaeFailure::Rejected { status_code });
+            return StaSaeEvent::Failed(StaSaeFailure::Rejected { status_code });
         }
-        let StaSaePhase::Confirmed(keys) = &self.phase else {
-            unreachable!("confirms are received only after this station confirmed");
-        };
-        match keys.verify_peer_confirm(body) {
-            Ok(_) => {
-                let pmk = StaSaePmk {
-                    pmk: keys.pmk,
+        match self.phase {
+            StaSaePhase::Confirmed(keys) => match keys.verify_peer_confirm(body) {
+                Ok(_) => StaSaeEvent::Authenticated(StaSaePmk {
+                    pmk: Pmk::from_bytes(keys.pmk),
                     pmkid: keys.pmkid,
-                };
-                self.phase = StaSaePhase::Terminal;
-                StaSaeEvent::Authenticated(pmk)
-            }
-            Err(error) => self.fail(StaSaeFailure::Protocol(error)),
+                }),
+                Err(error) => StaSaeEvent::Failed(StaSaeFailure::Protocol(error)),
+            },
+            _ => StaSaeEvent::Irrelevant(self),
         }
     }
 
-    /// Expire the authentication timer when `now` reached its deadline.
-    pub fn on_deadline(&mut self, now: Instant) -> StaSaeEvent {
-        match self.next_deadline() {
-            Some(deadline) if now >= deadline => self.fail(StaSaeFailure::Timeout),
-            _ => StaSaeEvent::Irrelevant,
+    pub fn on_deadline(self, now: Instant) -> StaSaeEvent {
+        if now >= self.deadline {
+            StaSaeEvent::Failed(StaSaeFailure::Timeout)
+        } else {
+            StaSaeEvent::Irrelevant(self)
         }
     }
+}
 
-    fn fail(&mut self, failure: StaSaeFailure) -> StaSaeEvent {
-        self.phase = StaSaePhase::Terminal;
-        StaSaeEvent::Failed(failure)
+const fn commit_status(pwe: SaePwe) -> u16 {
+    match pwe {
+        SaePwe::HashToElement => STATUS_SAE_HASH_TO_ELEMENT,
+        SaePwe::HuntingAndPecking => STATUS_SUCCESS,
     }
+}
+
+fn encode_commit(
+    commit: &SaeCommit,
+    pwe: SaePwe,
+    token: Option<&[u8]>,
+) -> Result<StaSaeTransmission, StaSaeFailure> {
+    let mut bytes = [0; STA_SAE_BODY_CAPACITY];
+    let length = commit
+        .values()
+        .encode(token, matches!(pwe, SaePwe::HashToElement), &mut bytes)
+        .map_err(StaSaeFailure::Protocol)?;
+    let body = heapless::Vec::from_slice(
+        bytes
+            .split_at_checked(length)
+            .ok_or(StaSaeFailure::Protocol(SaeError::Malformed))?
+            .0,
+    )
+    .map_err(|_| StaSaeFailure::Protocol(SaeError::Malformed))?;
+    Ok(StaSaeTransmission {
+        transaction: SAE_COMMIT_TRANSACTION,
+        status_code: commit_status(pwe),
+        body,
+    })
 }
 
 #[cfg(test)]

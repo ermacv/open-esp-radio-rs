@@ -254,8 +254,8 @@ A grant-protect interval is the time the request was programmed. It is not
 an observation of RF exclusion. The opt-in `tracking-diagnostics` feature
 lets a diagnostic image force branches through the vendor's
 temperature-tracking debug policy
-(`ConcurrentPhy::set_temperature_tracking_debug`); the HIL target's
-`phy-tracking-hold` images use it.
+(`ConcurrentPhy::set_temperature_tracking_debug`); no HIL image enables it
+now.
 
 Production RX gain executes as one direct blocking transaction under the
 exclusive PHY owner. It records disjoint DC, publication and control phases,

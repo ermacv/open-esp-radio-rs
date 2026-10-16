@@ -103,6 +103,8 @@ pub trait BluetoothRadioHardware {
     fn restore_phy_etm_route(&mut self, route: Self::DisabledPhyRoute);
 
     /// Publish the insertion's head and start the idle scheduler.
+    /// An error publishes no RUN command: a head may have been published,
+    /// but this call did not expose the idle list to execution.
     fn start(
         &mut self,
         items: &SchedulerItemSpace<'_>,

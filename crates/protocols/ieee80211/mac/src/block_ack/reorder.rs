@@ -51,10 +51,30 @@ pub enum RxReorderError {
 }
 
 /// The MPDUs one operation hands back to the caller, in sequence order.
+/// Every operation creates a fresh list. At most N-1 frames can wait behind
+/// the current gap, leaving room for the one received frame in a release
+/// of N positions. Transferring each retained position into its matching
+/// result position and reserving the gap's position for that input prevents
+/// an overflow; there is no append operation or dropped-frame counter.
+///
+/// The list cannot be overwritten or extended by another operation:
+///
+/// ```compile_fail,E0616
+/// use oer_ieee80211_mac::block_ack::RxReorderRelease;
+/// fn overwrite(release: &mut RxReorderRelease<8>) {
+///     release.frames = [None; 8];
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_mac::block_ack::RxReorderRelease;
+/// fn returned_slots(release: &RxReorderRelease<8>) -> usize {
+///     release.iter().count()
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxReorderRelease<const WINDOW_CAPACITY: usize> {
-    pub frames: [Option<RxReorderMpdu>; WINDOW_CAPACITY],
-    pub count: u8,
+    frames: [Option<RxReorderMpdu>; WINDOW_CAPACITY],
     /// Sequence numbers the window moved past without an MPDU.
     pub missing: u16,
     /// A received MPDU behind the window: the caller discards it.
@@ -67,7 +87,6 @@ impl<const WINDOW_CAPACITY: usize> RxReorderRelease<WINDOW_CAPACITY> {
     const fn empty() -> Self {
         Self {
             frames: [None; WINDOW_CAPACITY],
-            count: 0,
             missing: 0,
             rejected: None,
             buffered: false,
@@ -76,17 +95,13 @@ impl<const WINDOW_CAPACITY: usize> RxReorderRelease<WINDOW_CAPACITY> {
 
     /// The released MPDUs in sequence order.
     pub fn iter(&self) -> impl Iterator<Item = RxReorderMpdu> + '_ {
-        self.frames[..usize::from(self.count)]
-            .iter()
-            .copied()
-            .flatten()
+        self.frames.iter().flatten().copied()
     }
 
-    fn push(&mut self, frame: RxReorderMpdu) {
-        let index = usize::from(self.count);
-        debug_assert!(index < self.frames.len());
-        self.frames[index] = Some(frame);
-        self.count += 1;
+    fn order(&mut self, start: SequenceNumber) {
+        self.frames.sort_unstable_by_key(|frame| {
+            frame.map_or(u16::MAX, |frame| start.forward_distance(frame.sequence))
+        });
     }
 }
 
@@ -96,6 +111,10 @@ pub struct RxReorderBuffer<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: us
     next_sequence: SequenceNumber,
     window: u16,
     occupied: u64,
+    /// Physical position of `next_sequence`, always vacant between inputs.
+    /// Mapping relative to this head also works when WINDOW_CAPACITY does
+    /// not divide the 4096-value sequence space.
+    head: usize,
     frames: [Option<RxReorderMpdu>; WINDOW_CAPACITY],
 }
 
@@ -108,10 +127,12 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<Self, RxReorderError> {
-        assert!(
-            WINDOW_CAPACITY != 0 && WINDOW_CAPACITY <= MAX_RX_REORDER_WINDOW as usize,
-            "the occupancy bitmap holds at most 64 window positions"
-        );
+        const {
+            assert!(
+                WINDOW_CAPACITY != 0 && WINDOW_CAPACITY <= MAX_RX_REORDER_WINDOW as usize,
+                "the occupancy bitmap holds at most 64 window positions"
+            );
+        };
         if window == 0 || window as usize > WINDOW_CAPACITY {
             return Err(RxReorderError::InvalidWindow(window));
         }
@@ -120,6 +141,7 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
             next_sequence: starting_sequence,
             window,
             occupied: 0,
+            head: 0,
             frames: [None; WINDOW_CAPACITY],
         })
     }
@@ -151,7 +173,7 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
     ///
     /// This is a recovery edge the caller chooses to apply; the Espressif
     /// reorder path applies it with `use_received_sequence` for formats newer
-    /// than HT (`ESP32-S31` receive runtime).
+    /// than HT, as selected by the receive backend.
     pub fn resynchronize_stale_initial_ampdu(
         &mut self,
         sequence: SequenceNumber,
@@ -176,13 +198,14 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         Some((released, next_sequence))
     }
 
-    /// Decide whether this sequence stays buffered after a successful
+    /// Decide whether the caller must reserve backing storage before
     /// [`Self::ingest`].
     ///
-    /// The next expected sequence is released immediately. Every forward
-    /// sequence has at least that first gap in front of it, including after a
-    /// bounded window advance, and is therefore buffered. A stale MPDU is
-    /// rejected by `ingest` and is never buffered.
+    /// The next expected sequence is released immediately. A forward
+    /// sequence requires backing for its gap; a window advance may then
+    /// release it with a complete run in the same input. The release names
+    /// that same backing slot even when `buffered` is false. A stale MPDU is
+    /// rejected by `ingest` and never needs backing.
     pub fn retains_on_ingest(&self, sequence: SequenceNumber) -> Result<bool, RxReorderError> {
         let distance = self.next_sequence.forward_distance(sequence);
         if distance >= SequenceNumber::HALF_SPACE {
@@ -209,17 +232,15 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         &mut self,
         frame: RxReorderMpdu,
     ) -> Result<Option<RxReorderMpdu>, RxReorderError> {
-        self.check_slot(frame.slot)?;
+        self.check_received_slot(frame.slot)?;
         if frame.sequence != self.next_sequence {
             return Ok(None);
-        }
-        if self.has_sequence(frame.sequence) {
-            return Err(RxReorderError::DuplicateSequence(frame.sequence));
         }
         let successor = self.next_sequence.wrapping_add(1);
         if self.has_sequence(successor) {
             return Ok(None);
         }
+        self.head = self.relative_index(1);
         self.next_sequence = successor;
         Ok(Some(frame))
     }
@@ -231,36 +252,25 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         &mut self,
         frame: RxReorderMpdu,
     ) -> Result<RxReorderRelease<WINDOW_CAPACITY>, RxReorderError> {
-        self.check_slot(frame.slot)?;
-        if self
-            .frames
-            .iter()
-            .flatten()
-            .any(|owned| owned.slot == frame.slot)
-        {
-            return Err(RxReorderError::SlotAlreadyOwned(frame.slot));
-        }
-
-        let mut release = RxReorderRelease::empty();
+        self.check_received_slot(frame.slot)?;
         let distance = self.next_sequence.forward_distance(frame.sequence);
         if distance >= SequenceNumber::HALF_SPACE {
+            let mut release = RxReorderRelease::empty();
             release.rejected = Some(frame);
             return Ok(release);
         }
-        if distance >= self.window {
-            let advance = distance - self.window + 1;
-            self.advance(advance, &mut release);
-        }
-
-        let index = Self::slot_index(frame.sequence);
-        if self.occupied & (1_u64 << index) != 0 {
+        if self.has_sequence(frame.sequence) {
             return Err(RxReorderError::DuplicateSequence(frame.sequence));
         }
-        self.frames[index] = Some(frame);
-        self.occupied |= 1_u64 << index;
-        self.release_contiguous(&mut release);
-        release.buffered = self.occupied & (1_u64 << index) != 0;
-        Ok(release)
+        let advance = if distance >= self.window {
+            // distance < 2048 and window is nonzero, so this is 1..=2047.
+            distance - self.window + 1
+        } else {
+            0
+        };
+        let start = self.next_sequence.wrapping_add(advance);
+        let contiguous = self.contiguous_from(start, Some(frame.sequence));
+        Ok(self.finish(advance, contiguous, Some(frame)))
     }
 
     /// Release the first buffered run after the caller's gap timer expired.
@@ -268,18 +278,14 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
     /// The scan is bounded by the negotiated window. It never reads time or
     /// waits; the caller decides when this edge is due.
     pub fn expire_gap(&mut self) -> RxReorderRelease<WINDOW_CAPACITY> {
-        let mut release = RxReorderRelease::empty();
-        let mut distance = 0_u16;
-        while distance < self.window {
-            let sequence = self.next_sequence.wrapping_add(distance);
-            if self.has_sequence(sequence) {
-                self.advance(distance, &mut release);
-                self.release_contiguous(&mut release);
-                return release;
+        for distance in 0..self.window {
+            let start = self.next_sequence.wrapping_add(distance);
+            if self.has_sequence(start) {
+                let contiguous = self.contiguous_from(start, None);
+                return self.finish(distance, contiguous, None);
             }
-            distance += 1;
         }
-        release
+        RxReorderRelease::empty()
     }
 
     /// Move the window start to a received BlockAckReq's starting sequence.
@@ -301,25 +307,27 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         if distance == 0 || distance >= SequenceNumber::HALF_SPACE {
             return None;
         }
-        let mut release = RxReorderRelease::empty();
-        self.advance(distance, &mut release);
-        self.release_contiguous(&mut release);
-        Some(release)
+        let contiguous = self.contiguous_from(starting_sequence, None);
+        Some(self.finish(distance, contiguous, None))
     }
 
     /// End the agreement: release every buffered MPDU in sequence order.
     pub fn stop(&mut self) -> RxReorderRelease<WINDOW_CAPACITY> {
-        let mut release = RxReorderRelease::empty();
-        let mut distance = 0_u16;
-        while distance < self.window {
-            let sequence = self.next_sequence.wrapping_add(distance);
-            if let Some(frame) = self.take_sequence(sequence) {
-                release.push(frame);
-            }
-            distance += 1;
-        }
+        let mut release = RxReorderRelease {
+            frames: core::mem::replace(&mut self.frames, [None; WINDOW_CAPACITY]),
+            ..RxReorderRelease::empty()
+        };
         self.occupied = 0;
+        release.order(self.next_sequence);
         release
+    }
+
+    fn check_received_slot(&self, slot: u8) -> Result<(), RxReorderError> {
+        self.check_slot(slot)?;
+        if self.frames.iter().flatten().any(|owned| owned.slot == slot) {
+            return Err(RxReorderError::SlotAlreadyOwned(slot));
+        }
+        Ok(())
     }
 
     const fn check_slot(&self, slot: u8) -> Result<(), RxReorderError> {
@@ -333,55 +341,91 @@ impl<const WINDOW_CAPACITY: usize, const SLOT_CAPACITY: usize>
         }
     }
 
-    #[inline(always)]
-    fn advance(&mut self, count: u16, release: &mut RxReorderRelease<WINDOW_CAPACITY>) {
-        let retained_span = count.min(self.window);
-        let released_before = release.count;
-        let mut offset = 0_u16;
-        while offset < retained_span {
-            let sequence = self.next_sequence.wrapping_add(offset);
-            if let Some(frame) = self.take_sequence(sequence) {
-                release.push(frame);
-            }
-            offset += 1;
-        }
-        let released_while_advancing = release.count - released_before;
-        release.missing = release
-            .missing
-            .saturating_add(count.saturating_sub(u16::from(released_while_advancing)));
-        self.next_sequence = self.next_sequence.wrapping_add(count);
+    /// Plan the complete run before changing any retained slot. Each
+    /// examined sequence is distinct: window <= 64 < the sequence space.
+    fn contiguous_from(&self, start: SequenceNumber, received: Option<SequenceNumber>) -> u16 {
+        (0..self.window)
+            .take_while(|offset| {
+                let sequence = start.wrapping_add(*offset);
+                received == Some(sequence) || self.has_sequence(sequence)
+            })
+            .count() as u16
     }
 
-    #[inline(always)]
-    fn release_contiguous(&mut self, release: &mut RxReorderRelease<WINDOW_CAPACITY>) {
-        let mut count = 0_u16;
-        while count < self.window {
-            let Some(frame) = self.take_sequence(self.next_sequence) else {
-                break;
-            };
-            release.push(frame);
-            self.next_sequence = self.next_sequence.wrapping_add(1);
-            count += 1;
+    /// Commit one precomputed transition. Old frames transfer one-to-one
+    /// into the same positions of the result array. The original head is
+    /// vacant, reserving one result position for this input's new MPDU.
+    /// Thus even the maximal N-1 retained frames plus one input fit in N
+    /// result positions, without a fallible append after state mutation.
+    fn finish(
+        &mut self,
+        advance: u16,
+        contiguous: u16,
+        received: Option<RxReorderMpdu>,
+    ) -> RxReorderRelease<WINDOW_CAPACITY> {
+        let start = self.next_sequence;
+        // advance < 2048 and contiguous <= 64: this span fits u16 and
+        // never wraps the 4096-value sequence space while selecting frames.
+        let span = advance + contiguous;
+        let before_run = self
+            .frames
+            .iter()
+            .flatten()
+            .filter(|frame| start.forward_distance(frame.sequence) < advance)
+            .count() as u16;
+        // There is at most one MPDU per skipped sequence, so before_run <= advance.
+        let mut release = RxReorderRelease {
+            frames: core::array::from_fn(|index| {
+                if self.frames[index]
+                    .is_some_and(|frame| start.forward_distance(frame.sequence) < span)
+                {
+                    self.occupied &= !(1_u64 << index);
+                    self.frames[index].take()
+                } else {
+                    None
+                }
+            }),
+            missing: advance - before_run,
+            rejected: None,
+            buffered: false,
+        };
+        let received_place = self.head;
+        self.head = self.relative_index(span);
+        self.next_sequence = start.wrapping_add(span);
+        if let Some(frame) = received {
+            if start.forward_distance(frame.sequence) < span {
+                // The original head was a gap, so no old frame can have
+                // occupied this reserved result position.
+                release.frames[received_place] = Some(frame);
+            } else {
+                // Retained old frames and the checked incoming sequence
+                // are distinct and inside the new window. Its relative
+                // indexing therefore maps the input to a vacant position.
+                let index =
+                    self.relative_index(self.next_sequence.forward_distance(frame.sequence));
+                self.frames[index] = Some(frame);
+                self.occupied |= 1_u64 << index;
+                release.buffered = true;
+            }
         }
+        release.order(start);
+        release
     }
 
     fn has_sequence(&self, sequence: SequenceNumber) -> bool {
-        let index = Self::slot_index(sequence);
+        let distance = self.next_sequence.forward_distance(sequence);
+        if distance >= self.window {
+            return false;
+        }
+        let index = self.relative_index(distance);
         self.occupied & (1_u64 << index) != 0
             && self.frames[index].is_some_and(|frame| frame.sequence == sequence)
     }
 
-    fn take_sequence(&mut self, sequence: SequenceNumber) -> Option<RxReorderMpdu> {
-        let index = Self::slot_index(sequence);
-        if !self.has_sequence(sequence) {
-            return None;
-        }
-        self.occupied &= !(1_u64 << index);
-        self.frames[index].take()
-    }
-
-    const fn slot_index(sequence: SequenceNumber) -> usize {
-        sequence.get() as usize % WINDOW_CAPACITY
+    fn relative_index(&self, distance: u16) -> usize {
+        // head < 64; every internal caller supplies a span below 2112.
+        // Modulo here rotates the bounded storage, independently of SN wrap.
+        (self.head + usize::from(distance)) % WINDOW_CAPACITY
     }
 }
 

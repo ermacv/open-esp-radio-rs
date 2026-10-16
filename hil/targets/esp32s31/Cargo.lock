@@ -32,62 +32,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anstream"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
-dependencies = [
- "anstyle",
- "anstyle-parse",
- "anstyle-query",
- "anstyle-wincon",
- "colorchoice",
- "is_terminal_polyfill",
- "utf8parse",
-]
-
-[[package]]
-name = "anstyle"
-version = "1.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
-
-[[package]]
-name = "anstyle-parse"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
-dependencies = [
- "utf8parse",
-]
-
-[[package]]
-name = "anstyle-query"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
-dependencies = [
- "windows-sys",
-]
-
-[[package]]
-name = "anstyle-wincon"
-version = "3.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
-dependencies = [
- "anstyle",
- "once_cell_polyfill",
- "windows-sys",
-]
-
-[[package]]
-name = "anyhow"
-version = "1.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
-
-[[package]]
 name = "as-slice"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -101,9 +45,6 @@ name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
-dependencies = [
- "portable-atomic",
-]
 
 [[package]]
 name = "autocfg"
@@ -116,26 +57,6 @@ name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
-
-[[package]]
-name = "bindgen"
-version = "0.72.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
-dependencies = [
- "bitflags 2.13.1",
- "cexpr",
- "clang-sys",
- "itertools",
- "log",
- "prettyplease",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash",
- "shlex 1.3.0",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "bitfield"
@@ -156,18 +77,6 @@ dependencies = [
  "quote",
  "syn 3.0.4",
 ]
-
-[[package]]
-name = "bitflags"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
-
-[[package]]
-name = "bitflags"
-version = "2.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
 name = "block-buffer"
@@ -263,16 +172,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
 dependencies = [
  "find-msvc-tools",
- "shlex 2.0.1",
-]
-
-[[package]]
-name = "cexpr"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
-dependencies = [
- "nom",
+ "shlex",
 ]
 
 [[package]]
@@ -292,17 +192,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clang-sys"
-version = "1.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a"
-dependencies = [
- "glob",
- "libc",
- "libloading",
-]
-
-[[package]]
 name = "cmac"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -314,28 +203,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "cmake"
-version = "0.1.58"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
- "thiserror 2.0.19",
+ "thiserror",
 ]
-
-[[package]]
-name = "colorchoice"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "const-oid"
@@ -527,37 +401,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "defmt"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1"
-dependencies = [
- "bitflags 1.3.2",
- "defmt-macros",
-]
-
-[[package]]
-name = "defmt-macros"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bad9c72e7ca2137e0dc3813245a0d282fd6daad32fd800af018306a9169b5fe8"
-dependencies = [
- "defmt-parser",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "defmt-parser"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
-dependencies = [
- "thiserror 2.0.19",
-]
-
-[[package]]
 name = "delegate"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -607,12 +450,6 @@ checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
 ]
-
-[[package]]
-name = "either"
-version = "1.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
 name = "elliptic-curve"
@@ -694,21 +531,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f10ce10a4dfdf6402d8e9bd63128986b96a736b1a0a6680547ed2ac55d55dba"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "embassy-net"
-version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy.git?rev=4868fd9acfd4191173cd6531b537d6009d3ae5d0#4868fd9acfd4191173cd6531b537d6009d3ae5d0"
-dependencies = [
- "document-features",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "embedded-io-async 0.7.0",
- "heapless 0.9.3",
- "xarxa",
- "xarxa-driver",
 ]
 
 [[package]]
@@ -891,20 +713,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "embuild"
-version = "0.33.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c41359cdde377dfd2e8aa34c09f9798a3ff9b6e4a9de81167c32d6b289521ed"
-dependencies = [
- "anyhow",
- "bitflags 1.3.2",
- "filetime",
- "log",
- "shlex 1.3.0",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "enumset"
 version = "1.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -923,29 +731,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "env_filter"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "900d271a03799a1ee8d1ca9b19893b48ca674a9284fefcfb85f05e74ed314217"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de671bd27a75a797dc9ae289ba1e77276e75e2026408aab65185384e2d5cd3f6"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "jiff",
- "log",
 ]
 
 [[package]]
@@ -1188,16 +973,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "filetime"
-version = "0.2.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
-dependencies = [
- "cfg-if",
- "libc",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1208,12 +983,6 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
-name = "fs_extra"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fugit"
@@ -1325,12 +1094,6 @@ dependencies = [
  "version_check",
  "zeroize",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "group"
@@ -1460,62 +1223,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "is_terminal_polyfill"
-version = "1.70.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
-
-[[package]]
-name = "jiff"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ab1baf72f08796de0260609515130699b890ac25f30e610ad894bc5856cafdb"
-dependencies = [
- "defmt",
- "jiff-core",
- "jiff-static",
- "log",
- "portable-atomic",
- "portable-atomic-util",
- "serde_core",
-]
-
-[[package]]
-name = "jiff-core"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e52fe76043ccecc9005d2305ebaadf7d7fc0cc89ca6baa10a94d6bc68c7128c"
-dependencies = [
- "defmt",
- "log",
-]
-
-[[package]]
-name = "jiff-static"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "378268a1116ad67ae6228701118ac9f491d78fda38a40a1f1a9e1348de6f7212"
-dependencies = [
- "jiff-core",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "lazy_static"
@@ -1528,16 +1239,6 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
-
-[[package]]
-name = "libloading"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
-dependencies = [
- "cfg-if",
- "windows-link",
-]
 
 [[package]]
 name = "litrs"
@@ -1589,12 +1290,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
 name = "nb"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1608,16 +1303,6 @@ name = "nb"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
-
-[[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
-]
 
 [[package]]
 name = "nu-ansi-term"
@@ -1687,18 +1372,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-bluetooth-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
- "oer-bluetooth-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -1713,7 +1389,6 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
- "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-radio-port",
  "oer-time",
@@ -1724,17 +1399,6 @@ name = "oer-bluetooth-trace"
 version = "0.1.0"
 dependencies = [
  "oer-trace",
-]
-
-[[package]]
-name = "oer-embassy-net-owned"
-version = "0.1.0"
-dependencies = [
- "embassy-sync 0.8.0",
- "oer-ieee80211-datapath",
- "oer-memory",
- "oer-network-interface",
- "xarxa-driver",
 ]
 
 [[package]]
@@ -1776,7 +1440,6 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-bluetooth-trace",
  "oer-esp32s31-bluetooth",
@@ -1798,7 +1461,6 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
- "oer-bluetooth-port",
  "oer-bluetooth-radio",
  "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
@@ -1811,6 +1473,7 @@ dependencies = [
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
  "oer-esp32s31-soc-esp-hal",
+ "oer-radio-port",
  "oer-time-embassy",
  "static_cell",
 ]
@@ -1830,23 +1493,19 @@ dependencies = [
  "oer-esp32s31-pac",
  "oer-espressif-coex",
  "oer-espressif-ieee802154-engine",
- "oer-ieee802154-trace",
  "oer-memory",
  "oer-radio-analog",
  "oer-radio-clock",
  "oer-radio-coex",
- "oer-trace",
 ]
 
 [[package]]
 name = "oer-esp32s31-hil-agent"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "critical-section",
  "embassy-executor",
  "embassy-futures",
- "embassy-net",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io 0.7.1",
@@ -1857,274 +1516,27 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-gatt-trouble",
  "oer-bluetooth-hci",
- "oer-embassy-net-owned",
  "oer-esp32s31-bluetooth-system",
  "oer-esp32s31-hal",
- "oer-esp32s31-hil-calibration-artifact",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-ieee80211-runtime",
- "oer-esp32s31-ieee80211-system",
- "oer-esp32s31-ieee802154-esp-hal",
- "oer-esp32s31-ieee802154-system",
  "oer-esp32s31-phy",
- "oer-esp32s31-phy-relation",
  "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
  "oer-esp32s31-radio-esp-hal",
- "oer-esp32s31-radio-runtime",
  "oer-esp32s31-radio-system",
  "oer-esp32s31-soc-esp-hal",
  "oer-espressif-executor-embassy",
- "oer-espressif-ieee802154-engine",
- "oer-espressif-ieee802154-runtime",
  "oer-espressif-interrupt-table-esp-hal",
  "oer-espressif-staged-runtime",
  "oer-hil-agent",
- "oer-hil-esp32s31-telemetry",
  "oer-hil-image-keys",
  "oer-hil-protocol",
  "oer-hil-trace",
- "oer-ieee80211-runtime",
- "oer-ieee80211-softmac",
- "oer-ieee802154",
- "oer-ieee802154-openthread",
- "oer-ieee802154-port",
  "oer-memory",
- "oer-network-interface",
  "oer-radio-port",
  "oer-time-embassy",
  "oer-trace",
- "open-esp-radio",
- "openthread",
  "static_cell",
- "tinyrlibc",
  "trouble-host",
- "xarxa",
-]
-
-[[package]]
-name = "oer-esp32s31-hil-calibration-artifact"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-phy",
- "postcard",
- "serde",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-phy",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
- "oer-memory",
- "oer-time",
- "riscv",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-ap"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-mac",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-ap",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-softmac",
- "oer-memory",
- "oer-time",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-dma"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "oer-esp32s31-hal",
- "oer-memory",
- "pin-project",
- "vcell",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-phy",
- "oer-espressif-interrupt-table-esp-hal",
- "oer-interrupt-table",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-mac"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211-dma",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
- "oer-ieee80211-trace",
- "oer-ieee80211-upper-mac",
- "oer-memory",
- "oer-time",
- "oer-trace",
- "pin-project",
- "riscv",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "log",
- "oer-embassy-net-owned",
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-ap",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-ieee80211-sta",
- "oer-esp32s31-phy",
- "oer-esp32s31-radio-runtime",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-datapath",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-port",
- "oer-ieee80211-rsn",
- "oer-ieee80211-rsn-service",
- "oer-ieee80211-runtime",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-sta-service",
- "oer-ieee80211-trace",
- "oer-memory",
- "oer-network-interface",
- "oer-radio-permit-pool",
- "oer-radio-port",
- "oer-time",
- "oer-trace",
- "riscv",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-sta"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-phy",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-trace",
- "oer-time",
- "oer-trace",
- "riscv",
- "static_cell",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-system"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "embassy-executor",
- "embassy-futures",
- "embassy-net",
- "embassy-sync 0.8.0",
- "embassy-time",
- "esp-hal",
- "log",
- "oer-embassy-net-owned",
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-ap",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-esp-hal",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-ieee80211-runtime",
- "oer-esp32s31-ieee80211-sta",
- "oer-esp32s31-phy",
- "oer-esp32s31-radio-esp-hal",
- "oer-esp32s31-radio-runtime",
- "oer-esp32s31-soc-esp-hal",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-ap",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-runtime",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-memory",
- "oer-network-interface",
- "oer-radio",
- "oer-radio-supervisor",
- "oer-time",
- "oer-time-embassy",
- "riscv",
- "static_cell",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "oer-espressif-interrupt-table-esp-hal",
- "oer-interrupt-table",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-system"
-version = "0.1.0"
-dependencies = [
- "embassy-sync 0.8.0",
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154-esp-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-radio-esp-hal",
- "oer-esp32s31-radio-runtime",
- "oer-espressif-ieee802154-engine",
- "oer-espressif-ieee802154-runtime",
- "oer-ieee802154",
- "oer-ieee802154-port",
- "oer-memory",
- "oer-radio-port",
- "oer-time-embassy",
 ]
 
 [[package]]
@@ -2155,13 +1567,6 @@ dependencies = [
  "oer-radio-analog",
  "oer-time",
  "oer-trace",
-]
-
-[[package]]
-name = "oer-esp32s31-phy-relation"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-phy",
 ]
 
 [[package]]
@@ -2222,7 +1627,6 @@ dependencies = [
 name = "oer-esp32s31-soc-esp-hal"
 version = "0.1.0"
 dependencies = [
- "atomic-waker",
  "bytemuck",
  "critical-section",
  "esp-hal",
@@ -2257,18 +1661,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-espressif-ieee80211-policy"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-upper-mac",
- "oer-time",
-]
-
-[[package]]
 name = "oer-espressif-ieee802154-engine"
 version = "0.1.0"
 dependencies = [
@@ -2276,32 +1668,6 @@ dependencies = [
  "oer-espressif-coex",
  "oer-ieee802154",
  "oer-ieee802154-trace",
- "oer-trace",
-]
-
-[[package]]
-name = "oer-espressif-ieee802154-radio"
-version = "0.1.0"
-dependencies = [
- "oer-espressif-ieee802154-engine",
- "oer-ieee802154",
- "oer-time",
-]
-
-[[package]]
-name = "oer-espressif-ieee802154-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "oer-espressif-ieee802154-engine",
- "oer-espressif-ieee802154-radio",
- "oer-ieee802154",
- "oer-ieee802154-port",
- "oer-ieee802154-trace",
- "oer-radio-permit-pool",
- "oer-radio-port",
- "oer-time",
  "oer-trace",
 ]
 
@@ -2332,10 +1698,8 @@ name = "oer-hil-agent"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "bytemuck",
  "crc",
  "embassy-futures",
- "embassy-net",
  "embassy-sync 0.8.0",
  "embedded-io-async 0.7.0",
  "heapless 0.9.3",
@@ -2343,19 +1707,6 @@ dependencies = [
  "oer-bluetooth-gatt-trouble",
  "oer-hil-protocol",
  "trouble-host",
- "xarxa",
-]
-
-[[package]]
-name = "oer-hil-esp32s31-telemetry"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-ieee80211-runtime",
- "oer-hil-protocol",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
 ]
 
 [[package]]
@@ -2388,41 +1739,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-ieee80211-ap"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-datapath"
-version = "0.1.0"
-dependencies = [
- "oer-memory",
- "oer-network-interface",
-]
-
-[[package]]
-name = "oer-ieee80211-lower-mac"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-mac",
- "oer-ieee80211-port",
- "oer-radio-coex",
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-mac"
-version = "0.1.0"
-dependencies = [
- "oer-time",
-]
-
-[[package]]
 name = "oer-ieee80211-pac"
 version = "0.1.0"
 dependencies = [
@@ -2437,135 +1753,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-ieee80211-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-rsn"
-version = "0.1.0"
-dependencies = [
- "aes",
- "cmac",
- "hmac",
- "oer-ieee80211-mac",
- "oer-time",
- "p256",
- "pbkdf2",
- "sha1",
- "sha2",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "oer-ieee80211-rsn-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-rsn",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-port",
- "oer-ieee80211-softmac",
- "oer-memory",
- "oer-radio-permit-pool",
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-softmac"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-time",
- "zeroize",
-]
-
-[[package]]
-name = "oer-ieee80211-sta"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-trace",
- "oer-ieee80211-upper-mac",
- "oer-time",
- "oer-trace",
-]
-
-[[package]]
-name = "oer-ieee80211-sta-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-sta",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-trace"
-version = "0.1.0"
-dependencies = [
- "oer-trace",
-]
-
-[[package]]
-name = "oer-ieee80211-upper-mac"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-softmac",
- "oer-time",
-]
-
-[[package]]
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
- "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
-]
-
-[[package]]
-name = "oer-ieee802154-openthread"
-version = "0.1.0"
-dependencies = [
- "heapless 0.9.3",
- "oer-ieee802154",
- "oer-radio-port",
- "oer-time",
- "openthread-radio",
+ "scopeguard",
 ]
 
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
 
 [[package]]
 name = "oer-ieee802154-trace"
@@ -2586,25 +1784,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-network-interface"
-version = "0.1.0"
-
-[[package]]
 name = "oer-phy-trace"
 version = "0.1.0"
 dependencies = [
  "oer-trace",
-]
-
-[[package]]
-name = "oer-radio"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-ap",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
 ]
 
 [[package]]
@@ -2620,27 +1803,12 @@ name = "oer-radio-coex"
 version = "0.1.0"
 
 [[package]]
-name = "oer-radio-permit-pool"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
-]
-
-[[package]]
 name = "oer-radio-port"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "oer-time",
-]
-
-[[package]]
-name = "oer-radio-supervisor"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "oer-ieee80211-runtime",
- "oer-radio",
+ "scopeguard",
 ]
 
 [[package]]
@@ -2670,70 +1838,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "once_cell_polyfill"
-version = "1.70.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "open-esp-radio"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-ap",
- "oer-ieee80211-datapath",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-rsn-service",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-sta-service",
- "oer-memory",
- "oer-network-interface",
- "oer-radio",
-]
-
-[[package]]
-name = "openthread"
-version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=5173f96654a2f317e29fb7d8e69fb8a887607f6d#5173f96654a2f317e29fb7d8e69fb8a887607f6d"
-dependencies = [
- "bitflags 2.13.1",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "heapless 0.9.3",
- "openthread-radio",
- "openthread-sys",
- "rand_core 0.10.1",
- "scopeguard",
-]
-
-[[package]]
-name = "openthread-radio"
-version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=5173f96654a2f317e29fb7d8e69fb8a887607f6d#5173f96654a2f317e29fb7d8e69fb8a887607f6d"
-dependencies = [
- "bitflags 2.13.1",
- "embassy-time",
- "heapless 0.9.3",
-]
-
-[[package]]
-name = "openthread-sys"
-version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=5173f96654a2f317e29fb7d8e69fb8a887607f6d#5173f96654a2f317e29fb7d8e69fb8a887607f6d"
-dependencies = [
- "anyhow",
- "bindgen",
- "cc",
- "cmake",
- "embuild",
- "env_logger",
- "fs_extra",
- "log",
-]
-
-[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2748,16 +1852,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest 0.10.7",
- "hmac",
-]
 
 [[package]]
 name = "pin-project"
@@ -2790,15 +1884,6 @@ name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
-
-[[package]]
-name = "portable-atomic-util"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
-dependencies = [
- "portable-atomic",
-]
 
 [[package]]
 name = "postcard"
@@ -2839,16 +1924,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
-]
-
-[[package]]
-name = "prettyplease"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
-dependencies = [
- "proc-macro2",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -2925,18 +2000,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
-name = "regex"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
 name = "regex-automata"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3011,12 +2074,6 @@ name = "riscv-target-parser"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1376b15f3ff160e9b1e8ea564ce427f2f6fcf77528cc0a8bf405cb476f9cea7"
-
-[[package]]
-name = "rustc-hash"
-version = "2.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
 name = "rustversion"
@@ -3111,28 +2168,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha1"
-version = "0.10.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
-dependencies = [
- "cfg-if",
- "cpufeatures",
- "digest 0.10.7",
-]
-
-[[package]]
-name = "sha2"
-version = "0.10.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
-dependencies = [
- "cfg-if",
- "cpufeatures",
- "digest 0.10.7",
-]
-
-[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3140,12 +2175,6 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
-
-[[package]]
-name = "shlex"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "shlex"
@@ -3266,31 +2295,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09a43598840e33d5b0331f38c5e30d13bb11c11210a4b58f0d9b18a5a5eefcd9"
 dependencies = [
- "thiserror-impl 2.0.19",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -3311,15 +2320,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "tinyrlibc"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9af8adde15cc59c61328c5d709b41b8464522a733033584d33def687b26bd009"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -3460,12 +2460,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
-name = "utf8parse"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
-
-[[package]]
 name = "uuid"
 version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3538,28 +2532,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "xarxa"
-version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=9e0e3293724c30c5892e6af56150c849f5231eb2#9e0e3293724c30c5892e6af56150c849f5231eb2"
-dependencies = [
- "bitflags 2.13.1",
- "bytemuck",
- "byteorder",
- "document-features",
- "heapless 0.9.3",
- "xarxa-driver",
-]
-
-[[package]]
-name = "xarxa-driver"
-version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=9e0e3293724c30c5892e6af56150c849f5231eb2#9e0e3293724c30c5892e6af56150c849f5231eb2"
-dependencies = [
- "atomic-waker",
- "document-features",
-]
-
-[[package]]
 name = "xtensa-lx"
 version = "0.13.0"
 source = "git+https://github.com/ermacv/esp-hal?rev=4fd4ba9b78aa9f96e54115c3d784491c1e12df02#4fd4ba9b78aa9f96e54115c3d784491c1e12df02"
@@ -3612,17 +2584,3 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]

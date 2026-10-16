@@ -152,7 +152,7 @@ pub struct RsnKeyInstallMetadata {
     pub replay_counter: u64,
     pub encrypted_key_data: bool,
     pub plain_key_data_len: usize,
-    pub group_key_id: u8,
+    pub group_key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
     pub group_transmit: bool,
     pub completed_frames: u32,
     pub message2_transmissions: u16,

@@ -56,8 +56,8 @@ RV32 links:
 ```console
 LLD="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/gcc-ld/ld.lld"
 cargo verification scenario --chip esp32s31 all \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
+  --production target/verification/esp32s31/oer-esp32s31-probe-radio-elf \
+  --bluetooth-production target/verification/esp32s31/oer-esp32s31-probe-bluetooth-elf \
   --linker "$LLD" --output target/blobray-research/all \
   --index target/verification/esp32s31/evidence
 ```
@@ -76,7 +76,7 @@ packed-command responses; neither model claims physical timing or RF behavior.
 ```console
 cargo verification probes --chip esp32s31
 cargo verification scenario --chip esp32s31 i2c \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
+  --production target/verification/esp32s31/oer-esp32s31-probe-radio-elf \
   --linker "$LLD" --output target/blobray-phy-i2c
 ```
 
@@ -271,7 +271,7 @@ repository root; `xtask` builds the scenarios:
 
 ```console
 cargo verification scenario --chip esp32s31 gain \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
+  --production target/verification/esp32s31/oer-esp32s31-probe-radio-elf \
   --linker "$LLD" \
   --output target/blobray-research/gain
 ```
@@ -422,7 +422,7 @@ name them too.
 
 ```console
 cargo verification scenario --chip esp32s31 coex \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
+  --production target/verification/esp32s31/oer-esp32s31-probe-radio-elf \
   --linker "$LLD" --output target/blobray-research/coex
 ```
 
@@ -687,8 +687,14 @@ including inlined frames; a line is observed when any of its executed
 instructions is. Each evidence entry counts the lines its executions executed,
 observed, reviewed and left untriaged. A line executed but observed by no
 scenario is either reviewed by a decision in
-[`decisions/observation.rs`](scenarios/src/decisions/observation.rs) (file and trimmed source line,
-with its reason) or listed as unobserved in the evidence index. A decision that
+[`decisions/observation.rs`](scenarios/src/decisions/observation.rs) (file and trimmed source text,
+with its reason) or listed as unobserved in the evidence index. A multiline
+anchor ends at the reviewed line and includes its preceding context; that
+context is not itself reviewed. The ordinary status-four TX-error dispatch
+uses this to distinguish its `match detail` from the RTS-error dispatch.
+Its selector-zero cases compare reaching the selected retry handler through
+the stop goal, an observation not recorded by register-effect dependence.
+A decision that
 matches no unobserved line fails `all`. An untriaged unobserved line has no
 case, compared relation or reviewed decision that accounts for it. Dependence is a necessary condition for a comparison to notice a
 defect on a line, not a sufficient one.

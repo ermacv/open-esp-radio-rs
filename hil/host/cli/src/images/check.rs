@@ -1,9 +1,7 @@
 //! `cargo hil images check`: build HIL firmware image classes the way
 //! `cargo hil image build` does,
 //! with the link-time stack, placement and application audits, and report
-//! every class's outcome instead of stopping at the first failure. A built
-//! final image (`performance`, `correctness`) is also audited by Blobray:
-//! its runtime must make no call into the vendor radio ROM.
+//! every class's outcome instead of stopping at the first failure.
 
 use std::{
     collections::BTreeSet,
@@ -34,28 +32,6 @@ pub struct Outcome {
     pub failure: Option<String>,
     /// The ROM summaries the class's image applied.
     pub summaries: BTreeSet<String>,
-    /// The built runtime ELF.
-    pub runtime_elf: Option<PathBuf>,
-}
-
-/// The classes whose built image Blobray audits for calls into the ROM
-/// ranges the chip forbids: the images a product ships.
-const FINAL: [ImageClass; 2] = [ImageClass::Performance, ImageClass::Correctness];
-
-/// The ROM ranges no final image of `profile`'s chip may call into, as
-/// Blobray's `--forbid` takes them: `<chip>-<name>=<start>..<end>`.
-fn forbidden(profile: &oer_chip_profile::Profile) -> Vec<String> {
-    profile
-        .rom
-        .iter()
-        .flat_map(|rom| &rom.forbidden)
-        .map(|range| {
-            format!(
-                "{}-{}={:#010x}..{:#010x}",
-                profile.id, range.name, range.start, range.end
-            )
-        })
-        .collect()
 }
 
 /// Every class with the runtime features its image builds with, and how to
@@ -167,31 +143,26 @@ fn last_inputs(
     (inputs.schema == oer_image::source_inputs::SCHEMA).then(|| inputs.files.into_iter().collect())
 }
 
-/// The image classes CI builds on every pull request; a change of chip
-/// code type-checks them always.
-pub const FINAL_IMAGES: [ImageClass; 2] = FINAL;
-
 /// The image classes to type-check for chip code in `changed` packages:
-/// the final images, and every class whose image's package graph (`graphs`)
-/// compiles one of them, in catalog order.
+/// every class whose image's package graph (`graphs`) compiles one of them,
+/// in catalog order.
 pub fn image_classes(
     changed: &BTreeSet<&str>,
     graphs: &[(ImageClass, BTreeSet<String>)],
 ) -> Vec<ImageClass> {
     graphs
         .iter()
-        .filter(|(class, packages)| {
-            FINAL_IMAGES.contains(class)
-                || packages
-                    .iter()
-                    .any(|package| changed.contains(package.as_str()))
+        .filter(|(_, packages)| {
+            packages
+                .iter()
+                .any(|package| changed.contains(package.as_str()))
         })
         .map(|(class, _)| *class)
         .collect()
 }
 
-/// The classes a change reaches: the final images, every class whose image
-/// compiles one of the `packages` with changed chip code and, with
+/// The classes a change reaches: every class whose image compiles one of
+/// the `packages` with changed chip code and, with
 /// `changed` files, every class whose last build read one of them.
 pub fn reached(
     root: &std::path::Path,
@@ -290,12 +261,8 @@ pub fn run(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .outcomes;
     outcomes.sort_by_key(|(index, _)| *index);
-    let mut outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
+    let outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
     let profile = oer_chip_profile::Profile::load(&ctx.root, chip)?;
-    let forbidden = forbidden(&profile);
-    if depth == Depth::Build && !forbidden.is_empty() {
-        audit_final_images(&mut outcomes, |elf| final_image_audit(ctx, &forbidden, elf))?;
-    }
     print!("{}", summary(&outcomes));
     verdict(&outcomes)?;
     // Only the whole catalog, built, shows which summaries no image uses.
@@ -304,42 +271,6 @@ pub fn run(
         stale_summaries(&reviewed, &outcomes)?;
     }
     Ok(())
-}
-
-/// Audit every built final image with `audit`; a failed audit fails its
-/// class.
-fn audit_final_images(
-    outcomes: &mut [Outcome],
-    mut audit: impl FnMut(&std::path::Path) -> Result<()>,
-) -> Result<()> {
-    for outcome in outcomes
-        .iter_mut()
-        .filter(|outcome| FINAL.contains(&outcome.class) && outcome.failure.is_none())
-    {
-        let elf = outcome
-            .runtime_elf
-            .clone()
-            .ok_or("a built final image names its runtime ELF")?;
-        if let Err(error) = audit(&elf) {
-            outcome.failure = Some(format!("final radio target audit: {error}"));
-        }
-    }
-    Ok(())
-}
-
-/// Blobray's target audit of the runtime ELF `runtime`, with the Blobray
-/// host built first.
-fn final_image_audit(
-    ctx: &Checkout,
-    forbidden: &[String],
-    runtime: &std::path::Path,
-) -> Result<()> {
-    let mut command = ctx.command(oer_toolchain::workspace::blobray_host(&ctx.root)?);
-    command.args(["audit-targets", "--artifact"]).arg(runtime);
-    for range in forbidden {
-        command.args(["--forbid", range]);
-    }
-    oer_process::run_with_shutdown_grace(&mut command, Duration::from_secs(20))
 }
 
 /// Fails naming every reviewed ROM summary no class's image applied: a
@@ -388,32 +319,23 @@ fn build_one(
     let result = match depth {
         Depth::Build => match frozen {
             Some(frozen) => {
-                oer_hil_image::frozen::build(frozen, chip, class, None, &Default::default()).map(
-                    |artifacts| {
-                        (
-                            artifacts.bundle.rom_summaries.clone(),
-                            Some(artifacts.bundle.runtime_elf()),
-                        )
-                    },
-                )
+                oer_hil_image::frozen::build(frozen, chip, class, None, &Default::default())
+                    .map(|artifacts| artifacts.bundle.rom_summaries.clone())
             }
             None => Err("a full build needs the frozen sources".into()),
         },
 
-        Depth::TypeCheck => {
-            oer_hil_image::check(&ctx.root, chip, class).map(|()| (BTreeSet::new(), None))
-        }
+        Depth::TypeCheck => oer_hil_image::check(&ctx.root, chip, class).map(|()| BTreeSet::new()),
     };
-    let (summaries, runtime_elf, failure) = match result {
-        Ok((summaries, runtime_elf)) => (summaries, runtime_elf, None),
-        Err(error) => (BTreeSet::new(), None, Some(error.to_string())),
+    let (summaries, failure) = match result {
+        Ok(summaries) => (summaries, None),
+        Err(error) => (BTreeSet::new(), Some(error.to_string())),
     };
     let outcome = Outcome {
         class,
         elapsed: started.elapsed(),
         failure,
         summaries,
-        runtime_elf,
     };
     println!(
         "check firmware: {} {} ({}s)",
@@ -495,33 +417,7 @@ mod tests {
             elapsed: Duration::from_secs(3),
             failure: failure.map(str::to_owned),
             summaries: BTreeSet::new(),
-            runtime_elf: Some(PathBuf::from(format!("/{}/runtime.elf", class.id()))),
         }
-    }
-
-    #[test]
-    fn only_built_final_images_are_audited_and_a_failed_audit_fails_its_class() {
-        let mut outcomes = [
-            outcome(ImageClass::Performance, None),
-            outcome(ImageClass::Correctness, Some("link failed")),
-            outcome(ImageClass::SystemWatchdog, None),
-        ];
-        let mut audited = Vec::new();
-        audit_final_images(&mut outcomes, |elf| {
-            audited.push(elf.to_owned());
-            Err("calls the radio ROM".into())
-        })
-        .unwrap();
-        assert_eq!(audited, [PathBuf::from("/performance/runtime.elf")]);
-        assert!(
-            outcomes[0]
-                .failure
-                .as_deref()
-                .unwrap()
-                .contains("calls the radio ROM")
-        );
-        assert_eq!(outcomes[1].failure.as_deref(), Some("link failed"));
-        assert!(outcomes[2].failure.is_none());
     }
 
     #[test]
@@ -547,7 +443,7 @@ mod tests {
         for class in ImageClass::ALL {
             record(class, &["crates/common/src/lib.rs"]);
         }
-        let [wifi, bluetooth] = [ImageClass::Performance, ImageClass::BluetoothGatt];
+        let [wifi, bluetooth] = [ImageClass::BluetoothSecureGatt, ImageClass::BluetoothGatt];
         record(
             wifi,
             &["crates/common/src/lib.rs", "crates/wifi/src/lib.rs"],
@@ -653,31 +549,27 @@ mod tests {
     }
 
     #[test]
-    fn chip_code_type_checks_the_final_images_and_each_class_that_compiles_it() {
+    fn chip_code_type_checks_each_class_that_compiles_it() {
         let graph = |packages: &[&str]| packages.iter().map(|p| (*p).to_owned()).collect();
         let graphs = vec![
             (
                 ImageClass::BluetoothGatt,
                 graph(&["agent", "oer-bluetooth-radio"]),
             ),
-            (ImageClass::Performance, graph(&["agent", "oer-wifi"])),
-            (ImageClass::Correctness, graph(&["agent", "oer-wifi"])),
+            (ImageClass::SystemWatchdog, graph(&["agent", "oer-system"])),
             (
-                ImageClass::DiagnosticIeee802154Thread,
-                graph(&["agent", "oer-ieee802154-radio"]),
+                ImageClass::BluetoothDtm,
+                graph(&["agent", "oer-bluetooth-radio"]),
             ),
         ];
         assert_eq!(
-            image_classes(&BTreeSet::from(["oer-ieee802154-radio"]), &graphs),
-            [
-                ImageClass::Performance,
-                ImageClass::Correctness,
-                ImageClass::DiagnosticIeee802154Thread
-            ]
+            image_classes(&BTreeSet::from(["oer-bluetooth-radio"]), &graphs),
+            [ImageClass::BluetoothGatt, ImageClass::BluetoothDtm]
         );
         assert_eq!(
-            image_classes(&BTreeSet::from(["oer-wifi"]), &graphs),
-            [ImageClass::Performance, ImageClass::Correctness]
+            image_classes(&BTreeSet::from(["oer-system"]), &graphs),
+            [ImageClass::SystemWatchdog]
         );
+        assert!(image_classes(&BTreeSet::from(["oer-other"]), &graphs).is_empty());
     }
 }

@@ -60,12 +60,12 @@ Scenario authors also read the
    `[[narrowed]]` entry the comparisons reach beyond again is an error too:
    a change that widens such a root removes or updates its entry
    ([comparison with main](../../../verification/README.md)).
-8. **Hardware cross-checks** are HIL runs: `cargo hil run
-   phy-vendor-calibration` (and its `-restart`, `-ieee802154` points) flashes
-   the vendor firmware and production alternately and records the
-   comparison of `oer-esp32s31-phy-vendor-calibration` as the run bundle's
-   typed result. Nothing is written to the vendor evidence index
-   `target/verification/<chip>/evidence`.
+8. **Hardware cross-checks** have no HIL scenario now: the
+   `phy-vendor-calibration*` scenarios were deleted with the images they ran
+   on (#762, tag `legacy-wifi-2026-10-16`) and return with the HIL
+   architecture of #761. The comparison itself stays in
+   `oer-esp32s31-phy-vendor-calibration`. Nothing is written to the vendor
+   evidence index `target/verification/<chip>/evidence`.
 9. **Commits.** A production change the comparison needs lands in its own
    product-scoped commit, never inside a `blobray` or verification commit.
 
@@ -76,7 +76,6 @@ cargo verification fetch <chip>
 cargo verification check provenance --chip <chip>
 cargo verification scenario <scenario>
 cargo verification evidence --chip <chip>
-cargo hil plan phy-vendor-calibration
 ```
 
 `<chip>` is `esp32s31` or `esp32c5`; each has its own pins, provenance

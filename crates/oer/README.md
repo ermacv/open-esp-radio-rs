@@ -4,12 +4,11 @@
 it owns no radio resources, packet queues or executor state.
 
 ```rust
-use oer::wifi::WifiConfig;
 use oer::ieee80211::{mac, softmac};
 use oer::ieee80211::sta::association::{PhyMode, Preference};
 ```
 
-The default `wifi` feature exposes portable Wi-Fi control, IEEE 802.11
+The default `wifi` feature exposes the portable IEEE 802.11
 protocols and their executor-independent drivers (`ieee80211::services`).
 `bluetooth` exposes `bluetooth::hci`, the in-process `bluetooth::hci_transport`
 and `bluetooth::le::ll`;
@@ -20,17 +19,15 @@ Chip selection and protocol backends are separate:
 
 | Feature | Public API |
 | --- | --- |
-| `esp32s31` | `chips::esp32s31::hal`; no Wi-Fi STA/AP or Bluetooth driver selection |
-| `esp32s31-wifi` | Wi-Fi protocols and `chips::esp32s31::driver::ieee80211::{mac,sta,ap}` |
+| `esp32s31` | `chips::esp32s31::hal`; no radio driver selection |
 | `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine |
-| `owned-xarxa` | Wi-Fi backend, `runtime::radio` service supervisor mailbox, `systems::esp32s31::embassy::radio` (the shared radio's one-call start) and `systems::esp32s31::embassy::wifi` with the owned Xarxa/Embassy network stack |
 | `esp32s31-ieee802154` | IEEE 802.15.4 contracts and `chips::esp32s31::driver::ieee802154`: the MAC engine |
 | `embassy-ieee802154` | The engine, `systems::esp32s31::embassy::radio` and `systems::esp32s31::embassy::ieee802154`: the IEEE 802.15.4 client of the shared radio with its construction inputs |
 | `openthread` | The client and `systems::esp32s31::embassy::ieee802154::openthread`: the OpenThread radio adapter |
 
-Each backend feature includes its chip and portable protocol feature. Selecting
-`wifi,esp32s31` exposes portable Wi-Fi and HAL; select `esp32s31-wifi` to add the
-Wi-Fi backend. Each IEEE 802.15.4 feature includes the one before it in the
+Each backend feature includes its chip and portable protocol feature. No
+ESP32-S31 Wi-Fi backend or composition is exposed: `wifi` provides the portable
+protocols only. Each IEEE 802.15.4 feature includes the one before it in the
 table; the [Thread](../../examples/esp32s31/thread/) example uses only
 `openthread`. Raw PAC authority requires an explicit restricted dependency.
 
@@ -39,14 +36,6 @@ exposed; the facade provides only the portable protocols and the hardware
 engine.
 Cargo features are additive: another dependency enabling `wifi` on the same
 facade also enables portable Wi-Fi in the final feature union.
-
-For a ready ESP32-S31 Embassy Wi-Fi composition, select `owned-xarxa`, the
-only network integration. The composition is exposed
-at `systems::esp32s31::embassy::wifi`, together with every input needed to
-construct it; the [station](../../examples/esp32s31/station/),
-[access-point](../../examples/esp32s31/access-point/) and
-[monitor](../../examples/esp32s31/monitor/) examples use only this path. Stack dependencies and patch ownership are described
-in [network implementations](../../docs/network-implementations.md).
 
 `composition/` owns the source-level binding of components; `systems::` exposes
 those ready-to-construct owners in the public API. Stack and executor adapters
@@ -59,7 +48,7 @@ Architecture checks resolve isolated consumers to catch unwanted dependencies,
 compile no-default/default and declared feature profiles, and test the public
 type identities. Bluetooth and IEEE 802.15.4 are checked independently of Wi-Fi.
 
-Internal libraries depend on their specific contracts and on `oer-radio` for
-radio lifecycle, using the corresponding `oer-*` Cargo package names. They must
+Internal libraries depend on their specific contracts and on `oer-radio-port`
+for the radio port lifecycle, using the corresponding `oer-*` Cargo package names. They must
 never depend on this facade. Association types are shared with the underlying
 IEEE 802.11 encoder; the facade introduces no duplicate enums.

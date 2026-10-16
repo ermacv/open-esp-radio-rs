@@ -4,6 +4,21 @@
 
 use crate::{SharedRadioRegisters, WifiRadioRegisters};
 
+/// Vendor MAC-delay jitter in the hardware's complete representable range.
+/// This value survives the driver/HAL/PAC boundary without erasing its proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacDelaySlot(u8);
+
+impl MacDelaySlot {
+    pub const fn from_random(random: u32) -> Self {
+        Self((random % 11) as u8)
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
 impl WifiRadioRegisters {
     /// Apply all three ordered fresh-read updates of complete rev0 ROM
     /// `phy_sifs_reg_init`.
@@ -88,12 +103,9 @@ impl WifiRadioRegisters {
     /// `hal_he_set_mac_delay`, `hal_he_set_ack_rate(0)` and
     /// `hal_he_set_bbrxhung_time(0)`. `delay_slot` is `_random() % 11`.
     ///
-    /// Returns false without touching hardware when the slot is outside the
-    /// complete vendor range `0..=10`.
-    pub fn initialize_mac_txrx_callbacks(&mut self, delay_slot: u8) -> bool {
-        if delay_slot > 10 {
-            return false;
-        }
+    /// The typed slot proves the complete vendor range `0..=10`.
+    pub fn initialize_mac_txrx_callbacks(&mut self, delay_slot: MacDelaySlot) {
+        let delay_slot = delay_slot.value();
 
         let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
@@ -119,7 +131,6 @@ impl WifiRadioRegisters {
         callbacks
             .bb_rx_hang_control()
             .modify(|_, w| w.bits_0_11_opaque().set(0x00f));
-        true
     }
 
     /// Apply all nine direct RMW edges after the three HE callbacks.

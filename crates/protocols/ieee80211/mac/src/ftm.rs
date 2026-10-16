@@ -430,33 +430,53 @@ impl<'a> FtmRequest<'a> {
     }
 }
 
+/// Encode the complete fixed-size initial request from checked parameters.
+///
+/// ```compile_fail,E0061
+/// use oer_ieee80211_mac::ftm::{encode_initial_request, FtmRequestParameters, FtmWireError};
+/// fn arbitrary_output(parameters: FtmRequestParameters, output: &mut [u8]) -> Result<usize, FtmWireError> {
+///     encode_initial_request(parameters, output)
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_mac::ftm::{encode_initial_request, FtmRequestParameters, FTM_INITIAL_REQUEST_BODY_LEN};
+/// fn complete_body(parameters: FtmRequestParameters) -> [u8; FTM_INITIAL_REQUEST_BODY_LEN] {
+///     encode_initial_request(parameters)
+/// }
+/// ```
 pub fn encode_initial_request(
     parameters: FtmRequestParameters,
-    output: &mut [u8],
-) -> Result<usize, FtmWireError> {
-    if output.len() < FTM_INITIAL_REQUEST_BODY_LEN {
-        return Err(FtmWireError::OutputTooShort);
-    }
-    output[0] = PUBLIC_ACTION_CATEGORY;
-    output[1] = FTM_REQUEST_PUBLIC_ACTION;
-    output[2] = FtmTrigger::StartOrContinue.wire();
-    output[3..FTM_INITIAL_REQUEST_BODY_LEN].copy_from_slice(&parameters.encode_element());
-    Ok(FTM_INITIAL_REQUEST_BODY_LEN)
+) -> [u8; FTM_INITIAL_REQUEST_BODY_LEN] {
+    let mut output = [0; FTM_INITIAL_REQUEST_BODY_LEN];
+    let [category, action, trigger, element @ ..] = &mut output;
+    *category = PUBLIC_ACTION_CATEGORY;
+    *action = FTM_REQUEST_PUBLIC_ACTION;
+    *trigger = FtmTrigger::StartOrContinue.wire();
+    *element = parameters.encode_element();
+    output
 }
 
-pub fn encode_request_trigger(
-    trigger: FtmTrigger,
-    output: &mut [u8],
-) -> Result<usize, FtmWireError> {
-    if output.len() < FTM_REQUEST_PREFIX_LEN {
-        return Err(FtmWireError::OutputTooShort);
-    }
-    output[..FTM_REQUEST_PREFIX_LEN].copy_from_slice(&[
+/// Encode a complete trigger request without a parameters element.
+///
+/// ```compile_fail,E0061
+/// use oer_ieee80211_mac::ftm::{encode_request_trigger, FtmTrigger, FtmWireError};
+/// fn arbitrary_output(trigger: FtmTrigger, output: &mut [u8]) -> Result<usize, FtmWireError> {
+///     encode_request_trigger(trigger, output)
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_mac::ftm::{encode_request_trigger, FtmTrigger};
+/// assert_eq!(encode_request_trigger(FtmTrigger::Stop), [4, 32, 0]);
+/// assert_eq!(encode_request_trigger(FtmTrigger::StartOrContinue), [4, 32, 1]);
+/// ```
+pub const fn encode_request_trigger(trigger: FtmTrigger) -> [u8; FTM_REQUEST_PREFIX_LEN] {
+    [
         PUBLIC_ACTION_CATEGORY,
         FTM_REQUEST_PUBLIC_ACTION,
         trigger.wire(),
-    ]);
-    Ok(FTM_REQUEST_PREFIX_LEN)
+    ]
 }
 
 /// One 48-bit timestamp in the picosecond wire domain.

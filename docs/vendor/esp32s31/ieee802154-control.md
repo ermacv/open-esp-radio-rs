@@ -73,7 +73,7 @@ transaction with a non-replayable snapshot: the hard-IRQ owner samples the
 complete event field and selected abort/ED sidebands, then consumes that exact
 snapshot during acknowledgement. Same-bit arrival and level-line retrigger
 do not change that access model.
-The `ieee802154-route-probe` HIL cell answers both on the ESP32-S31 over the
+The former `ieee802154-route-probe` HIL cell (tag `legacy-wifi-2026-10-16`) answered both on the ESP32-S31 over the
 production owners and route adapter: a second arrival of an event whose bit
 is still latched is cleared with the first (the arrivals coalesce, as the
 vendor's snapshot-then-clear ISR also assumes), and an event latched after the

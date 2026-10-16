@@ -41,10 +41,7 @@
       "serde_json",
       "oer-hil-observer",
       "sha2",
-      "toml_edit"
-    ],
-    "wifi": [
-      "oer-hil-family-ieee80211",
+      "toml_edit",
       "oer-hil-family-ieee80211-fixture"
     ],
     "bluetooth": [
@@ -52,34 +49,9 @@
     ],
     "system": [
       "oer-hil-family-system"
-    ],
-    "ieee802154": [
-      "oer-hil-family-ieee802154"
-    ],
-    "coexistence": [
-      "oer-hil-family-coexistence",
-      "oer-hil-family-ieee80211",
-      "oer-hil-family-ieee80211-fixture",
-      "oer-hil-family-bluetooth"
-    ],
-    "phy": [
-      "oer-hil-family-phy-esp32s31"
     ]
   },
   "timing": {
-    "coexistence/wifi-bluetooth": true,
-    "wifi/station-udp": true,
-    "wifi/station-tcp": true,
-    "wifi/station-icmp": false,
-    "wifi/station-reconnect": false,
-    "wifi/station-ap-loss": false,
-    "wifi/station-ap-absence": false,
-    "wifi/station-sleep": false,
-    "wifi/role": true,
-    "wifi/monitor-capture": true,
-    "wifi/access-point": true,
-    "wifi/station-access-point": true,
-    "wifi/station-access-point-reconnect": true,
     "bluetooth/gatt": false,
     "bluetooth/secure-gatt": true,
     "bluetooth/dtm": true,
@@ -88,24 +60,8 @@
     "bluetooth/dtm-peer": true,
     "system/boot-smoke": false,
     "system/watchdog": true,
-    "system/hang-watchdog": true,
     "system/panic-reset": true,
-    "system/stand-recovery": true,
-    "system/memory-benchmark": true,
-    "system/timebase": true,
-    "system/ipc-call": true,
-    "system/interrupt-table": true,
-    "ieee802154/event-status": false,
-    "ieee802154/ed-event": true,
-    "ieee802154/air-check": true,
-    "ieee802154/peer-exchange": false,
-    "ieee802154/background-maintenance": true,
-    "ieee802154/channel-energy": false,
-    "ieee802154/live-rssi": false,
-    "ieee802154/thread-exchange": false,
-    "ieee802154/route-probe": false,
-    "ieee802154/tracking-hold": true,
-    "phy/vendor-calibration": false
+    "system/stand-recovery": true
   },
   "build": {
     "profile": "debug"

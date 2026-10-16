@@ -14,22 +14,6 @@ use super::{
 impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>
 {
-    #[cfg(not(target_pointer_width = "32"))]
-    pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
-        hardware: &mut M,
-        storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        descriptor_base: u32,
-        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
-    ) -> Result<Self, RxRingError> {
-        if DMA_BUFFER_SIZE > u32::MAX as usize {
-            return Err(RxRingError::Size);
-        }
-        storage
-            .prepare_ring(hardware, descriptor_base, buffer_addresses)
-            .map(Self::from_prepared)
-    }
-
-    #[cfg(target_pointer_width = "32")]
     pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
         hardware: &mut M,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -141,7 +125,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     /// Native models may provide an explicit buffer-preparation callback.
     /// Hardware builds must use [`Self::start_with_storage`] so the callback
     /// cannot bypass the DMA arena's guard restoration.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn start<M, F>(
         &mut self,
         timer: &impl oer_time::Timer,
@@ -247,7 +231,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
         };
         let frontier = ring.completed_descriptor_frontier();
         for step in 0..frontier.descriptor_count {
-            let index = wrap_index::<COUNT>(frontier.start_index, step);
+            let index = frontier.start_index.advance(step).get();
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(RxFrontierError::Ring(RxRingError::Corrupt));
             };
@@ -334,8 +318,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
             return None;
         };
         Some(RxFrontierSchedulerSnapshot {
-            recycle_start: ring.recycle_start(),
-            accepted_tail: ring.accepted_tail(),
+            recycle_start: ring.recycle_start().get(),
+            accepted_tail: ring.accepted_tail().get(),
             observed_mask: ring.observed_mask(),
             topology: ring.topology_snapshot(),
         })
@@ -406,7 +390,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
         // LAST-advance proof for the preceding half; that descriptor belongs
         // to the next service/recycle epoch.
         for step in 0..frontier.descriptor_count.min(COUNT / 2) {
-            let index = wrap_index::<COUNT>(frontier.start_index, step);
+            let index = frontier.start_index.advance(step).get();
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(RxFrontierError::Ring(RxRingError::Corrupt));
             };
@@ -451,6 +435,10 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     /// A prepared ring has not started DMA and can be demoted synchronously.
     /// Live or vacant owners are returned unchanged: a caller must never use
     /// this conversion as a substitute for stopping the walker.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure returns the complete affine frontier without allocation"
+    )]
     pub fn try_into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
         match self.state {
             RxFrontierState::Halted(ring) => Ok(ring),
@@ -460,6 +448,10 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
     }
 
     /// Consume a live frontier without changing hardware state.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure returns the complete affine frontier without allocation"
+    )]
     pub fn try_into_live(mut self) -> Result<RxRingLive<'storage, COUNT>, Self> {
         match self.take_live() {
             Ok(ring) => Ok(ring),
@@ -504,12 +496,4 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
             Err(error) => Err(RxFrontierIntoLiveFailure { owner: self, error }),
         }
     }
-}
-
-fn wrap_index<const COUNT: usize>(index: usize, amount: usize) -> usize {
-    debug_assert!(COUNT != 0);
-    debug_assert!(index < COUNT);
-    debug_assert!(amount <= COUNT);
-    let sum = index + amount;
-    if sum >= COUNT { sum - COUNT } else { sum }
 }

@@ -1,47 +1,88 @@
-//! Sans-IO ESP32-S31 backend of the IEEE 802.11 lower-MAC port.
+//! The hardware side of the ESP32-S31 lower-MAC backend.
 //!
-//! [`LowerMacCore`] holds the state the port needs between calls (interfaces,
-//! installed keys, receive Block Ack banks, the transmit buffers, the
-//! attempt in flight on each EDCA queue and the lifecycle state) and drives
-//! the existing ESP32-S31 register seams through a caller-supplied
-//! [`LowerMacHardware`]. It never waits: the runtime layer owns the event
-//! queue, the interrupt entries, the publication deadlines and the
-//! asynchronous PHY retune an `Enable` needs, and implements
-//! `Ieee80211LowerMacPort` and the extensions the S31 has
-//! (`LowerMacAmpdu`, `LowerMacBeaconTiming` for the station,
-//! `LowerMacMonitor`) over this core.
+//! [`LowerMacCore`] is the state the backend's driver owns by value: the interfaces, the installed keys, the receive Block Ack
+//! banks, and the one published attempt of each EDCA queue. It drives the
+//! ESP32-S31 register seams through a caller-supplied [`LowerMacHardware`]
+//! and never waits: the runtime owns the event queues, the interrupt
+//! entries, the publication deadlines, the software queue of each access
+//! category ahead of the core and the asynchronous PHY retune an `Enable`
+//! needs, and serves the phase contract
+//! (`oer_ieee80211_lower_mac::phase`) over this core.
 //!
-//! # Checks and checked operations
+//! # Checked operations
 //!
-//! Each operation that `Ieee80211LowerMacPort` can refuse has two halves:
-//! a check that makes that contract's refusals (`submit`, `install_key`,
-//! the `apply` settings, `lifecycle`) and an operation on checked values
-//! that refuses nothing ([`LowerMacCore::submit_checked`], [`LowerMacCore::install_checked_key`]
-//! and [`LowerMacCore::remove_checked_key`],
-//! [`LowerMacCore::start_checked_rx_block_ack`] and
-//! [`LowerMacCore::end_checked_rx_block_ack`],
-//! [`LowerMacCore::configure_checked_vif`], [`LowerMacCore::set_checked_channel`],
-//! [`LowerMacCore::set_checked_edca`], [`LowerMacCore::set_checked_he_bss_color`],
-//! [`LowerMacCore::enable_checked`] and [`LowerMacCore::disable_checked`]).
-//! The port trait's backend calls the check; a backend on the owner shape
-//! (`oer_ieee80211_lower_mac::owner`) calls the checked operation with
-//! values its types guarantee, and its state preconditions are invariants
-//! the core asserts in debug builds. A hardware refusal of a checked value
-//! is a [`LowerMacFault`]. The aggregate path and the extensions keep their
-//! checks until their owner-shape forms exist.
+//! Submission consumes a branded free queue and an admission ticket. Key
+//! installation returns an affine `KeyHandle`; `admit_key` borrows that live
+//! handle and consumes a ticket to issue one `KeyUse`. Station GTK installation
+//! returns `ReceiveKeyHandle`, which has only a consuming removal path and
+//! cannot enter TX admission or numbering. The installed material
+//! cannot be removed while any attempt holds a right. `MpduValues::checked`
+//! validates the caller's untrusted request before its fields become private.
+//! Hardware failures retain the submitted owners, including quarantine.
 //!
-//! # One submission, one publication
+//! `CorePools<N>` issues the construction authority and exactly `N` TX
+//! tickets. `KeyUseCount<N>` has a width checked against that same pool in
+//! const evaluation; only consuming a ticket/right can increment/decrement it.
+//! The backend uses its phase ticket count for that same `N`. A
+//! protected MPDU or A-MPDU plan owns its right, whose selector identifies the
+//! still-programmed CCMP material; publication never searches by a copied
+//! key index. Removal consumes the handle and completes at its FIFO position
+//! when there are no rights, or immediately after the last TX terminal.
+//! Poisoned retains rights and DMA owners and never reports `KeyRemoved`.
 //!
-//! An admitted MPDU is published through
+//! # Lifecycle and command barriers
+//!
+//! Construction returns [`DisabledCore`]. Enable consumes it, either returning
+//! [`EnabledCore`] or retaining the whole bank in [`RetuningCore`]. Disable
+//! consumes the enabled owner; [`DisablingCore::finish`] returns the disabled
+//! owner and emits its one terminal only after all publications ended. A
+//! poisoned bank retains its owners. Channel changes and dismantling exist
+//! only on the disabled type. The gate type survives disable and retune.
+//!
+//! Closing first transfers the enabled bank to [`ClosingGate`], whose new
+//! attempts stay held. Only a drained published prefix constructs [`ClosedGate`]
+//! and blocks hardware queues. Opening consumes this evidence; publication
+//! failure returns every held owner and retains the published prefix.
+//!
+//! Receive configuration consumes either the disabled or enabled bank into
+//! [`Configuring`]. That owner withdraws its role's held frames and waits for
+//! that role's published frames, then returns the original lifecycle owner.
+//! No later FIFO command can publish through a configuration barrier. The
+//! other interface's outstanding frames keep their own completion path.
+//!
+//! # Transmit buffers
+//!
+//! A transmit buffer is a whole ordinary TX slot ([`TxSlot`]): the pinned
+//! descriptor and source buffer the hardware reads, whose MPDU follows the
+//! TX metadata word. The caller holds the slot, encodes the MPDU into it
+//! and submits it with the attempt; it comes back with the attempt's
+//! completion ([`LowerMacSink::tx_completed`]). The backend numbers a fresh
+//! protected MPDU at its first transmission ([`LowerMacCore::number`]): the
+//! key's software packet-number allocator writes its CCMP header. Only
+//! `Ok(())` confirms that write; a [`CcmpNumberingError`] prevents TX
+//! preparation. Receive-only key handles are rejected at compile time.
+//!
+//! # One publication per attempt, one attempt per EDCA queue
+//!
+//! An attempt is published through
 //! [`OrdinaryTxOwner::start_queued_single_attempt`]: exactly one descriptor
 //! publication at the submitted rate with the caller's protection, backoff
 //! and power ceiling. Its completion, a collision detach or the hardware
-//! timeout abort ends the attempt; the owner's retry ladder, rate fallback,
-//! backoff draw and BSS protection selection are not applied on this path.
-//! An admitted HT A-MPDU is one aggregate publication ([`ampdu`]) whose
-//! completion reports the recipient's BlockAck.
+//! timeout abort ends it; the driver carries known-result retries out by
+//! submitting the same MPDU again (`MpduValues::retry`).
+//! Retry marking uses the checked management/data `FrameControl` and the
+//! encoded MPDU's length. An incomplete or unsupported field returns
+//! `InvalidRetryHeader` with the original slot before publication; neither
+//! slot capacity nor a failed buffer borrow can silently skip the marking.
 //!
-//! # One attempt per EDCA queue
+//! The chip's pure completion decoder returns `Observed(status)` or
+//! `NoEffect`, or a `CompletionFault`. Only Observed constructs completed
+//! metadata and consumes the published attempt through `finish(status)`.
+//! NoEffect retains the same descriptor, deadline and attempt until its real
+//! result or hardware timeout. SecurityKeyError and InvalidStatus propagate
+//! through `LowerMacFault::Tx` to the existing poisoned-install path; they
+//! return no TX terminal or slot. TimedOut ends the attempt with an unknown
+//! result, and the backend never republishes it.
 //!
 //! The S31 MAC has four ordinary EDCA queues (voice, video, best effort,
 //! background), each with its own descriptor, completion bank and latched
@@ -49,12 +90,9 @@
 //! (`pac/src/wifi/mac/tx/queue.rs`); the vendor publishes them concurrently
 //! (`ppTxPkt` maps user priorities onto them) and handles their collisions
 //! and timeouts per queue (`lmacProcessCollisions`,
-//! `lmacProcessAllTxTimeout`). The core therefore holds one publication slot
-//! per queue: an attempt occupies the queue of its access category, and a
-//! second attempt for an occupied queue is `Busy`. The ordinary TX owner
-//! publishes each MPDU and detaches it as a [`QueuedSingleAttempt`], and
-//! each aggregate keeps its own aggregate owner, so up to four attempts are
-//! in flight.
+//! `lmacProcessAllTxTimeout`). The core holds one attempt per queue
+//! within the core; the driver's software queue holds the
+//! next ones.
 //!
 //! The MAC interrupt's task events do not name a queue, so one
 //! [`LowerMacCore::service`] call offers the same edge to every published
@@ -65,34 +103,25 @@
 //! while another settles keeps its latched timeout and is aborted right
 //! after that settle ends.
 //!
-//! # Transmit buffers
-//!
-//! The port's MPDU buffers are ordinary TX slots ([`TxSlot`]): the pinned
-//! descriptor and source buffer the hardware reads. A lent buffer is a whole
-//! slot, the caller encodes the MPDU into its DMA buffer, and the queued
-//! attempt publishes that slot, so the frame is published where it was
-//! written; the slot is lent again once its attempt completes. The ordinary
-//! owner keeps one idle slot of its own; `TX_BUFFERS` spare slots are lent,
-//! so four of them keep every queue busy. Aggregate buffers are described in
-//! [`ampdu`].
-//!
 //! # Limits
 //!
 //! The S31 draws its backoff in software, so only `Backoff::Slots` is
-//! accepted. Coexistence maps only `CoexPriority::Normal`, onto the static
+//! accepted. Coexistence maps `CoexPriority::Normal` onto the static
 //! per-access-category priority of
-//! [`LegacyTxQueue::vendor_data_packet_priority`]; which arbitration events
-//! the other levels select is a pending policy decision. An individually
-//! addressed frame without acknowledgement is published at legacy rates
-//! only, the one program with a response field; hardware has not confirmed
-//! its on-air behaviour. A published attempt cannot be withdrawn: the S31
-//! abort path needs the queue's hardware timeout edge, so `Cancel` ends only
-//! an attempt the backend still holds, and there is no
-//! `LowerMacCancelPublished`. Aggregates are HT only. Access-point TBTT
-//! schedules are not implemented; the qualification catalog records why.
+//! [`LegacyTxQueue::vendor_data_packet_priority`] and
+//! `CoexPriority::Elevated` onto the radio system's connection-frame
+//! priorities. An individually addressed frame without acknowledgement is
+//! published at legacy rates only, the one program with a response field;
+//! hardware has not confirmed its on-air behaviour. A published attempt
+//! cannot be withdrawn: the S31 abort path needs the queue's hardware
+//! timeout edge. A-MPDU transmission returns in step 2 (#563); access-point
+//! TBTT schedules are not implemented, as the qualification catalog
+//! records.
 
 use core::pin::Pin;
+use oer_radio_port::{PoolPath, Root};
 
+#[cfg(test)]
 use oer_time::Clock;
 
 use oer_esp32s31_hal::types::{MacPti, StaTbttSchedule};
@@ -106,9 +135,9 @@ use oer_esp32s31_ieee80211_mac::{
     ap_tsf::ApTsfHardware,
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     crypto::{
-        ApGroupCcmpSlot, ApPairwiseCcmpSlot, CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot,
-        StaPairwiseCcmpSlot, install_ap_group_ccmp, install_ap_pairwise_ccmp,
-        install_sta_group_ccmp, install_sta_pairwise_ccmp,
+        ApGroupCcmpSlot, ApPairwiseCcmpSlot, CcmpKeyHardware, CcmpTxPacketNumberError,
+        CryptoKeyError, StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_ap_group_ccmp,
+        install_ap_pairwise_ccmp, install_sta_group_ccmp, install_sta_pairwise_ccmp,
     },
     init::{
         MacSnifferHardware, StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware,
@@ -121,47 +150,62 @@ use oer_esp32s31_ieee80211_mac::{
     },
     sta_ap_registers::StaApRegisterHardware,
     tx::{
-        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxPhyRate, TxSlot, TxSlotState,
-        ampdu::{HeAmpduPolicy, HtAmpduHardware, HtAmpduTxError},
+        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxError, TxPhyRate, TxSlot,
+        ampdu::{HeAmpduPolicy, HtAmpduHardware},
         runtime::he_txop_limit,
     },
 };
 use oer_ieee80211_lower_mac::{
-    AmpduBuffer, AmpduCapabilities, Backoff, BandSet, BeaconTimingCapabilities, BlockAckReport,
-    CancelError, Channel, Cipher, CoexPriority, CoexPrioritySet, KeyHandle, KeyInstall, KeyScope,
-    KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacCapabilities,
-    LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt, PhyFormatSet, PhyRate,
-    Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority, RxBlockAckAgreement,
-    RxEvidence, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion,
-    TxFault, TxId, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet, VifTsf,
-    WidthSet,
+    BandSet, BeaconTimingCapabilities, BlockAckReport, Channel, CoexPriority, CoexPrioritySet,
+    LinkMetric, LowerMacCapabilities, MacAddress, PhyFormatSet, PhyRate, Protection, RateSupport,
+    ReceiveFilter, RxEvidence, RxMeta, RxMetadata, SignalMetadata, TbttEvent, TsfTimingError,
+    TxStatus, VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
-    channel::{Band, WifiChannel},
+    ccmp::CCMP_HEADER_LEN,
+    channel::WifiChannel,
     management::BROADCAST_ADDRESS,
     phy::{HeMcs, HtMcs},
     qos::WmmAccessCategory,
+    sequence::SequenceNumber,
 };
 use oer_ieee80211_softmac::MacTxPlan;
+
+pub mod ampdu;
+pub mod association;
+mod resources;
+pub use resources::{CoreAuthority, CorePools, CoreResources, FreeQueue, TxTicket};
+mod lifecycle;
+pub use lifecycle::{
+    ClosedGate, ClosingGate, ConfigurationProgress, ConfigureRefused, Configuring, CoreGate,
+    DisabledCore, DisablingCore, EnabledCore, GateClosure, GateOpenFailed, LifecycleStart,
+    OpenGate, RetuningCore,
+};
+
+mod keys;
+pub use keys::{
+    KeyAdmissionError, KeyAdmissionRefused, KeyHandle, KeyRemoved, KeyUse, QuarantinedAdmission,
+    ReceiveKeyHandle, RemovingKey, TransmitKeyScope, TxAdmission,
+};
+use keys::{KeyUseCount, TransmitKeyToken};
+
+pub use ampdu::{
+    AmpduBacking, AmpduBackingSource, AmpduFormat, AmpduOutcome, AmpduPlan, AmpduProgress,
+    AmpduPublication, ESP32S31_AMPDU_MAX_LENGTH, Esp32s31AmpduBuffer, Esp32s31AmpduOwner, NoAmpdu,
+    PublishedAmpdu, esp32s31_ampdu_capabilities,
+};
 
 use crate::{
     ampdu_tx::AmpduTxRoleAdapter,
     ordinary_tx::{
         MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS, OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome,
-        OrdinaryTxOwner, OrdinaryTxPlan, QueuedSingleAttempt, QueuedSingleAttemptProgress,
-        QueuedSingleAttemptRefused, SingleAttempt, SingleAttemptProtection, TX_CCMP_MIC_SIZE,
-        TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile,
+        OrdinaryTxOwner, OrdinaryTxPlan, QuarantinedSingleAttempt, QueuedSingleAttempt,
+        QueuedSingleAttemptFailed, QueuedSingleAttemptProgress, QueuedSingleAttemptRefused,
+        SingleAttempt, SingleAttemptProtection, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE,
+        WifiTxEntropy, WifiTxPowerProfile,
     },
     tx::WifiTxWake,
 };
-
-pub mod ampdu;
-
-pub use ampdu::{
-    AmpduBacking, AmpduBackingSource, ESP32S31_AMPDU_MAX_LENGTH, Esp32s31AmpduAttempt,
-    Esp32s31AmpduBuffer, Esp32s31AmpduOwner, NoAmpdu, esp32s31_ampdu_capabilities,
-};
-use ampdu::{AmpduFormat, AmpduPlan, AmpduProgress, AmpduPublication, PublishedAmpdu};
 
 /// The ordinary EDCA queues, each holding one attempt in flight.
 pub const LOWER_MAC_TX_QUEUES: usize = 4;
@@ -181,11 +225,10 @@ pub const LOWER_MAC_KEY_SLOTS: usize = (RESOURCES.station_pairwise_ccmp_slots
     + RESOURCES.access_point_group_ccmp_slots) as usize;
 
 const CCMP_128_KEY_BYTES: usize = 16;
-const RX_BLOCK_ACK_BANKS: usize = RESOURCES.rx_block_ack_entries as usize;
-/// First Frame Control byte of a BlockAckReq: control type, subtype eight.
-const BLOCK_ACK_REQUEST_FRAME_CONTROL: u8 = 0x84;
-/// Frame Control, Duration and Address 1: the bytes the owner reads.
+/// Frame Control, Duration and Address 1: the bytes a subframe's check
+/// reads.
 const MIN_FRAME_LENGTH: usize = 10;
+const RX_BLOCK_ACK_BANKS: usize = RESOURCES.rx_block_ack_entries as usize;
 
 /// The longest PSDU (MPDU, MIC and FCS) every transmit program carries:
 /// the legacy program's 12-bit length field
@@ -195,7 +238,8 @@ const MIN_FRAME_LENGTH: usize = 10;
 const MAX_PROGRAM_PSDU: usize = 0x0fff;
 /// Light-sleep wake lead the vendor power manager publishes beside the
 /// station TBTT lead (`g_pm_cfg[16]`, as
-/// `roles/esp32s31/ieee80211/sta/src/modem_sleep.rs` records it). The port
+/// `crates/protocols/ieee80211/sta/src/modem_sleep.rs` records it in
+/// `TBTT_WAKE_WINDOW_MICROS`). The port
 /// reports TBTTs only; it keeps the vendor relation between the two leads.
 const STATION_TBTT_WAKE_WINDOW_MICROS: u16 = 1_500;
 
@@ -204,6 +248,42 @@ const STATION_TBTT_WAKE_WINDOW_MICROS: u16 = 1_500;
 /// also admits management frames of other BSSs.
 const STATION_RECEIVE_FILTERS: ReceiveFilter =
     ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT);
+
+/// One received MPDU's metadata on the ESP32-S31: the portable fields, and
+/// the frame's RSSI from its receive prefix and the PHY's noise floor when
+/// it was received, which every frame carries. The S31 therefore measures
+/// every frame's signal ([`SignalMetadata`]), and a rate selection that
+/// needs it can use this port's metadata directly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31RxMeta {
+    common: RxMeta,
+    rssi_dbm: i8,
+    noise_floor_dbm: i8,
+}
+
+impl Esp32s31RxMeta {
+    /// The same metadata with the frame's receive stamp, which the runtime
+    /// converts from the MAC local time.
+    pub const fn with_timestamp(
+        mut self,
+        timestamp: RxEvidence<oer_ieee80211_lower_mac::Ieee80211Stamp>,
+    ) -> Self {
+        self.common.timestamp = timestamp;
+        self
+    }
+}
+
+impl RxMetadata for Esp32s31RxMeta {
+    fn common(&self) -> &RxMeta {
+        &self.common
+    }
+}
+
+impl SignalMetadata for Esp32s31RxMeta {
+    fn link_metric(&self) -> LinkMetric {
+        LinkMetric::new(self.rssi_dbm, self.noise_floor_dbm)
+    }
+}
 
 /// What the ESP32-S31 lower MAC accepts through this core, with TX slots of
 /// `buffer_size` bytes.
@@ -215,9 +295,8 @@ const STATION_RECEIVE_FILTERS: ReceiveFilter =
 /// [`ESP32S31_MAC_SERVICE_CAPABILITIES`]. The longest MPDU leaves room for
 /// the TX metadata word, the CCMP MIC and the FCS in the four-byte-aligned
 /// descriptor capacity, and with the MIC and the FCS fits the transmit
-/// programs' PSDU length field (the legacy program's 12 bits). Each of the four ordinary EDCA queues holds one
-/// attempt. 5 GHz is absent from the ESP32-S31.
-// CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts
+/// programs' PSDU length field (the legacy program's 12 bits). Each ordinary
+/// EDCA queue holds one attempt. 5 GHz is absent from the ESP32-S31.
 pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapabilities {
     let buffered =
         (buffer_size & !3).saturating_sub(TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE);
@@ -279,12 +358,6 @@ pub const ESP32S31_BEACON_TIMING_CAPABILITIES: BeaconTimingCapabilities =
         tbtt: VifRoleSet::STATION,
     };
 
-/// The open promiscuous policy replaces the role receive policies, so it
-/// runs only while no interface receives.
-pub const ESP32S31_MONITOR_CAPABILITIES: MonitorCapabilities = MonitorCapabilities {
-    with_receiving_interfaces: false,
-};
-
 /// The station TBTT schedule of the MAC's interface-zero timer, whose event
 /// fires on the power interrupt (`MacPowerWakeCause::StaTbtt`).
 pub trait StationTbttHardware {
@@ -332,7 +405,7 @@ pub struct ConnectionFramePriorities {
 
 /// The priority count the vendor publishes beside a connection frame's
 /// priority under the reconnect policy.
-pub const CONNECTION_FRAME_PRIORITY_COUNT: u16 = 4_000;
+const CONNECTION_FRAME_PRIORITY_COUNT: u16 = 4_000;
 
 /// Every register seam the core drives; [`HtAmpduHardware`] includes the
 /// ordinary queues' `TxHardware`.
@@ -373,9 +446,29 @@ impl<H> LowerMacHardware for H where
 }
 
 /// Receiver of the events one core call produces.
-pub trait LowerMacSink {
-    fn tx_completed(&mut self, completion: TxCompletion);
-    fn lifecycle(&mut self, event: LifecycleEvent);
+pub trait LowerMacSink<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath = Root> {
+    /// The attempt of `queue`, submitted at `rate`, ended as `end`: its
+    /// slot comes back with it.
+    fn tx_completed(
+        &mut self,
+        queue: FreeQueue<'core, Path>,
+        ticket: TxTicket<'core, Path>,
+        slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        end: PublicationEnd,
+        rate: PhyRate,
+    );
+    /// A detached aggregate ended, returning its queue and admission credit.
+    fn ampdu_completed(
+        &mut self,
+        queue: FreeQueue<'core, Path>,
+        ticket: TxTicket<'core, Path>,
+        end: PublicationEnd,
+    );
+    /// The last admitted use returned and the programmed key was cleared.
+    fn key_removed(&mut self, removed: KeyRemoved<'core, Path>);
+    /// A disable the core started has ended: no attempt is left.
+    fn disabled(&mut self);
+    /// The station's TBTT event announced the TBTT `event` names.
     fn tbtt(&mut self, event: TbttEvent);
 }
 
@@ -384,26 +477,166 @@ pub trait LowerMacSink {
 pub enum LowerMacFault {
     /// The ordinary TX owner failed or quarantined its descriptor.
     Tx(OrdinaryTxError),
-    /// An aggregate owner failed or quarantined its descriptor chain.
-    Ampdu(HtAmpduTxError),
     /// A receive Block Ack bank did not read back as programmed.
     RxBlockAckReadback,
     /// The hardware refused a checked key.
     Key(CryptoKeyError),
     /// The hardware refused a checked receive Block Ack agreement.
     RxBlockAck(S31RxBlockAckAgreementError),
+    /// An agreement found no free bank, which a slot of the backend's
+    /// shared pool always holds.
+    NoRxBlockAckBank,
     /// The port's owner abandoned the backend: a fail-stop or a dropped
     /// owner. Only a reset restores it.
     Abandoned,
+    /// The MPDU protection or interface does not match its admitted key right.
+    KeyUseMismatch,
 }
 
-/// What a lifecycle command needs from the runtime.
+/// How one attempt ended, as the ESP32-S31 observed it. The backend maps it
+/// onto the portable completion. A detached hardware timeout is
+/// `TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)`: whether
+/// its PPDU reached the air is unknown. An executor watchdog without a
+/// qualified detach instead poisons and quarantines the publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LifecycleStart {
-    /// The command is admitted; its terminal event follows through the sink.
-    Admitted,
-    /// Retune to the channel, then call [`LowerMacCore::finish_retune`].
-    Retune(WifiChannel),
+pub enum PublicationEnd {
+    /// Its completion arrived: the hardware's status, the ACK's SNR and a
+    /// BlockAck the attempt solicited.
+    Completed {
+        status: TxStatus,
+        ack_snr_db: Option<i8>,
+        block_ack: Option<BlockAckReport>,
+    },
+    /// An internal collision detached it: the publication did not reach
+    /// the air.
+    Collision,
+    /// The queue's hardware timeout and its abort: whether the PPDU reached
+    /// the air is unknown.
+    TimedOut,
+    /// Held behind the closed gate or a disable, it was never published.
+    Withdrawn,
+}
+
+/// One interface's configuration: its role, address, BSSID and the frames
+/// it receives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CoreVif {
+    pub role: VifRole,
+    pub address: MacAddress,
+    pub bssid: Option<MacAddress>,
+    pub receive: ReceiveFilter,
+}
+
+impl CoreVif {
+    /// The interface's BSS: its BSSID, or an access point's address.
+    fn bss(&self) -> Option<MacAddress> {
+        match self.role {
+            VifRole::Station => self.bssid,
+            VifRole::AccessPoint => Some(self.address),
+        }
+    }
+
+    /// Whether the receive filter admits `frame`, an MPDU without FCS: the
+    /// hardware policies pass a superset of the requested rules, which
+    /// this narrows.
+    fn admits(&self, frame: &[u8]) -> bool {
+        let filter = self.receive;
+        let Some(address1) = frame_address(frame, 4) else {
+            return false;
+        };
+        let frame_type = (frame[0] >> 2) & 0b11;
+        let subtype = frame[0] >> 4;
+        if frame_type == FRAME_TYPE_CONTROL {
+            return filter.contains(ReceiveFilter::OWN_CONTROL) && address1 == self.address;
+        }
+        let management = frame_type == FRAME_TYPE_MANAGEMENT;
+        if management
+            && matches!(subtype, SUBTYPE_BEACON | SUBTYPE_PROBE_RESPONSE)
+            && filter.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT)
+        {
+            return true;
+        }
+        if management
+            && subtype == SUBTYPE_PROBE_REQUEST
+            && filter.contains(ReceiveFilter::PROBE_REQUESTS)
+        {
+            let bssid = frame_bssid(frame);
+            return (address1 == self.address || address1 == BROADCAST_ADDRESS)
+                && (bssid == Some(BROADCAST_ADDRESS) || bssid == self.bss() && bssid.is_some());
+        }
+        if filter.contains(ReceiveFilter::OWN_UNICAST) && address1 == self.address {
+            return true;
+        }
+        let Some(bss) = self.bss() else {
+            return false;
+        };
+        let in_bss = frame_bssid(frame).is_some_and(|bssid| bssid == bss);
+        if management && subtype == SUBTYPE_BEACON {
+            return in_bss && filter.contains(ReceiveFilter::OWN_BSS_BEACONS);
+        }
+        address1[0] & 1 != 0 && in_bss && filter.contains(ReceiveFilter::OWN_BSS_GROUP)
+    }
+}
+
+const FRAME_TYPE_MANAGEMENT: u8 = 0;
+const FRAME_TYPE_CONTROL: u8 = 1;
+const FRAME_TYPE_DATA: u8 = 2;
+const SUBTYPE_PROBE_REQUEST: u8 = 4;
+const SUBTYPE_PROBE_RESPONSE: u8 = 5;
+const SUBTYPE_BEACON: u8 = 8;
+
+fn frame_address(frame: &[u8], offset: usize) -> Option<MacAddress> {
+    frame.get(offset..offset + 6)?.try_into().ok()
+}
+
+/// The BSSID a management or data frame carries.
+fn frame_bssid(frame: &[u8]) -> Option<MacAddress> {
+    match (frame.first()? >> 2) & 0b11 {
+        FRAME_TYPE_MANAGEMENT => frame_address(frame, 16),
+        FRAME_TYPE_DATA => match frame.get(1)? & 0b11 {
+            0b00 => frame_address(frame, 16),
+            // From the DS: Address 2 is the BSSID.
+            0b10 => frame_address(frame, 10),
+            // To the DS: Address 1 is the BSSID.
+            0b01 => frame_address(frame, 4),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Why a fresh MPDU has not received a CCMP header and must not be
+/// submitted as numbered protected TX.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CcmpNumberingError {
+    /// Software cannot currently write the slot's buffer.
+    BufferUnavailable(TxError),
+    /// The CCMP header does not fit after the metadata and MAC header,
+    /// including when the offset overflows.
+    InsufficientSpace,
+    /// The key cannot allocate another transmit packet number.
+    PacketNumber(CcmpTxPacketNumberError),
+}
+
+/// A receive Block Ack agreement whose values a caller's types guarantee.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxBlockAckValues {
+    pub role: VifRole,
+    pub peer: MacAddress,
+    pub tid: u8,
+    pub start_sequence: SequenceNumber,
+    pub window: u8,
+}
+
+/// The beacon receive priority ([`LowerMacCore::set_rx_beacon_priority`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxBeaconPriority {
+    /// The radio system's beacon-window priority.
+    BeaconWindow,
+    /// Priority zero.
+    Zero,
+    /// No beacon receive priority request.
+    Cleared,
 }
 
 /// Configuration of one core.
@@ -417,105 +650,27 @@ pub struct LowerMacConfig {
     /// Executor watchdog of one publication.
     pub publication_timeout: oer_time::Duration,
     /// The epoch of the core's TSF relations, a number no other owner of a
-    /// TSF relation took (`MacClockHandle::tsf_epoch`).
+    /// TSF relation took.
     pub tsf_epoch: u32,
 }
 
 /// The owners a disabled, idle [`LowerMacCore`] is built from, which
-/// [`LowerMacCore::dismantle`] returns. A place is `None` when its buffer or
-/// aggregate owner was lent and not returned: a borrower that drops one
-/// instead of returning it is a client defect, and its storage is lost until
-/// the image restarts. [`Self::lost_tx_buffers`] and
-/// [`Self::lost_ampdu_owners`] count those places for the composition's
-/// diagnostics.
+/// [`DisabledCore::dismantle`] returns.
 pub struct LowerMacCoreParts<
+    'core,
     'slot,
     P,
     E,
     T,
     const BUFFER_SIZE: usize,
-    const TX_BUFFERS: usize,
-    S: AmpduBacking = NoAmpdu,
-    const AMPDU_SLOTS: usize = 2,
-    const AMPDU_BUFFERS: usize = 0,
+    Path: PoolPath = Root,
+    const TICKETS: usize = 4,
 > {
-    pub tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-    pub spare: [Option<Pin<&'slot mut TxSlot<BUFFER_SIZE>>>; TX_BUFFERS],
-    pub ampdu: [Option<Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>>; AMPDU_BUFFERS],
-    pub ampdu_source: Option<&'slot S>,
-    pub config: LowerMacConfig,
-    pub coex: &'slot dyn RadioCoexPriorities,
-}
-
-impl<
-    P,
-    E,
-    T,
-    S: AmpduBacking,
-    const BUFFER_SIZE: usize,
-    const TX_BUFFERS: usize,
-    const AMPDU_SLOTS: usize,
-    const AMPDU_BUFFERS: usize,
-> LowerMacCoreParts<'_, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>
-{
-    /// Transmit buffers lent and never returned.
-    pub fn lost_tx_buffers(&self) -> usize {
-        self.spare.iter().filter(|place| place.is_none()).count()
-    }
-
-    /// Aggregate owners lent and never returned.
-    pub fn lost_ampdu_owners(&self) -> usize {
-        self.ampdu.iter().filter(|place| place.is_none()).count()
-    }
-}
-
-/// One lent transmit buffer: a whole ordinary TX slot, whose DMA buffer
-/// holds the MPDU after the TX metadata word. It goes back to the core by
-/// submission or [`LowerMacCore::release_tx_buffer`]; a dropped buffer's
-/// slot is lost until the core is rebuilt over new storage.
-pub struct Esp32s31TxBuffer<'slot, const BUFFER_SIZE: usize> {
-    slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
-    len: usize,
-}
-
-impl<const BUFFER_SIZE: usize> TxBuffer for Esp32s31TxBuffer<'_, BUFFER_SIZE> {
-    fn len(&self) -> usize {
-        self.len
-    }
-
-    fn frame_mut(&mut self) -> &mut [u8] {
-        let buffer = self
-            .slot
-            .as_mut()
-            .buffer_mut()
-            .expect("a lent slot stays free until it is submitted");
-        &mut buffer[TX_METADATA_SIZE..TX_METADATA_SIZE + self.len]
-    }
-}
-
-impl<const BUFFER_SIZE: usize> core::fmt::Debug for Esp32s31TxBuffer<'_, BUFFER_SIZE> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("Esp32s31TxBuffer")
-            .field("len", &self.len)
-            .finish_non_exhaustive()
-    }
-}
-
-/// A submission of the core: one MPDU in a lent slot. The core takes no
-/// body: the backend in front of it places a body in the slot after the
-/// header before it submits.
-pub type Esp32s31MpduAttempt<'slot, const BUFFER_SIZE: usize> =
-    MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, core::convert::Infallible>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PortState {
-    Disabled,
-    Enabling,
-    Enabled,
-    Quiescing,
-    Quiesced,
-    Disabling,
+    authority: CoreAuthority<'core, Path, TICKETS>,
+    tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
+    config: LowerMacConfig,
+    coex: &'slot dyn RadioCoexPriorities,
+    keys: KeyBank<'core, Path, TICKETS>,
 }
 
 enum KeyToken {
@@ -526,15 +681,6 @@ enum KeyToken {
 }
 
 impl KeyToken {
-    const fn hardware_index(&self) -> u8 {
-        match self {
-            Self::StaPairwise(slot) => slot.hardware_index(),
-            Self::StaGroup(slot) => slot.hardware_index(),
-            Self::ApPairwise(slot) => slot.hardware_index(),
-            Self::ApGroup(slot) => slot.hardware_index(),
-        }
-    }
-
     fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
         match self {
             Self::StaPairwise(slot) => slot.clear(hardware),
@@ -545,66 +691,72 @@ impl KeyToken {
     }
 }
 
-struct InstalledKey {
-    vif: VifId,
-    token: KeyToken,
+struct KeyBank<'core, Path: PoolPath, const TICKETS: usize> {
+    installed: [Option<CheckedKeyScope>; LOWER_MAC_KEY_SLOTS],
+    uses: [KeyUseCount<TICKETS>; LOWER_MAC_KEY_SLOTS],
+    removals: [Option<RemovingKey<'core, Path>>; LOWER_MAC_KEY_SLOTS],
+}
+
+impl<Path: PoolPath, const TICKETS: usize> KeyBank<'_, Path, TICKETS> {
+    const fn new() -> Self {
+        Self {
+            installed: [None; LOWER_MAC_KEY_SLOTS],
+            uses: [const { KeyUseCount::new() }; LOWER_MAC_KEY_SLOTS],
+            removals: [const { None }; LOWER_MAC_KEY_SLOTS],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RxBlockAckEntry {
-    vif: VifId,
+    role: VifRole,
     peer: MacAddress,
     tid: u8,
 }
 
 /// What one queue's attempt holds.
-enum Work<'slot, S: AmpduBacking, const BUFFER_SIZE: usize, const AMPDU_SLOTS: usize> {
-    /// An MPDU in its lent slot, not yet published: the transmit gate is
+enum Work<'slot, const BUFFER_SIZE: usize> {
+    /// An MPDU in its slot, not yet published: the transmit gate is
     /// closed.
-    HeldMpdu {
+    Held {
         slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
         plan: OrdinaryTxPlan,
         single: SingleAttempt,
     },
-    Mpdu(QueuedSingleAttempt<'slot, BUFFER_SIZE>),
-    /// An aggregate in its lent buffer, not yet published.
-    HeldAmpdu {
-        buffer: Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>,
-        plan: AmpduPlan,
+    Published(QueuedSingleAttempt<'slot, BUFFER_SIZE>),
+    Quarantined {
+        _owner: QuarantinedSingleAttempt<'slot, BUFFER_SIZE>,
     },
-    Ampdu(PublishedAmpdu<'slot, S::Backing, AMPDU_SLOTS>),
 }
 
-impl<S: AmpduBacking, const BUFFER_SIZE: usize, const AMPDU_SLOTS: usize>
-    Work<'_, S, BUFFER_SIZE, AMPDU_SLOTS>
-{
+impl<const BUFFER_SIZE: usize> Work<'_, BUFFER_SIZE> {
     const fn held(&self) -> bool {
-        matches!(self, Self::HeldMpdu { .. } | Self::HeldAmpdu { .. })
+        matches!(self, Self::Held { .. })
     }
 
     /// The pending deadline of a published attempt, and whether it is the
     /// end of a timeout abort's settle.
     const fn deadline(&self) -> Option<(oer_time::Instant, bool)> {
         match self {
-            Self::Mpdu(queued) => Some((queued.deadline(), queued.abort_settling())),
-            Self::Ampdu(published) => Some((published.deadline(), published.abort_settling())),
-            Self::HeldMpdu { .. } | Self::HeldAmpdu { .. } => None,
+            Self::Published(queued) => Some((queued.deadline(), queued.abort_settling())),
+            Self::Held { .. } | Self::Quarantined { .. } => None,
         }
     }
 }
 
 /// The attempt occupying one queue.
-struct Attempt<'slot, S: AmpduBacking, const BUFFER_SIZE: usize, const AMPDU_SLOTS: usize> {
-    id: TxId,
-    vif: VifId,
-    key: Option<KeyHandle>,
-    work: Work<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>,
+struct Attempt<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath> {
+    queue: FreeQueue<'core, Path>,
+    role: VifRole,
+    admission: TxAdmission<'core, Path>,
+    /// The rate of its publication, which its completion reports.
+    rate: PhyRate,
+    work: Work<'slot, BUFFER_SIZE>,
 }
 
 /// The running station TBTT schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StationTbtt {
-    vif: VifId,
     first: u64,
     interval: u64,
 }
@@ -622,40 +774,59 @@ impl StationTbtt {
     }
 }
 
-/// The ESP32-S31 lower-MAC state between port calls.
-///
-/// `S` lends the stable memory of aggregate subframes; each of the
-/// `AMPDU_BUFFERS` aggregate owners carries up to `AMPDU_SLOTS` of them. A
-/// core built with [`LowerMacCore::new`] has no aggregate owner.
+/// The ESP32-S31 lower-MAC state the backend's driver owns: the hardware
+/// side of the port, one published attempt per EDCA queue.
+/// Diagnostic callers cannot borrow the nested transmitter:
+/// ```compile_fail,E0599
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
+/// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
+/// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
+/// fn borrow_tx<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
+///     core: &LowerMacCore<'_, '_, P, E, T, N>,
+/// ) {
+///     core.tx();
+/// }
+/// ```
+/// A diagnostic can read the next publication deadline directly:
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
+/// use oer_esp32s31_ieee80211::lower_mac::LowerMacCore;
+/// use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
+/// fn deadline<P: WifiTxPowerProfile, E: WifiTxEntropy, T: oer_time::Timer, const N: usize>(
+///     core: &LowerMacCore<'_, '_, P, E, T, N>,
+/// ) -> Option<oer_time::Instant> {
+///     core.next_deadline()
+/// }
+/// ```
 pub struct LowerMacCore<
+    'core,
     'slot,
     P,
     E,
     T,
     const BUFFER_SIZE: usize,
-    const TX_BUFFERS: usize,
-    S: AmpduBacking = NoAmpdu,
-    const AMPDU_SLOTS: usize = 2,
-    const AMPDU_BUFFERS: usize = 0,
+    Path: PoolPath = Root,
+    const TICKETS: usize = 4,
 > {
+    authority: CoreAuthority<'core, Path, TICKETS>,
     tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-    /// Idle slots the core lends; `None` while lent or in flight.
-    spare: [Option<Pin<&'slot mut TxSlot<BUFFER_SIZE>>>; TX_BUFFERS],
-    /// Idle aggregate owners the core lends; `None` while lent or in flight.
-    ampdu_owners: [Option<Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>>; AMPDU_BUFFERS],
-    ampdu_source: Option<&'slot S>,
     config: LowerMacConfig,
-    state: PortState,
-    /// Report `Quiesced` before `Disabled`: a `Disable` overtook a `Quiesce`.
-    quiesce_pending: bool,
+    fault: Option<LowerMacFault>,
     /// The configured channel; the radio is tuned to it unless a retune is
     /// pending.
     channel: WifiChannel,
     tuned: WifiChannel,
-    vifs: [Option<VifConfig>; LOWER_MAC_VIFS as usize],
-    keys: [Option<InstalledKey>; LOWER_MAC_KEY_SLOTS],
+    vifs: [Option<CoreVif>; LOWER_MAC_VIFS as usize],
+    keys: KeyBank<'core, Path, TICKETS>,
     rx_block_acks: [Option<RxBlockAckEntry>; RX_BLOCK_ACK_BANKS],
-    gate_open: bool,
     monitor: bool,
     tbtt: Option<StationTbtt>,
     /// The owner of the station TSF writes and its relation.
@@ -664,72 +835,38 @@ pub struct LowerMacCore<
     access_point_tsf: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsf,
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
-    queues: [Option<Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>>; LOWER_MAC_TX_QUEUES],
+    queues: [Option<Attempt<'core, 'slot, BUFFER_SIZE, Path>>; LOWER_MAC_TX_QUEUES],
     /// The radio system's coexistence priorities: the beacon window's and
     /// a connection frame's.
     coex: &'slot dyn RadioCoexPriorities,
 }
 
-impl<'slot, P, E, T, const BUFFER_SIZE: usize, const TX_BUFFERS: usize>
-    LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>
+impl<'core, 'slot, P, E, T, const BUFFER_SIZE: usize, Path: PoolPath, const TICKETS: usize>
+    LowerMacCore<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: oer_time::Timer,
 {
-    /// A disabled core without aggregates over an idle ordinary TX owner
-    /// and the idle slots it lends as transmit buffers.
-    /// `coex` is the radio system the core shares its RF with: beacon
-    /// reception and connection frames ask for the air at its priorities.
+    /// A disabled core over an idle ordinary TX owner. `coex` is the radio
+    /// system the core shares its RF with: beacon reception and connection
+    /// frames ask for the air at its priorities.
     pub fn new(
+        authority: CoreAuthority<'core, Path, TICKETS>,
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-        spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
         config: LowerMacConfig,
         coex: &'slot dyn RadioCoexPriorities,
-    ) -> Self {
-        Self::build(tx, spare.map(Some), [], None, config, coex)
-    }
-}
-
-impl<
-    'slot,
-    P,
-    E,
-    T,
-    S,
-    const BUFFER_SIZE: usize,
-    const TX_BUFFERS: usize,
-    const AMPDU_SLOTS: usize,
-    const AMPDU_BUFFERS: usize,
-> LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>
-where
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    T: oer_time::Timer,
-    S: AmpduBacking,
-{
-    fn build(
-        tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-        spare: [Option<Pin<&'slot mut TxSlot<BUFFER_SIZE>>>; TX_BUFFERS],
-        ampdu: [Option<Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>>; AMPDU_BUFFERS],
-        ampdu_source: Option<&'slot S>,
-        config: LowerMacConfig,
-        coex: &'slot dyn RadioCoexPriorities,
-    ) -> Self {
-        Self {
+    ) -> DisabledCore<Self> {
+        DisabledCore::new(Self {
+            authority,
             tx,
-            spare,
-            ampdu_owners: ampdu,
-            ampdu_source,
             config,
-            state: PortState::Disabled,
-            quiesce_pending: false,
+            fault: None,
             channel: config.channel,
             tuned: config.channel,
             vifs: [None; LOWER_MAC_VIFS as usize],
-            keys: [const { None }; LOWER_MAC_KEY_SLOTS],
+            keys: KeyBank::new(),
             rx_block_acks: [None; RX_BLOCK_ACK_BANKS],
-            gate_open: true,
             monitor: false,
             tbtt: None,
             station_tsf: StationTsf::new(config.tsf_epoch),
@@ -738,73 +875,24 @@ where
             ),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
             coex,
-        }
-    }
-
-    /// A disabled core over the owners a dismantled core returned: the
-    /// state of the core they came from is gone, as at a radio start. A
-    /// place that was not home stays empty.
-    pub fn from_parts(
-        parts: LowerMacCoreParts<
-            'slot,
-            P,
-            E,
-            T,
-            BUFFER_SIZE,
-            TX_BUFFERS,
-            S,
-            AMPDU_SLOTS,
-            AMPDU_BUFFERS,
-        >,
-    ) -> Self {
-        let LowerMacCoreParts {
-            tx,
-            spare,
-            ampdu,
-            ampdu_source,
-            config,
-            coex,
-        } = parts;
-        Self::build(tx, spare, ampdu, ampdu_source, config, coex)
-    }
-
-    /// Take the core apart into the owners it was built from, for a later
-    /// core over the same storage: a radio stop and start, or a port
-    /// reinstall. Only a disabled core with no attempt admitted comes
-    /// apart; another is returned unchanged.
-    ///
-    /// A transmit buffer or aggregate owner still lent, or one its borrower
-    /// dropped, is not home: its place in the parts is `None`, and the
-    /// storage behind it is lost until the image restarts.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc driver returns the unconsumed core by value"
-    )]
-    pub fn dismantle(
-        self,
-    ) -> Result<
-        LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
-        Self,
-    > {
-        if !self.idle_disabled() {
-            return Err(self);
-        }
-        Ok(LowerMacCoreParts {
-            tx: self.tx,
-            spare: self.spare,
-            ampdu: self.ampdu_owners,
-            ampdu_source: self.ampdu_source,
-            config: self.config,
-            coex: self.coex,
         })
     }
 
-    pub const fn capabilities(&self) -> LowerMacCapabilities {
-        esp32s31_lower_mac_capabilities(BUFFER_SIZE)
-    }
-
-    pub const fn ampdu_capabilities(&self) -> AmpduCapabilities {
-        esp32s31_ampdu_capabilities(AMPDU_SLOTS)
+    /// A disabled core over the owners a dismantled core returned: the
+    /// state of the core they came from is gone, as at a radio start.
+    pub fn from_parts(
+        parts: LowerMacCoreParts<'core, 'slot, P, E, T, BUFFER_SIZE, Path, TICKETS>,
+    ) -> DisabledCore<Self> {
+        let LowerMacCoreParts {
+            authority,
+            tx,
+            config,
+            coex,
+            keys,
+        } = parts;
+        let mut core = Self::new(authority, tx, config, coex);
+        core.keys = keys;
+        core
     }
 
     /// The channel the radio is tuned to: the configured one unless an
@@ -813,31 +901,14 @@ where
         self.tuned
     }
 
-    /// Whether the core is disabled with no attempt admitted: what a
-    /// radio stop, [`Self::dismantle`] and [`Self::radio_tuned_to`] need.
-    pub fn idle_disabled(&self) -> bool {
-        self.state == PortState::Disabled && self.attempts().next().is_none()
-    }
-
-    /// Record that the radio is tuned to `channel`, as the radio start that
-    /// hands the core its hardware reports it: the next `Enable` retunes
-    /// when the configured channel differs. `false`, and nothing recorded,
-    /// unless the core is disabled and idle.
-    pub fn radio_tuned_to(&mut self, channel: WifiChannel) -> bool {
-        if !self.idle_disabled() {
-            return false;
-        }
-        self.tuned = channel;
-        true
-    }
-
     /// The channel received frames are reported on.
     pub fn channel(&self) -> Channel {
         Channel::from_wifi_channel(self.channel)
     }
 
     /// The radio clock: the ordinary TX owner's timer.
-    pub fn now(&self) -> oer_time::Instant {
+    #[cfg(test)]
+    fn now(&self) -> oer_time::Instant {
         self.tx.now()
     }
 
@@ -861,23 +932,25 @@ where
             .min()
     }
 
-    /// Borrow the ordinary TX owner, for diagnostics.
-    pub const fn tx(&self) -> &OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE> {
-        &self.tx
+    /// A backoff for an attempt of `access_category`, drawn by the vendor's
+    /// policy from the category's contention window: the phase contract
+    /// leaves the backoff to the backend, and the S31 draws it in
+    /// software.
+    #[cfg(test)]
+    fn draw_backoff(&mut self, access_category: WmmAccessCategory) -> u16 {
+        self.tx
+            .contention_publication(LegacyTxQueue::from_access_category(access_category))
+            .1
     }
 
-    const fn receiving(&self) -> bool {
-        matches!(
-            self.state,
-            PortState::Enabled | PortState::Quiescing | PortState::Quiesced
-        )
+    /// Whether the queue of `access_category` holds an attempt.
+    #[cfg(test)]
+    fn queue_busy(&self, access_category: WmmAccessCategory) -> bool {
+        let queue = LegacyTxQueue::from_access_category(access_category);
+        self.queues[usize::from(queue.hardware_index())].is_some()
     }
 
-    fn vif(&self, vif: VifId) -> Option<&VifConfig> {
-        self.vifs.get(usize::from(vif.0)).and_then(Option::as_ref)
-    }
-
-    fn attempts(&self) -> impl Iterator<Item = &Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>> {
+    fn attempts(&self) -> impl Iterator<Item = &Attempt<'core, 'slot, BUFFER_SIZE, Path>> {
         self.queues.iter().flatten()
     }
 
@@ -891,296 +964,178 @@ where
         })
     }
 
-    /// Lend an idle slot for an MPDU of `len` bytes.
-    pub fn tx_buffer(&mut self, len: usize) -> Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>> {
-        if len > usize::from(self.capabilities().max_mpdu_length) {
-            return None;
-        }
-        let spare = self.spare.iter_mut().find(|slot| {
-            slot.as_ref()
-                .is_some_and(|slot| slot.state() == TxSlotState::Free)
-        })?;
-        let slot = spare.take()?;
-        Some(Esp32s31TxBuffer { slot, len })
-    }
-
-    /// Take back a lent slot.
-    pub fn release_tx_buffer(&mut self, buffer: Esp32s31TxBuffer<'slot, BUFFER_SIZE>) {
-        self.return_slot(buffer.slot);
-    }
-
-    fn return_slot(&mut self, slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>) {
-        // Every slot the core lends has a free place: the count of places
-        // equals the count of lendable slots.
-        if let Some(place) = self.spare.iter_mut().find(|place| place.is_none()) {
-            *place = Some(slot);
-        }
-    }
-
-    /// Take back a lent aggregate: its subframes return to their source.
-    pub fn release_ampdu_buffer(&mut self, buffer: Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>) {
-        self.return_ampdu_owner(buffer.into_owner());
-    }
-
-    fn return_ampdu_owner(&mut self, owner: Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>) {
-        if let Some(place) = self.ampdu_owners.iter_mut().find(|place| place.is_none()) {
-            *place = Some(owner);
-        }
-    }
-
-    /// Admit one attempt. A refused attempt comes back with its buffer.
-    #[allow(
-        clippy::type_complexity,
-        clippy::result_large_err,
-        reason = "the refusal hands the caller's attempt back by value"
-    )]
-    pub fn submit<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
-    ) -> Result<Result<(), Refused<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>>>, LowerMacFault> {
-        match self.check_mpdu(attempt) {
-            Ok(checked) => self.publish_checked(hardware, checked).map(Ok),
-            Err(refused) => Ok(Err(refused)),
-        }
-    }
-
-    /// Check one MPDU attempt against the port's state and limits, the
-    /// refusals of `Ieee80211LowerMacPort`, and plan its publication.
+    /// Write the CCMP header of the next packet number of `key` into the
+    /// fresh MPDU in `slot`, after its `header_len` octets of MAC header:
+    /// the backend numbers a fresh MPDU at its first transmission.
+    ///
+    /// `Ok(())` means the complete CCMP header was written. Buffer access
+    /// and header space are checked before a packet number is allocated.
+    /// On any error the buffer and the key's packet number are unchanged;
+    /// the caller must not submit the MPDU as numbered protected TX.
     ///
     /// # Errors
     ///
-    /// The refusal, with the attempt.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the refusal hands the caller's attempt back by value"
-    )]
-    fn check_mpdu(
-        &self,
-        mut attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
-    ) -> Result<CheckedMpdu<'slot, BUFFER_SIZE>, Refused<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>>>
-    {
-        match self.admit(&mut attempt) {
-            Ok(admission) => Ok(CheckedMpdu {
-                id: attempt.id,
-                vif: attempt.vif,
-                frame: attempt.payload.frame,
-                admission,
-            }),
-            Err(error) => Err(Refused { error, attempt }),
+    /// An unavailable buffer, insufficient header space or packet-number
+    /// exhaustion is a distinct [`CcmpNumberingError`]. Receive-only group
+    /// handles are excluded by the argument type.
+    pub fn number(
+        &mut self,
+        key: &mut KeyHandle<'core, Path>,
+        slot: &mut Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        header_len: usize,
+    ) -> Result<(), CcmpNumberingError> {
+        let buffer = slot
+            .as_mut()
+            .buffer_mut()
+            .map_err(CcmpNumberingError::BufferUnavailable)?;
+        let at = TX_METADATA_SIZE
+            .checked_add(header_len)
+            .ok_or(CcmpNumberingError::InsufficientSpace)?;
+        let place = buffer
+            .get_mut(at..)
+            .and_then(|remaining| remaining.get_mut(..CCMP_HEADER_LEN))
+            .ok_or(CcmpNumberingError::InsufficientSpace)?;
+        let header = match &mut key.token {
+            TransmitKeyToken::StaPairwise(key) => key.next_tx_ccmp_header(),
+            TransmitKeyToken::ApPairwise(key) => key.next_tx_ccmp_header(),
+            TransmitKeyToken::ApGroup(key) => key.next_tx_ccmp_header(),
         }
+        .map_err(CcmpNumberingError::PacketNumber)?;
+        place.copy_from_slice(&header);
+        Ok(())
     }
 
-    /// Plan the publication of an MPDU whose values and state a caller's
-    /// types guarantee: the port enabled, `id` new, the access category's
-    /// queue free, `vif` configured, `key` installed for `vif`, the rate
-    /// carried on the channel, the power, backoff and coexistence level
-    /// within the capabilities, the length at least the header through
-    /// Address 1 and at most the capabilities' `max_mpdu_length`, and the
-    /// response one the frame and rate carry (`no_ack` only of an
-    /// individual frame at a rate that sends one without an ACK).
-    fn checked_mpdu(
-        &self,
+    /// Publish an MPDU whose values and state a caller's types guarantee
+    /// ([`MpduValues`] states which), or hold it behind a closed gate: one
+    /// call, so no other operation comes between its plan and its
+    /// publication. `retry` marks a transmission of an MPDU the plan sends
+    /// again: its Retry bit is set and its CCMP header kept.
+    ///
+    /// # Errors
+    ///
+    /// A fault of the transmit owner, with the slot.
+    #[allow(clippy::result_large_err, reason = "the slot goes back by value")]
+    fn submit_checked<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        queue: FreeQueue<'core, Path>,
+        admission: TxAdmission<'core, Path>,
         values: MpduValues<'slot, BUFFER_SIZE>,
-    ) -> CheckedMpdu<'slot, BUFFER_SIZE> {
+        publish: bool,
+    ) -> Result<(), SubmitFault<'core, 'slot, BUFFER_SIZE, Path>> {
         let MpduValues {
-            id,
-            vif,
-            access_category,
-            frame,
+            role,
+            mut slot,
+            len,
             no_ack,
             rate,
+            reported,
             protection,
-            key,
             power_ceiling_dbm,
             backoff_slots,
             coex,
+            retry,
         } = values;
-        debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
-        debug_assert!(!self.running(id), "a work's identity is new");
-        let role = self
-            .vif(vif)
-            .map(|config| config.role)
-            .expect("a client's interface is configured");
-        let length = frame.len();
-        let mic = if key.is_some() { TX_CCMP_MIC_SIZE } else { 0 };
-        // The transfer the transmit owner publishes, rounded up to a word.
-        let transfer = (TX_METADATA_SIZE + length + mic + TX_FCS_SIZE + 3) & !3;
-        debug_assert!(
-            length >= MIN_FRAME_LENGTH
-                && transfer <= BUFFER_SIZE
-                && length + mic + TX_FCS_SIZE <= MAX_PROGRAM_PSDU,
-            "a frame's length reaches Address 1 and fits its buffer and program"
-        );
-        debug_assert!(
-            key.is_none_or(|handle| self
-                .key(handle)
-                .is_some_and(|installed| installed.vif == vif)),
-            "an attempt's key is its interface's"
-        );
+        if let Some(fault) = self.fault {
+            return Err(SubmitFault {
+                queue,
+                admission,
+                fault,
+                slot,
+            });
+        }
+        let access_category = queue.category();
+        if retry {
+            let marked = slot
+                .as_mut()
+                .buffer_mut()
+                .map_err(OrdinaryTxError::from)
+                .and_then(|buffer| crate::ordinary_tx::mark_retry(buffer, len));
+            if let Err(error) = marked {
+                return Err(SubmitFault {
+                    queue,
+                    admission,
+                    fault: LowerMacFault::Tx(error),
+                    slot,
+                });
+            }
+        }
+        let matches_admission = slot
+            .as_mut()
+            .buffer_mut()
+            .map(|buffer| {
+                admission.matches_frame(
+                    role,
+                    buffer
+                        .get(TX_METADATA_SIZE..)
+                        .and_then(|frame| frame.get(..len)),
+                )
+            })
+            .map_err(OrdinaryTxError::from);
+        match matches_admission {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(SubmitFault {
+                    queue,
+                    admission,
+                    slot,
+                    fault: LowerMacFault::KeyUseMismatch,
+                });
+            }
+            Err(error) => {
+                return Err(SubmitFault {
+                    queue,
+                    admission,
+                    slot,
+                    fault: LowerMacFault::Tx(error),
+                });
+            }
+        }
         let common = self.plan_common(
             access_category,
             role,
             rate,
             protection,
-            key,
+            &admission,
             power_ceiling_dbm,
             backoff_slots,
         );
-        debug_assert!(
-            self.queues[usize::from(common.queue.hardware_index())].is_none(),
-            "a queue grant holds its queue"
-        );
-        let admission = self.plan_mpdu(common, frame.len(), access_category, coex, no_ack);
-        CheckedMpdu {
-            id,
-            vif,
-            frame,
-            admission,
-        }
-    }
-
-    /// Plan and publish an MPDU whose values and state a caller's types
-    /// guarantee ([`MpduValues`] states which), or hold it behind a closed
-    /// gate: one call, so no other operation comes between its plan and
-    /// its publication.
-    ///
-    /// # Errors
-    ///
-    /// A fault of the transmit owner.
-    pub fn submit_checked<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        values: MpduValues<'slot, BUFFER_SIZE>,
-    ) -> Result<(), LowerMacFault> {
-        let attempt = self.checked_mpdu(values);
-        self.publish_checked(hardware, attempt)
-    }
-
-    /// Publish a checked MPDU, or hold it behind a closed gate.
-    fn publish_checked<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        attempt: CheckedMpdu<'slot, BUFFER_SIZE>,
-    ) -> Result<(), LowerMacFault> {
-        let CheckedMpdu {
-            id,
-            vif,
-            frame: Esp32s31TxBuffer { slot, .. },
-            admission,
-        } = attempt;
-        // Planned in the same call: the preconditions hold where the queue
-        // is taken.
-        debug_assert_eq!(self.state, PortState::Enabled, "a phase submits");
-        debug_assert!(!self.running(id), "a work's identity is new");
-        debug_assert!(
-            self.queues[usize::from(admission.queue.hardware_index())].is_none(),
-            "a queue grant holds its queue"
-        );
-        let work = if self.gate_open {
-            match self.tx.start_queued_single_attempt(
-                hardware,
-                slot,
-                admission.plan,
-                admission.single,
-            ) {
-                Ok(queued) => Work::Mpdu(queued),
+        let planned = self.plan_mpdu(common, len, access_category, coex, no_ack);
+        let index = usize::from(planned.queue.hardware_index());
+        let work = if publish {
+            match self
+                .tx
+                .start_queued_single_attempt(hardware, slot, planned.plan, planned.single)
+            {
+                Ok(queued) => Work::Published(queued),
                 Err(QueuedSingleAttemptRefused { error, slot }) => {
-                    // The length was checked against the buffer.
-                    self.return_slot(slot);
-                    return Err(LowerMacFault::Tx(error));
+                    return Err(SubmitFault {
+                        queue,
+                        admission,
+                        fault: LowerMacFault::Tx(error),
+                        slot,
+                    });
                 }
             }
         } else {
-            Work::HeldMpdu {
+            Work::Held {
                 slot,
-                plan: admission.plan,
-                single: admission.single,
+                plan: planned.plan,
+                single: planned.single,
             }
         };
-        self.queues[usize::from(admission.queue.hardware_index())] = Some(Attempt {
-            id,
-            vif,
-            key: admission.key,
+        self.queues[index] = Some(Attempt {
+            queue,
+            role,
+            admission,
+            rate: reported,
             work,
         });
         Ok(())
     }
 
-    /// Check what every attempt shares against the port's state and limits:
-    /// identity, queue, interface, rate, power, backoff, coexistence and key.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the fields every attempt shares, borrowed from either payload"
-    )]
-    fn admit_common(
-        &self,
-        id: TxId,
-        vif: VifId,
-        access_category: WmmAccessCategory,
-        rate: PhyRate,
-        protection: Protection,
-        key: KeySelector,
-        power: TxPower,
-        backoff: Backoff,
-        coex: CoexPriority,
-    ) -> Result<CommonAdmission, SubmitError> {
-        if self.state != PortState::Enabled {
-            return Err(SubmitError::Disabled);
-        }
-        if self.attempts().any(|active| active.id == id) {
-            return Err(SubmitError::DuplicateId);
-        }
-        let queue = LegacyTxQueue::from_access_category(access_category);
-        if self.queues[usize::from(queue.hardware_index())].is_some() {
-            return Err(SubmitError::Busy);
-        }
-        let vif_config = self.vif(vif).copied().ok_or(SubmitError::UnknownVif)?;
-        let tx_rate = TxPhyRate::try_from(rate).map_err(|_| SubmitError::UnsupportedRate)?;
-        let capabilities = self.capabilities();
-        if !capabilities.supports_rate(rate, self.channel()) {
-            return Err(SubmitError::UnsupportedRate);
-        }
-        let power_ceiling_dbm = match power {
-            TxPower::Calibrated => None,
-            TxPower::MaxDbm(dbm)
-                if capabilities
-                    .tx_power_ceiling_min_dbm
-                    .is_some_and(|floor| dbm >= floor) =>
-            {
-                Some(dbm)
-            }
-            TxPower::MaxDbm(_) => return Err(SubmitError::Unsupported),
-        };
-        let backoff_slots = match backoff {
-            Backoff::Slots(slots) if capabilities.supports_backoff(backoff) => slots,
-            Backoff::Slots(_) | Backoff::HardwareDraw { .. } => {
-                return Err(SubmitError::Unsupported);
-            }
-        };
-        if !capabilities.coex_priorities.contains(coex) {
-            return Err(SubmitError::Unsupported);
-        }
-        let key = match key {
-            KeySelector::Plaintext => None,
-            KeySelector::Key(handle) => match self.key(handle) {
-                Some(installed) if installed.vif == vif => Some(handle),
-                _ => return Err(SubmitError::UnknownKey),
-            },
-        };
-        Ok(self.plan_common(
-            access_category,
-            vif_config.role,
-            tx_rate,
-            protection,
-            key,
-            power_ceiling_dbm,
-            backoff_slots,
-        ))
-    }
-
-    /// What every attempt shares, planned from values its check or its
-    /// caller's types guarantee: `key`, when one, is installed.
+    /// What every attempt shares, planned from values its caller's types
+    /// guarantee: `key`, when one, is installed.
     #[allow(clippy::too_many_arguments, reason = "the fields every attempt shares")]
     fn plan_common(
         &self,
@@ -1188,25 +1143,15 @@ where
         role: VifRole,
         rate: TxPhyRate,
         protection: Protection,
-        key: Option<KeyHandle>,
+        admission: &TxAdmission<'core, Path>,
         power_ceiling_dbm: Option<i8>,
         backoff_slots: u16,
     ) -> CommonAdmission {
-        let (hardware_key_selector, hardware_mic_length) = match key {
-            None => (0, 0),
-            Some(handle) => (
-                self.key(handle)
-                    .expect("an attempt's key is installed")
-                    .token
-                    .hardware_index(),
-                TX_CCMP_MIC_SIZE,
-            ),
-        };
+        let (hardware_key_selector, hardware_mic_length) = admission.hardware();
         CommonAdmission {
             queue: LegacyTxQueue::from_access_category(access_category),
             role,
             rate,
-            key,
             hardware_key_selector,
             hardware_mic_length,
             single: SingleAttempt {
@@ -1222,67 +1167,7 @@ where
         }
     }
 
-    /// Check one MPDU attempt against the port's state and limits and plan
-    /// its publication.
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-individual-no-ack, wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels
-    fn admit(
-        &self,
-        attempt: &mut Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
-    ) -> Result<Admission, SubmitError> {
-        let common = self.admit_common(
-            attempt.id,
-            attempt.vif,
-            attempt.access_category,
-            attempt.rate,
-            attempt.protection,
-            attempt.key,
-            attempt.power,
-            attempt.backoff,
-            attempt.coex,
-        )?;
-        let capabilities = self.capabilities();
-        let length = attempt.payload.frame.len();
-        // The transfer the transmit owner publishes, rounded up to a word.
-        if length < MIN_FRAME_LENGTH
-            || (TX_METADATA_SIZE + length + common.hardware_mic_length + TX_FCS_SIZE + 3) & !3
-                > BUFFER_SIZE
-            || length + common.hardware_mic_length + TX_FCS_SIZE > MAX_PROGRAM_PSDU
-        {
-            return Err(SubmitError::InvalidLength);
-        }
-        let frame = attempt.payload.frame.frame_mut();
-        let group = frame[4] & 1 != 0;
-        let block_ack_request = frame[0] == BLOCK_ACK_REQUEST_FRAME_CONTROL;
-        // The owner derives the solicited response from the frame; a
-        // request it cannot express is refused rather than sent with
-        // another response.
-        let no_ack = match (attempt.payload.response, group, block_ack_request) {
-            (TxResponse::None, true, _) => false,
-            (TxResponse::BlockAck, false, true) => {
-                if !matches!(common.rate, TxPhyRate::Legacy(_)) {
-                    return Err(SubmitError::UnsupportedRate);
-                }
-                false
-            }
-            (TxResponse::Ack, false, false) => false,
-            (TxResponse::None, false, false)
-                if capabilities.individual_no_ack.contains_rate(attempt.rate) =>
-            {
-                true
-            }
-            _ => return Err(SubmitError::Unsupported),
-        };
-
-        Ok(self.plan_mpdu(
-            common,
-            length,
-            attempt.access_category,
-            attempt.coex,
-            no_ack,
-        ))
-    }
-
-    /// Plan one MPDU's publication from its checked common values.
+    /// Plan one MPDU's publication from its common values.
     fn plan_mpdu(
         &self,
         common: CommonAdmission,
@@ -1336,1202 +1221,132 @@ where
                 no_ack,
                 ..common.single
             },
-            key: common.key,
         }
     }
 
-    fn key(&self, handle: KeyHandle) -> Option<&InstalledKey> {
-        self.keys
-            .get(usize::from(handle.0))
-            .and_then(Option::as_ref)
-    }
-
-    /// Consume one interrupt or deadline edge of the published attempts.
-    ///
-    /// Every published queue is offered the edge and claims only its own
-    /// queue's state. When a timeout abort ends, the CCA it forced is
-    /// released, and every queue is offered a timeout edge once more: one
-    /// whose timeout arrived during the settle aborts now.
-    pub fn service<H: HtAmpduHardware, K: LowerMacSink>(
-        &mut self,
-        hardware: &mut H,
-        wake: WifiTxWake,
-        sink: &mut K,
-    ) -> Result<(), LowerMacFault> {
-        let mut wake = wake;
-        loop {
-            let mut abort_ended = false;
-            for index in 0..LOWER_MAC_TX_QUEUES {
-                let Some(attempt) = self.queues[index].take() else {
-                    continue;
-                };
-                let may_begin_timeout_abort = !self.abort_settling();
-                let Attempt { id, vif, key, work } = attempt;
-                let (work, ended) = match work {
-                    held @ (Work::HeldMpdu { .. } | Work::HeldAmpdu { .. }) => (Some(held), None),
-                    Work::Mpdu(queued) => {
-                        let settling = queued.abort_settling();
-                        match self
-                            .tx
-                            .service_queued_single_attempt(
-                                hardware,
-                                queued,
-                                wake,
-                                may_begin_timeout_abort,
-                            )
-                            .map_err(LowerMacFault::Tx)?
-                        {
-                            QueuedSingleAttemptProgress::Pending(queued) => {
-                                (Some(Work::Mpdu(queued)), None)
-                            }
-                            QueuedSingleAttemptProgress::Complete { outcome, slot } => {
-                                self.return_slot(slot);
-                                (None, Some((completion(id, outcome), settling)))
-                            }
-                        }
-                    }
-                    Work::Ampdu(published) => {
-                        let settling = published.abort_settling();
-                        let now = self.tx.now();
-                        match ampdu::service(
-                            hardware,
-                            published,
-                            wake,
-                            may_begin_timeout_abort,
-                            now,
-                        )
-                        .map_err(LowerMacFault::Ampdu)?
-                        {
-                            AmpduProgress::Pending(published) => {
-                                (Some(Work::Ampdu(published)), None)
-                            }
-                            AmpduProgress::Complete { outcome, owner } => {
-                                self.return_ampdu_owner(owner);
-                                (None, Some((outcome.completion(id), settling)))
-                            }
-                        }
-                    }
-                };
-                if let Some(work) = work {
-                    self.queues[index] = Some(Attempt { id, vif, key, work });
-                }
-                if let Some((completion, settled)) = ended {
-                    abort_ended |= settled;
-                    sink.tx_completed(completion);
-                }
-            }
-            if !abort_ended {
-                break;
-            }
-            wake = WifiTxWake::Interrupt {
-                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT,
-            };
-        }
-        self.settle(sink);
-        Ok(())
-    }
-
-    /// Finish lifecycle transitions that waited for the attempts.
-    fn settle<K: LowerMacSink>(&mut self, sink: &mut K) {
-        if self.attempts().next().is_some() {
-            return;
-        }
-        match self.state {
-            PortState::Quiescing => {
-                self.state = PortState::Quiesced;
-                sink.lifecycle(LifecycleEvent::Quiesced);
-            }
-            PortState::Disabling => {
-                if core::mem::take(&mut self.quiesce_pending) {
-                    sink.lifecycle(LifecycleEvent::Quiesced);
-                }
-                self.state = PortState::Disabled;
-                sink.lifecycle(LifecycleEvent::Disabled);
-            }
-            PortState::Disabled
-            | PortState::Enabling
-            | PortState::Enabled
-            | PortState::Quiesced => {}
-        }
-    }
-
-    /// The owned view of one received MPDU, or `None` while the port does
-    /// not receive or no receive rule admits it. The hardware policies pass
-    /// a superset of the requested rules; this narrows it to them.
-    ///
-    /// The receive prefix carries no noise floor; the frame's is the PHY's
-    /// noise-floor estimate when it is received, the value the S31 station
-    /// reads for its rate control (`StaNoiseFloorHardware`).
-    pub fn received<'frame, H: StaNoiseFloorHardware>(
+    /// Plan one aggregate while retaining its queue and encryption admission.
+    /// A refusal returns both owners and leaves the subframes in the buffer.
+    pub fn plan_ampdu<S: AmpduBacking, const SLOTS: usize>(
         &self,
-        hardware: &H,
-        frame: &NormalizedRxFrame<'frame>,
-    ) -> Option<(&'frame [u8], RxMeta)> {
-        let admitted = self.monitor || self.vifs.iter().flatten().any(|vif| vif.admits(frame.mpdu));
-        (self.receiving() && admitted).then(|| {
-            let mut meta = portable::rx_meta(frame.metadata, self.channel());
-            meta.noise_floor_dbm = RxEvidence::HardwareObserved(hardware.read_noise_floor_dbm());
-            (frame.mpdu, meta)
-        })
-    }
-
-    /// Start one lifecycle command.
-    pub fn lifecycle<K: LowerMacSink>(
-        &mut self,
-        command: LifecycleCommand,
-        sink: &mut K,
-    ) -> Result<LifecycleStart, LifecycleError> {
-        match command {
-            LifecycleCommand::Enable => match self.state {
-                PortState::Disabled => Ok(self.enable_checked(sink)),
-                PortState::Quiesced => {
-                    self.state = PortState::Enabled;
-                    sink.lifecycle(LifecycleEvent::Enabled);
-                    Ok(LifecycleStart::Admitted)
-                }
-                PortState::Enabling | PortState::Enabled => Err(LifecycleError::AlreadyInState),
-                PortState::Quiescing | PortState::Disabling => Err(LifecycleError::Busy),
-            },
-            LifecycleCommand::Quiesce => match self.state {
-                PortState::Enabled => {
-                    self.state = PortState::Quiescing;
-                    self.settle(sink);
-                    Ok(LifecycleStart::Admitted)
-                }
-                PortState::Quiescing | PortState::Quiesced => Err(LifecycleError::AlreadyInState),
-                PortState::Disabled | PortState::Enabling | PortState::Disabling => {
-                    Err(LifecycleError::InvalidState)
-                }
-            },
-            LifecycleCommand::Disable => match self.state {
-                PortState::Enabled | PortState::Quiescing | PortState::Quiesced => {
-                    self.start_disable(sink);
-                    Ok(LifecycleStart::Admitted)
-                }
-                PortState::Disabled | PortState::Disabling => Err(LifecycleError::AlreadyInState),
-                PortState::Enabling => Err(LifecycleError::Busy),
-            },
-        }
-    }
-
-    /// Enable a disabled port: at once on the tuned channel, or after the
-    /// retune [`LifecycleStart::Retune`] asks for.
-    pub fn enable_checked<K: LowerMacSink>(&mut self, sink: &mut K) -> LifecycleStart {
-        debug_assert_eq!(self.state, PortState::Disabled, "a disabled port enables");
-        if self.channel == self.tuned {
-            self.state = PortState::Enabled;
-            sink.lifecycle(LifecycleEvent::Enabled);
-            LifecycleStart::Admitted
-        } else {
-            self.state = PortState::Enabling;
-            LifecycleStart::Retune(self.channel)
-        }
-    }
-
-    /// Disable an enabled port: every admitted attempt ends, then
-    /// `Disabled` follows through `sink`.
-    pub fn disable_checked<K: LowerMacSink>(&mut self, sink: &mut K) {
-        debug_assert_eq!(self.state, PortState::Enabled, "an enabled port disables");
-        self.start_disable(sink);
-    }
-
-    fn start_disable<K: LowerMacSink>(&mut self, sink: &mut K) {
-        self.quiesce_pending = self.state == PortState::Quiescing;
-        self.state = PortState::Disabling;
-        for index in 0..LOWER_MAC_TX_QUEUES {
-            self.abort_held(index, sink);
-        }
-        self.settle(sink);
-    }
-
-    /// End one admitted attempt: a held one at once as
-    /// [`TxStatus::Aborted`], a published one with its own completion.
-    /// Whether attempt `id` is admitted and has not ended.
-    pub fn running(&self, id: TxId) -> bool {
-        self.queues
-            .iter()
-            .any(|attempt| attempt.as_ref().is_some_and(|attempt| attempt.id == id))
-    }
-
-    pub fn cancel<K: LowerMacSink>(&mut self, id: TxId, sink: &mut K) -> Result<(), CancelError> {
-        let Some(index) = self
-            .queues
-            .iter()
-            .position(|attempt| attempt.as_ref().is_some_and(|attempt| attempt.id == id))
-        else {
-            return Err(CancelError::NotRunning);
-        };
-        // A published descriptor has no software abort on the S31: it ends
-        // with its own completion.
-        self.abort_held(index, sink);
-        self.settle(sink);
-        Ok(())
-    }
-
-    /// End a queue's held attempt with [`TxStatus::Aborted`]: it never
-    /// reached the hardware, and its slot or aggregate goes back to the
-    /// core.
-    fn abort_held<K: LowerMacSink>(&mut self, index: usize, sink: &mut K) {
-        if !self.queues[index]
-            .as_ref()
-            .is_some_and(|attempt| attempt.work.held())
-        {
-            return;
-        }
-        let Some(attempt) = self.queues[index].take() else {
-            return;
-        };
-        match attempt.work {
-            Work::HeldMpdu { slot, .. } => self.return_slot(slot),
-            Work::HeldAmpdu { buffer, .. } => self.release_ampdu_buffer(buffer),
-            Work::Mpdu(_) | Work::Ampdu(_) => unreachable!("only a held attempt is aborted"),
-        }
-        sink.tx_completed(TxCompletion {
-            id: attempt.id,
-            status: TxStatus::Aborted,
-            ack_rssi_dbm: None,
-            ack_snr_db: None,
-            block_ack: None,
-        });
-    }
-
-    /// Complete an `Enable` after the runtime retuned the radio. A refused
-    /// retune fails the command recoverably: the port stays disabled on the
-    /// channel it was tuned to.
-    pub fn finish_retune<K: LowerMacSink>(&mut self, retuned: bool, sink: &mut K) {
-        if self.state != PortState::Enabling {
-            return;
-        }
-        if !retuned {
-            self.state = PortState::Disabled;
-            sink.lifecycle(LifecycleEvent::Failed {
-                command: LifecycleCommand::Enable,
-            });
-            return;
-        }
-        self.tuned = self.channel;
-        self.state = PortState::Enabled;
-        sink.lifecycle(LifecycleEvent::Enabled);
-    }
-
-    /// Apply one setting.
-    pub fn apply<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        setting: LowerMacSetting,
-    ) -> Result<Result<(), SettingError>, LowerMacFault> {
-        match setting {
-            LowerMacSetting::Channel(channel) => Ok(self.set_channel(channel)),
-            LowerMacSetting::Vif { vif, config } => Ok(self.configure_vif(hardware, vif, config)),
-            LowerMacSetting::RemoveKey(handle) => Ok(self.remove_key(hardware, handle)),
-            LowerMacSetting::AddRxBlockAck(agreement) => self.add_rx_block_ack(hardware, agreement),
-            LowerMacSetting::RemoveRxBlockAck { vif, peer, tid } => {
-                self.remove_rx_block_ack(hardware, vif, peer, tid)
-            }
-            LowerMacSetting::TxGate { open } => self.set_tx_gate(hardware, open),
-            // The policy reads each attempt's AIFSN from the set; it
-            // validates all four records before installing any.
-            LowerMacSetting::Edca(parameters) => Ok(self
-                .install_edca(parameters)
-                .map_err(|_| SettingError::Unsupported)),
-            LowerMacSetting::RxBeaconPriority(priority) => {
-                Ok(self.set_rx_beacon_priority(hardware, priority))
-            }
-            LowerMacSetting::HeBssColor { vif, color } => Ok(self.set_he_bss_color(vif, color)),
-        }
-    }
-
-    /// The station's HE BSS color, which every HE PPDU it sends carries:
-    /// the access point has no HE on the S31.
-    fn set_he_bss_color(&mut self, vif: VifId, color: u8) -> Result<(), SettingError> {
-        match self.vifs.get(usize::from(vif.0)).copied().flatten() {
-            Some(config) if config.role == VifRole::Station => {}
-            Some(_) => return Err(SettingError::UnsupportedRole),
-            None => return Err(SettingError::UnknownVif),
-        }
-        if color > 63 {
-            return Err(SettingError::Unsupported);
-        }
-        self.set_checked_he_bss_color(color);
-        Ok(())
-    }
-
-    /// The station's HE BSS color, at most 63.
-    pub fn set_checked_he_bss_color(&mut self, color: u8) {
-        debug_assert!(color <= 63, "a BSS color is at most 63");
-        self.tx.policy_mut().install_he_bss_color(color);
-    }
-
-    // SOURCE(esp32s31): complete pinned `libpp[pm_coex.o]::pm_coex_update_rx_beacon_pti`
-    // passes `coex_pti_get(0)`, or zero, as both arguments of
-    // `hal_set_rx_beacon_pti`.
-    fn set_rx_beacon_priority<H: RxBeaconPriorityHardware>(
-        &mut self,
-        hardware: &mut H,
-        priority: RxBeaconPriority,
-    ) -> Result<(), SettingError> {
-        match priority {
-            RxBeaconPriority::BeaconWindow => {
-                hardware.set_rx_beacon_pti(self.coex.beacon_window_pti());
-            }
-            RxBeaconPriority::Zero => hardware
-                .set_rx_beacon_pti(MacPti::new(0).expect("priority zero is a valid MAC priority")),
-            RxBeaconPriority::Cleared => hardware.clear_rx_beacon_pti(),
-        }
-        Ok(())
-    }
-
-    /// The [`LowerMacSetting::Channel`] setting, which reaches no register:
-    /// the next `Enable` retunes.
-    pub fn set_channel(&mut self, channel: Channel) -> Result<(), SettingError> {
-        if channel.band() != Band::Ghz2_4 {
-            return Err(SettingError::UnsupportedChannel);
-        }
-        let channel =
-            WifiChannel::try_from(channel).map_err(|_| SettingError::UnsupportedChannel)?;
-        // Retuning needs the MAC's DMA and interrupt service stopped, which
-        // only a disabled port guarantees; `Enable` retunes.
-        if self.state != PortState::Disabled {
-            return Err(SettingError::PortEnabled);
-        }
-        self.set_checked_channel(channel);
-        Ok(())
-    }
-
-    /// The EDCA parameters every queue's attempts contend with, whose
-    /// records lie within the capabilities' limits.
-    ///
-    /// # Panics
-    ///
-    /// A record outside the limits, which a checked value never holds.
-    pub fn set_checked_edca(
-        &mut self,
-        parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
-    ) {
-        self.install_edca(parameters)
-            .expect("checked EDCA records are within the limits");
-    }
-
-    /// Install `parameters`: the policy validates every record before it
-    /// installs any.
-    fn install_edca(
-        &mut self,
-        parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
-    ) -> Result<(), oer_esp32s31_ieee80211_mac::edca::EdcaParametersError> {
-        self.tx.policy_mut().install_wmm(parameters)
-    }
-
-    /// Tune the next `Enable` to `channel`, on a disabled port.
-    pub fn set_checked_channel(&mut self, channel: WifiChannel) {
-        debug_assert_eq!(self.state, PortState::Disabled, "a disabled port retunes");
-        if self.channel != channel {
-            self.break_tsf_relation(VifRole::Station);
-            self.break_tsf_relation(VifRole::AccessPoint);
-        }
-        self.channel = channel;
-    }
-
-    fn configure_vif<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        config: Option<VifConfig>,
-    ) -> Result<(), SettingError> {
-        let index = usize::from(vif.0);
-        if index >= self.vifs.len() {
-            return Err(SettingError::UnknownVif);
-        }
-        if self.attempts().any(|attempt| attempt.vif == vif) {
-            return Err(SettingError::Busy);
-        }
-        let Some(config) = config else {
-            if self.vifs[index].is_none() {
-                return Err(SettingError::UnknownVif);
-            }
-            self.remove_vif(hardware, vif);
-            return Ok(());
-        };
-        let other_role = self.vifs.iter().enumerate().any(|(other, configured)| {
-            other != index && configured.is_some_and(|configured| configured.role == config.role)
-        });
-        if other_role {
-            return Err(SettingError::UnsupportedRole);
-        }
-        // The open promiscuous policy replaces the role policies.
-        if self.monitor && !config.receive.is_empty() {
-            return Err(SettingError::Unsupported);
-        }
-        let policy = receive_policy(&self.config, &config)?;
-        self.apply_vif(hardware, vif, config, policy);
-        Ok(())
-    }
-
-    /// Configure an interface whose configuration a caller's types
-    /// guarantee:
-    ///
-    /// - `vif` one of the core's interfaces;
-    /// - no attempt of `vif` in flight;
-    /// - no other interface of its role;
-    /// - no monitor reception while it receives anything;
-    /// - its receive rules within the role's limits;
-    /// - a station's address the cold start's ([`Self::station_address`]),
-    ///   and a BSSID whenever it receives anything but other BSSs'
-    ///   management;
-    /// - an access point's address individual, and its BSSID none or its
-    ///   address.
-    ///
-    /// # Panics
-    ///
-    /// An interface the core does not have, or a configuration the receive
-    /// rules cannot take, which a checked one never is.
-    pub fn configure_checked_vif<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        config: VifConfig,
-    ) {
-        debug_assert!(
-            !self.attempts().any(|attempt| attempt.vif == vif),
-            "an interface's frames in flight are waited for"
-        );
-        debug_assert!(
-            !self.monitor || config.receive.is_empty(),
-            "an interface receives nothing while the monitor does"
-        );
-        debug_assert!(
-            !self.vifs.iter().enumerate().any(|(other, configured)| {
-                other != usize::from(vif.0)
-                    && configured.is_some_and(|configured| configured.role == config.role)
+        queue: FreeQueue<'core, Path>,
+        admission: TxAdmission<'core, Path>,
+        mut values: AmpduValues,
+        buffer: &mut Esp32s31AmpduBuffer<'slot, S, SLOTS>,
+    ) -> Result<AmpduPlan<'core, Path>, AmpduPlanningRefused<'core, Path>> {
+        values.access_category = queue.category();
+        match self.ampdu_settings(values, &admission, buffer) {
+            Ok(settings) => Ok(AmpduPlan {
+                queue,
+                admission,
+                settings,
             }),
-            "one interface per role"
-        );
-        let policy =
-            receive_policy(&self.config, &config).expect("a checked interface configuration");
-        self.apply_vif(hardware, vif, config, policy);
-    }
-
-    /// The station address the cold start published.
-    pub const fn station_address(&self) -> MacAddress {
-        self.config.station_address
-    }
-
-    /// Apply `config` and its receive `policy` to `vif`.
-    fn apply_vif<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        config: VifConfig,
-        policy: ReceivePolicy,
-    ) {
-        let index = usize::from(vif.0);
-        if self.vifs[index].is_some_and(|previous| previous.role != config.role) {
-            self.remove_vif(hardware, vif);
-        }
-        match policy {
-            ReceivePolicy::StationDisabled => hardware.disable_station_receive_registers(),
-            ReceivePolicy::Station { bssid } => hardware.apply_sta_link_policy(bssid),
-            ReceivePolicy::StationOtherBss { bssid } => hardware.apply_sta_esp_now_policy(bssid),
-            ReceivePolicy::AccessPointDisabled => hardware.disable_ap_link_policy(),
-            ReceivePolicy::AccessPoint { address } => hardware.apply_ap_link_policy(address),
-        }
-        self.vifs[index] = Some(config);
-        // A new association, a reassociation or a roam: the interface
-        // follows another TSF.
-        self.break_tsf_relation(config.role);
-    }
-
-    /// Close the interface's receive context and clear its keys, receive
-    /// Block Ack banks and TBTT schedule.
-    fn remove_vif<H: LowerMacHardware>(&mut self, hardware: &mut H, vif: VifId) {
-        let Some(previous) = self.vifs[usize::from(vif.0)].take() else {
-            return;
-        };
-        self.break_tsf_relation(previous.role);
-        for slot in &mut self.keys {
-            if slot.as_ref().is_some_and(|key| key.vif == vif) {
-                slot.take().expect("checked above").token.clear(hardware);
-            }
-        }
-        for (index, bank) in self.rx_block_acks.iter_mut().enumerate() {
-            if bank.is_some_and(|entry| entry.vif == vif) {
-                *bank = None;
-                // Only an index above the bank count fails.
-                let _ = hardware.clear_rx_block_ack(index as u8);
-            }
-        }
-        if self.tbtt.is_some_and(|tbtt| tbtt.vif == vif) {
-            self.tbtt = None;
-            hardware.stop_station_tbtt();
-        }
-        match previous.role {
-            VifRole::Station => hardware.disable_station_receive_registers(),
-            VifRole::AccessPoint => hardware.disable_ap_link_policy(),
+            Err(reason) => Err(AmpduPlanningRefused {
+                queue,
+                admission,
+                reason,
+            }),
         }
     }
 
-    /// Install a key and return its handle.
-    pub fn install_key<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        key: KeyInstall<'_>,
-    ) -> Result<KeyHandle, SettingError> {
-        let vif = self.vif(key.vif).copied().ok_or(SettingError::UnknownVif)?;
-        let temporal_key: &[u8; CCMP_128_KEY_BYTES] = match key.cipher {
-            Cipher::Ccmp128 => key.key.try_into().map_err(|_| SettingError::InvalidKey)?,
-        };
-        if self.keys.iter().all(Option::is_some) {
-            return Err(SettingError::NoKeySlot);
-        }
-        let count = |matches: fn(&KeyToken) -> bool| {
-            self.keys
-                .iter()
-                .flatten()
-                .filter(|installed| matches(&installed.token))
-                .count()
-        };
-        let scope = match (vif.role, key.scope) {
-            (VifRole::Station, KeyScope::Pairwise { peer }) => {
-                if count(|token| matches!(token, KeyToken::StaPairwise(_)))
-                    >= usize::from(RESOURCES.station_pairwise_ccmp_slots)
-                {
-                    return Err(SettingError::NoKeySlot);
-                }
-                CheckedKeyScope::StationPairwise { peer }
-            }
-            (VifRole::Station, KeyScope::Group { key_id }) => {
-                if count(|token| matches!(token, KeyToken::StaGroup(_)))
-                    >= usize::from(RESOURCES.station_group_ccmp_slots)
-                {
-                    return Err(SettingError::NoKeySlot);
-                }
-                CheckedKeyScope::StationGroup { key_id }
-            }
-            (VifRole::AccessPoint, KeyScope::Pairwise { peer }) => {
-                // The S31 AP pairwise slot is derived from an association
-                // identifier; the backend picks the lowest free one.
-                let association_id = (1..=u16::from(RESOURCES.access_point_pairwise_ccmp_slots))
-                    .find(|association_id| !self.association_id_used(*association_id))
-                    .ok_or(SettingError::NoKeySlot)?;
-                CheckedKeyScope::AccessPointPairwise {
-                    peer,
-                    association_id,
-                }
-            }
-            (VifRole::AccessPoint, KeyScope::Group { key_id }) => {
-                if count(|token| matches!(token, KeyToken::ApGroup(_)))
-                    >= usize::from(RESOURCES.access_point_group_ccmp_slots)
-                {
-                    return Err(SettingError::NoKeySlot);
-                }
-                CheckedKeyScope::AccessPointGroup { key_id }
-            }
-        };
-        self.program_key(hardware, key.vif, scope, temporal_key)
-            .map_err(|error| match error {
-                CryptoKeyError::Occupied | CryptoKeyError::InvalidAccessPointAssociationId => {
-                    SettingError::NoKeySlot
-                }
-                CryptoKeyError::InvalidGroupKeyId | CryptoKeyError::HardwareRejected => {
-                    SettingError::InvalidKey
-                }
-            })
-    }
-
-    /// Install a key whose values and state a caller's types guarantee:
-    /// `vif` is configured in the scope's role, the scope's slots have
-    /// room (an access point's `association_id` is free), and a group key
-    /// identifier is a valid one.
-    ///
-    /// # Errors
-    ///
-    /// The hardware refused the key.
-    pub fn install_checked_key<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        scope: CheckedKeyScope,
-        temporal_key: &[u8; CCMP_128_KEY_BYTES],
-    ) -> Result<KeyHandle, LowerMacFault> {
-        let role = match scope {
-            CheckedKeyScope::StationPairwise { .. } | CheckedKeyScope::StationGroup { .. } => {
-                VifRole::Station
-            }
-            CheckedKeyScope::AccessPointPairwise { .. }
-            | CheckedKeyScope::AccessPointGroup { .. } => VifRole::AccessPoint,
-        };
-        debug_assert_eq!(
-            self.vif(vif).map(|config| config.role),
-            Some(role),
-            "a key's interface is configured in its scope's role"
-        );
-        if let CheckedKeyScope::AccessPointPairwise { association_id, .. } = scope {
-            debug_assert!(
-                !self.association_id_used(association_id),
-                "an association identifier holds one key"
-            );
-        }
-        self.program_key(hardware, vif, scope, temporal_key)
-            .map_err(LowerMacFault::Key)
-    }
-
-    /// Whether an installed access-point pairwise key holds
-    /// `association_id`.
-    fn association_id_used(&self, association_id: u16) -> bool {
-        self.keys.iter().flatten().any(|installed| {
-            matches!(&installed.token,
-                KeyToken::ApPairwise(slot) if slot.association_id() == association_id)
-        })
-    }
-
-    /// Program `scope`'s key into a free handle.
-    fn program_key<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        scope: CheckedKeyScope,
-        temporal_key: &[u8; CCMP_128_KEY_BYTES],
-    ) -> Result<KeyHandle, CryptoKeyError> {
-        let free = self
-            .keys
-            .iter()
-            .position(Option::is_none)
-            .ok_or(CryptoKeyError::Occupied)?;
-        let token = match scope {
-            CheckedKeyScope::StationPairwise { peer } => {
-                install_sta_pairwise_ccmp(hardware, peer, temporal_key).map(KeyToken::StaPairwise)
-            }
-            CheckedKeyScope::StationGroup { key_id } => {
-                install_sta_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::StaGroup)
-            }
-            CheckedKeyScope::AccessPointPairwise {
-                peer,
-                association_id,
-            } => install_ap_pairwise_ccmp(hardware, peer, association_id, temporal_key)
-                .map(KeyToken::ApPairwise),
-            CheckedKeyScope::AccessPointGroup { key_id } => {
-                install_ap_group_ccmp(hardware, key_id, temporal_key).map(KeyToken::ApGroup)
-            }
-        }?;
-        self.keys[free] = Some(InstalledKey { vif, token });
-        Ok(KeyHandle(free as u8))
-    }
-
-    fn remove_key<H: CcmpKeyHardware>(
-        &mut self,
-        hardware: &mut H,
-        handle: KeyHandle,
-    ) -> Result<(), SettingError> {
-        if self.key(handle).is_none() {
-            return Err(SettingError::UnknownKey);
-        }
-        if self.key_in_use(handle) {
-            return Err(SettingError::Busy);
-        }
-        self.remove_checked_key(hardware, handle);
-        Ok(())
-    }
-
-    /// Whether an attempt in flight uses `handle`.
-    pub fn key_in_use(&self, handle: KeyHandle) -> bool {
-        self.attempts().any(|attempt| attempt.key == Some(handle))
-    }
-
-    /// Remove an installed key no attempt in flight uses.
-    pub fn remove_checked_key<H: CcmpKeyHardware>(&mut self, hardware: &mut H, handle: KeyHandle) {
-        debug_assert!(!self.key_in_use(handle), "a key in use is waited for");
-        self.keys[usize::from(handle.0)]
-            .take()
-            .expect("an installed key's handle")
-            .token
-            .clear(hardware);
-    }
-
-    fn add_rx_block_ack<H: RxBlockAckHardware>(
-        &mut self,
-        hardware: &mut H,
-        agreement: RxBlockAckAgreement,
-    ) -> Result<Result<(), SettingError>, LowerMacFault> {
-        let Some(vif) = self.vif(agreement.vif).copied() else {
-            return Ok(Err(SettingError::UnknownVif));
-        };
-        if agreement.tid > RESOURCES.rx_block_ack_max_tid
-            || agreement.window == 0
-            || agreement.window > RESOURCES.rx_block_ack_max_window
-            || self
-                .rx_block_ack_bank(agreement.vif, agreement.peer, agreement.tid)
-                .is_some()
-        {
-            return Ok(Err(SettingError::InvalidBlockAck));
-        }
-        let Some(bank) = self.rx_block_acks.iter().position(Option::is_none) else {
-            return Ok(Err(SettingError::NoBlockAckSlot));
-        };
-        match self.program_rx_block_ack(hardware, bank, vif.role, agreement) {
-            Ok(()) => Ok(Ok(())),
-            Err(S31RxBlockAckAgreementError::HardwareReadbackMismatch) => {
-                Err(LowerMacFault::RxBlockAckReadback)
-            }
-            Err(_) => Ok(Err(SettingError::InvalidBlockAck)),
-        }
-    }
-
-    /// Start an agreement whose values and state a caller's types
-    /// guarantee: `agreement.vif` is configured, its TID and window are
-    /// within the limits, its peer is individual, and a bank is free when
-    /// no agreement of the same peer and TID exists, which it replaces in
-    /// its bank.
-    ///
-    /// # Errors
-    ///
-    /// The hardware refused or misread the agreement.
-    pub fn start_checked_rx_block_ack<H: RxBlockAckHardware>(
-        &mut self,
-        hardware: &mut H,
-        agreement: RxBlockAckAgreement,
-    ) -> Result<(), LowerMacFault> {
-        let role = self
-            .vif(agreement.vif)
-            .map(|config| config.role)
-            .expect("a client's interface is configured");
-        let bank = self
-            .rx_block_ack_bank(agreement.vif, agreement.peer, agreement.tid)
-            .or_else(|| self.rx_block_acks.iter().position(Option::is_none))
-            .expect("a client's Block Ack slot holds a bank");
-        self.program_rx_block_ack(hardware, bank, role, agreement)
-            .map_err(|error| match error {
-                S31RxBlockAckAgreementError::HardwareReadbackMismatch => {
-                    LowerMacFault::RxBlockAckReadback
-                }
-                error => LowerMacFault::RxBlockAck(error),
-            })
-    }
-
-    /// End the agreement of `vif` with `peer` on `tid`: `false` when none
-    /// exists.
-    ///
-    /// # Errors
-    ///
-    /// The hardware refused to clear its bank.
-    pub fn end_checked_rx_block_ack<H: RxBlockAckHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        peer: MacAddress,
-        tid: u8,
-    ) -> Result<bool, LowerMacFault> {
-        let Some(bank) = self.rx_block_ack_bank(vif, peer, tid) else {
-            return Ok(false);
-        };
-        hardware
-            .clear_rx_block_ack(bank as u8)
-            .map_err(LowerMacFault::RxBlockAck)?;
-        self.rx_block_acks[bank] = None;
-        Ok(true)
-    }
-
-    /// Program `agreement` into `bank` and record it there.
-    fn program_rx_block_ack<H: RxBlockAckHardware>(
-        &mut self,
-        hardware: &mut H,
-        bank: usize,
-        role: VifRole,
-        agreement: RxBlockAckAgreement,
-    ) -> Result<(), S31RxBlockAckAgreementError> {
-        hardware.program_rx_block_ack(S31RxBlockAckAgreement {
-            hardware_index: bank as u8,
-            interface: mac_interface(role),
-            peer: agreement.peer,
-            tid: agreement.tid,
-            starting_sequence: agreement.start_sequence,
-            window: agreement.window,
-        })?;
-        self.rx_block_acks[bank] = Some(RxBlockAckEntry {
-            vif: agreement.vif,
-            peer: agreement.peer,
-            tid: agreement.tid,
-        });
-        Ok(())
-    }
-
-    fn rx_block_ack_bank(&self, vif: VifId, peer: MacAddress, tid: u8) -> Option<usize> {
-        self.rx_block_acks
-            .iter()
-            .position(|entry| *entry == Some(RxBlockAckEntry { vif, peer, tid }))
-    }
-
-    fn remove_rx_block_ack<H: RxBlockAckHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-        peer: MacAddress,
-        tid: u8,
-    ) -> Result<Result<(), SettingError>, LowerMacFault> {
-        if self.vif(vif).is_none() {
-            return Ok(Err(SettingError::UnknownVif));
-        }
-        let Some(bank) = self.rx_block_ack_bank(vif, peer, tid) else {
-            return Ok(Err(SettingError::InvalidBlockAck));
-        };
-        if hardware.clear_rx_block_ack(bank as u8).is_err() {
-            return Ok(Err(SettingError::InvalidBlockAck));
-        }
-        self.rx_block_acks[bank] = None;
-        Ok(Ok(()))
-    }
-
-    /// Open or close the transmit gate: the power-save block of every
-    /// ordinary queue. Closing it while an attempt is published is refused
-    /// (`Busy`), because the blocked queue would end that attempt with a
-    /// hardware timeout; an attempt admitted behind the closed gate is held
-    /// in its lent slot or aggregate and published when the gate opens.
-    fn set_tx_gate<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        open: bool,
-    ) -> Result<Result<(), SettingError>, LowerMacFault> {
-        if !open {
-            if self.attempts().any(|attempt| !attempt.work.held()) {
-                return Ok(Err(SettingError::Busy));
-            }
-            hardware.set_power_save_tx_block(true);
-            self.gate_open = false;
-            return Ok(Ok(()));
-        }
-        hardware.set_power_save_tx_block(false);
-        self.gate_open = true;
-        for index in 0..LOWER_MAC_TX_QUEUES {
-            let Some(attempt) = self.queues[index].take() else {
-                continue;
-            };
-            let Attempt { id, vif, key, work } = attempt;
-            let work = match work {
-                Work::HeldMpdu { slot, plan, single } => {
-                    match self
-                        .tx
-                        .start_queued_single_attempt(hardware, slot, plan, single)
-                    {
-                        Ok(queued) => Work::Mpdu(queued),
-                        Err(QueuedSingleAttemptRefused { error, slot }) => {
-                            self.return_slot(slot);
-                            return Err(LowerMacFault::Tx(error));
-                        }
-                    }
-                }
-                Work::HeldAmpdu { buffer, plan } => {
-                    Work::Ampdu(self.publish_ampdu(hardware, buffer, plan)?)
-                }
-                published @ (Work::Mpdu(_) | Work::Ampdu(_)) => published,
-            };
-            self.queues[index] = Some(Attempt { id, vif, key, work });
-        }
-        Ok(Ok(()))
-    }
-
-    fn publish_ampdu<H: HtAmpduHardware>(
-        &mut self,
-        hardware: &mut H,
-        buffer: Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>,
-        plan: AmpduPlan,
-    ) -> Result<PublishedAmpdu<'slot, S::Backing, AMPDU_SLOTS>, LowerMacFault> {
-        ampdu::publish(
-            hardware,
-            buffer,
-            plan,
-            self.tx.now(),
-            self.config.publication_timeout,
-        )
-        .map_err(LowerMacFault::Ampdu)
-    }
-
-    /// Read an interface's TSF: the station timer; the access-point timer
-    /// has no read seam.
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tsf
-    pub fn tsf<H: StationTsfHardware>(
-        &self,
-        hardware: &mut H,
-        vif: VifId,
-    ) -> Result<VifTsf, SettingError> {
-        self.tsf_reading(hardware, vif).map(|(tsf, _)| tsf)
-    }
-
-    /// An interface's TSF and the generation of its relation, for a
-    /// [`TsfSample`](oer_ieee80211_lower_mac::TsfSample) the backend pairs
-    /// with its radio clock.
-    pub fn tsf_reading<H: StationTsfHardware>(
-        &self,
-        hardware: &mut H,
-        vif: VifId,
-    ) -> Result<(VifTsf, TsfGeneration), SettingError> {
-        let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
-        if !ESP32S31_BEACON_TIMING_CAPABILITIES.tsf_read.contains(role) {
-            return Err(SettingError::Unsupported);
-        }
-        let at = self.station_tsf.read(hardware);
-        Ok((VifTsf::new(vif, at), self.station_tsf.generation()))
-    }
-
-    /// Start a new generation of the TSF relation of the interface with
-    /// `role`.
-    fn break_tsf_relation(&mut self, role: VifRole) {
-        match role {
-            VifRole::Station => self.station_tsf.break_relation(),
-            VifRole::AccessPoint => self.access_point_tsf.break_relation(),
-        }
-    }
-
-    /// Set an interface's TSF: the station timer to any value, the
-    /// access-point timer only back to zero through its reset seam. A
-    /// station set beyond the drift its relation allows, and an access-point
-    /// restart, start a new generation of the relation.
-    pub fn set_tsf<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        tsf: VifTsf,
-    ) -> Result<(), SettingError> {
-        match self.vif(tsf.vif).ok_or(SettingError::UnknownVif)?.role {
-            VifRole::Station => {
-                self.station_tsf
-                    .set(hardware, tsf.at)
-                    .map_err(SettingError::TsfTiming)?;
-            }
-            VifRole::AccessPoint if tsf.at.as_micros() == 0 => {
-                self.access_point_tsf.restart(hardware);
-            }
-            VifRole::AccessPoint => return Err(SettingError::Unsupported),
-        }
-        Ok(())
-    }
-
-    /// Program the station TBTT schedule. The event fires the schedule's
-    /// lead before each TBTT; the wake lead published beside it keeps the
-    /// vendor's window above the lead.
-    pub fn set_tbtt<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        schedule: TbttSchedule,
-    ) -> Result<(), SettingError> {
-        let vif = schedule.next.vif;
-        self.tbtt_role(vif)?;
-        let interval_micros = u32::try_from(schedule.beacon_interval.as_micros())
-            .ok()
-            .filter(|&interval| interval != 0)
-            .ok_or(SettingError::Unsupported)?;
-        let ahead_micros =
-            u16::try_from(schedule.lead.as_micros()).map_err(|_| SettingError::Unsupported)?;
-        let wake_ahead_micros = ahead_micros
-            .checked_add(STATION_TBTT_WAKE_WINDOW_MICROS)
-            .ok_or(SettingError::Unsupported)?;
-        let first = schedule.next.at.as_micros();
-        hardware.start_station_tbtt(StaTbttSchedule {
-            first_tbtt_tsf: first,
-            interval_micros,
-            ahead_micros,
-            wake_ahead_micros,
-        });
-        self.tbtt = Some(StationTbtt {
-            vif,
-            first,
-            interval: u64::from(interval_micros),
-        });
-        Ok(())
-    }
-
-    /// Stop an interface's station TBTT schedule.
-    pub fn stop_tbtt<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        vif: VifId,
-    ) -> Result<(), SettingError> {
-        self.tbtt_role(vif)?;
-        if self.tbtt.is_some_and(|tbtt| tbtt.vif == vif) {
-            self.tbtt = None;
-            hardware.stop_station_tbtt();
-        }
-        Ok(())
-    }
-
-    /// Whether `vif` is configured with a role whose TBTT schedule the
-    /// backend programs.
-    fn tbtt_role(&self, vif: VifId) -> Result<(), SettingError> {
-        let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
-        if !ESP32S31_BEACON_TIMING_CAPABILITIES.tbtt.contains(role) {
-            return Err(SettingError::Unsupported);
-        }
-        Ok(())
-    }
-
-    /// Report the station TBTT whose event the power interrupt delivered
-    /// (`MacPowerWakeCause::StaTbtt`). Without a schedule the edge is stale
-    /// and reports nothing.
-    pub fn station_tbtt<H: StationTsfHardware, K: LowerMacSink>(
-        &self,
-        hardware: &mut H,
-        sink: &mut K,
-    ) {
-        if let Some(tbtt) = self.tbtt {
-            let now = self.station_tsf.read(hardware).as_micros();
-            let at = TsfInstant::from_micros(tbtt.announced(now));
-            sink.tbtt(TbttEvent {
-                tbtt: VifTsf::new(tbtt.vif, at),
-            });
-        }
-    }
-
-    /// Start or stop monitor reception through the open promiscuous
-    /// policy. It runs only while no interface receives.
-    pub fn set_monitor<H: LowerMacHardware>(
-        &mut self,
-        hardware: &mut H,
-        enabled: bool,
-    ) -> Result<(), SettingError> {
-        if enabled {
-            if self
-                .vifs
-                .iter()
-                .flatten()
-                .any(|vif| !vif.receive.is_empty())
-            {
-                return Err(SettingError::Unsupported);
-            }
-            hardware.configure_open_promiscuous_receive();
-        } else if self.monitor {
-            hardware.disable_open_promiscuous_receive();
-        }
-        self.monitor = enabled;
-        Ok(())
-    }
-}
-
-impl<
-    'slot,
-    P,
-    E,
-    T,
-    S,
-    const BUFFER_SIZE: usize,
-    const TX_BUFFERS: usize,
-    const AMPDU_SLOTS: usize,
-    const AMPDU_BUFFERS: usize,
-> LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>
-where
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    T: oer_time::Timer,
-    S: AmpduBackingSource,
-{
-    /// A disabled core that also lends `ampdu` idle aggregate owners, whose
-    /// subframes `source` backs. `coex` is as for [`Self::new`].
-    pub fn with_ampdu(
-        tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-        spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
-        ampdu: [Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>; AMPDU_BUFFERS],
-        source: &'slot S,
-        config: LowerMacConfig,
-        coex: &'slot dyn RadioCoexPriorities,
-    ) -> Self {
-        Self::build(
-            tx,
-            spare.map(Some),
-            ampdu.map(Some),
-            Some(source),
-            config,
-            coex,
-        )
-    }
-
-    /// Lend an idle aggregate owner; `None` without aggregate owners or
-    /// while every one is lent or in flight.
-    pub fn ampdu_buffer(&mut self) -> Option<Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>> {
-        let source = self.ampdu_source?;
-        let place = self.ampdu_owners.iter_mut().find(|owner| owner.is_some())?;
-        let mut owner = place.take()?;
-        // The owner is idle here, so the limit always applies.
-        if owner
-            .configure_max_aggregate_bytes(ESP32S31_AMPDU_MAX_LENGTH)
-            .is_err()
-        {
-            *place = Some(owner);
-            return None;
-        }
-        Some(Esp32s31AmpduBuffer::new(owner, source))
-    }
-
-    /// Admit one HT A-MPDU attempt. A refused attempt comes back with its
-    /// aggregate untouched.
+    /// Publish a detached aggregate's terminal and return its owner. A
+    /// quarantined aggregate has no such projection or key-release operation.
     #[allow(
-        clippy::type_complexity,
         clippy::result_large_err,
-        reason = "the refusal hands the caller's attempt back by value"
+        reason = "a poisoned core retains the full aggregate and key right"
     )]
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-a-mpdu
-    pub fn submit_ampdu<H: LowerMacHardware>(
+    pub fn complete_ampdu<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+        B,
+        const SLOTS: usize,
+    >(
         &mut self,
         hardware: &mut H,
-        mut attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>,
-    ) -> Result<Result<(), Refused<Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>>>, LowerMacFault>
-    {
-        let plan = match self.admit_ampdu(&mut attempt) {
-            Ok(plan) => plan,
-            Err(error) => return Ok(Err(Refused { error, attempt })),
-        };
-        let key = match attempt.key {
-            KeySelector::Plaintext => None,
-            KeySelector::Key(handle) => Some(handle),
-        };
-        let buffer = attempt.payload.subframes;
-        let work = if self.gate_open {
-            Work::Ampdu(self.publish_ampdu(hardware, buffer, plan)?)
-        } else {
-            Work::HeldAmpdu { buffer, plan }
-        };
-        self.queues[usize::from(plan.queue.hardware_index())] = Some(Attempt {
-            id: attempt.id,
-            vif: attempt.vif,
-            key,
-            work,
-        });
-        Ok(Ok(()))
+        completed: ampdu::CompletedAmpdu<'core, 'slot, B, SLOTS, Path>,
+        sink: &mut K,
+    ) -> Result<
+        ampdu::Esp32s31AmpduOwner<'slot, B, SLOTS>,
+        ampdu::AmpduFault<'core, 'slot, B, SLOTS, Path>,
+    > {
+        if self.fault.is_some() {
+            return Err(ampdu::AmpduFault::retain_completed(completed));
+        }
+        let ampdu::CompletedAmpdu {
+            outcome,
+            owner,
+            queue,
+            admission,
+        } = completed;
+        match admission {
+            TxAdmission::Open(ticket) => sink.ampdu_completed(queue, ticket, outcome.end()),
+            TxAdmission::Protected(key) => {
+                let index = key.index;
+                let ticket = self.keys.uses[index].release(key);
+                sink.ampdu_completed(queue, ticket, outcome.end());
+                self.finish_key_removal(hardware, index, sink);
+            }
+        }
+        Ok(owner)
     }
 
-    /// Check one aggregate against the port's state and limits and plan
-    /// its publication. Every check the aggregate owner would make at
-    /// commit is made here first, so a refusal hands the subframes back.
-    fn admit_ampdu(
+    /// Plan an aggregate whose values a caller's types guarantee
+    /// ([`AmpduValues`]): a pure function of the core's state, the
+    /// aggregate's subframes and its values, which [`ampdu::publish`]
+    /// carries out. Every check the aggregate owner would make at commit is
+    /// made here first, so a refused aggregate keeps its subframes.
+    ///
+    /// # Errors
+    ///
+    /// Why the aggregate cannot go as one publication.
+    fn ampdu_settings<S: AmpduBacking, const SLOTS: usize>(
         &self,
-        attempt: &mut Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>,
-    ) -> Result<AmpduPlan, SubmitError> {
-        let common = self.admit_common(
-            attempt.id,
-            attempt.vif,
-            attempt.access_category,
-            attempt.rate,
-            attempt.protection,
-            attempt.key,
-            attempt.power,
-            attempt.backoff,
-            attempt.coex,
-        )?;
-        // Connection frames are single MPDUs: an aggregate is ordinary data.
-        if attempt.coex != CoexPriority::Normal {
-            return Err(SubmitError::Unsupported);
+        values: AmpduValues,
+        admission: &TxAdmission<'core, Path>,
+        buffer: &mut Esp32s31AmpduBuffer<'slot, S, SLOTS>,
+    ) -> Result<ampdu::AmpduSettings, AmpduRefusal> {
+        let AmpduValues {
+            role,
+            access_category,
+            rate,
+            protection,
+            power_ceiling_dbm,
+            backoff_slots,
+            coex,
+            min_mpdu_start_spacing,
+        } = values;
+        if !buffer.matches_admission(role, admission) {
+            return Err(AmpduRefusal::KeyUseMismatch);
         }
-        let capabilities = self.ampdu_capabilities();
-        let buffer = &mut attempt.payload.subframes;
+        // Connection frames are single MPDUs: an aggregate is ordinary data.
+        if coex != CoexPriority::Normal {
+            return Err(AmpduRefusal::ElevatedCoexistence);
+        }
+        let common = self.plan_common(
+            access_category,
+            role,
+            rate,
+            protection,
+            admission,
+            power_ceiling_dbm,
+            backoff_slots,
+        );
+        let capabilities = esp32s31_ampdu_capabilities(SLOTS);
         let count = buffer.subframes();
         if count == 0 {
-            return Err(SubmitError::InvalidLength);
+            return Err(AmpduRefusal::Empty);
         }
-        if count > usize::from(capabilities.max_subframes)
-            || attempt.payload.min_mpdu_start_spacing > 7
-        {
-            return Err(SubmitError::Unsupported);
+        if count > usize::from(capabilities.max_subframes) {
+            return Err(AmpduRefusal::TooManySubframes);
+        }
+        if min_mpdu_start_spacing > 7 {
+            return Err(AmpduRefusal::StartSpacing);
         }
         if buffer.lengths().any(|len| len < MIN_FRAME_LENGTH) {
-            return Err(SubmitError::InvalidLength);
+            return Err(AmpduRefusal::ShortSubframe);
         }
         // One recipient answers the aggregate with its BlockAck.
         if buffer.first_mpdu().is_none_or(|first| first[4] & 1 != 0) {
-            return Err(SubmitError::Unsupported);
+            return Err(AmpduRefusal::GroupRecipient);
         }
 
         let queue = common.queue;
@@ -2541,24 +1356,20 @@ where
             .policy()
             .access_policy(queue)
             .txop_limit_units_32_us();
-        let density = HtAmpduDensity::from_ampdu_parameters(
-            (attempt.payload.min_mpdu_start_spacing & 0x07) << 2,
-        );
-        let psdu_lengths = buffer
-            .lengths()
-            .map(|len| len + common.hardware_mic_length + TX_FCS_SIZE);
+        let density = HtAmpduDensity::from_ampdu_parameters((min_mpdu_start_spacing & 0x07) << 2);
+        let mic_and_fcs = common.hardware_mic_length + TX_FCS_SIZE;
         let (power_code, format) = match common.rate {
             TxPhyRate::Ht(rate) => {
                 // The access category's TXOP limit is the caller's to keep.
                 // The owner's own length rule: the rate's ceiling and the
-                // declared maximum it was configured with when lent.
+                // declared maximum it was configured with.
                 let mut budget = buffer
                     .owner
                     .ht_length_budget(rate)
-                    .map_err(|_| SubmitError::Unsupported)?;
-                for psdu in psdu_lengths {
-                    let psdu = u32::try_from(psdu).map_err(|_| SubmitError::Unsupported)?;
-                    budget.push(psdu, 0).map_err(|_| SubmitError::Unsupported)?;
+                    .map_err(|_| AmpduRefusal::Length)?;
+                for psdu in buffer.lengths().map(|len| len + mic_and_fcs) {
+                    let psdu = u32::try_from(psdu).map_err(|_| AmpduRefusal::Length)?;
+                    budget.push(psdu, 0).map_err(|_| AmpduRefusal::Length)?;
                 }
                 (rate.power_lookup_code(), None)
             }
@@ -2566,24 +1377,24 @@ where
                 // The HE program carries the access category's advertised
                 // TXOP limit; the core sets no ceiling of its own.
                 let txop = he_txop_limit(txop_limit, HeEdcaTxopLimit::DEFAULT)
-                    .map_err(|_| SubmitError::Unsupported)?;
+                    .map_err(|_| AmpduRefusal::Length)?;
                 let policy = HeAmpduPolicy::new(rate, density, txop);
                 let mut budget = buffer
                     .owner
                     .he_length_budget(policy)
-                    .map_err(|_| SubmitError::Unsupported)?;
-                for psdu in psdu_lengths {
-                    let psdu = u16::try_from(psdu).map_err(|_| SubmitError::Unsupported)?;
+                    .map_err(|_| AmpduRefusal::Length)?;
+                for psdu in buffer.lengths().map(|len| len + mic_and_fcs) {
+                    let psdu = u16::try_from(psdu).map_err(|_| AmpduRefusal::Length)?;
                     let delimiters = rate
                         .ampdu_empty_delimiters(psdu, density)
-                        .ok_or(SubmitError::Unsupported)?;
+                        .ok_or(AmpduRefusal::Length)?;
                     budget
                         .push(u32::from(psdu), delimiters)
-                        .map_err(|_| SubmitError::Unsupported)?;
+                        .map_err(|_| AmpduRefusal::Length)?;
                 }
                 (rate.power_lookup_code(), Some(policy))
             }
-            TxPhyRate::Legacy(_) => return Err(SubmitError::Unsupported),
+            TxPhyRate::Legacy(_) => return Err(AmpduRefusal::LegacyRate),
         };
         let data_power = self.tx.single_attempt_power_pair(power_code, ceiling);
         let publication = AmpduPublication {
@@ -2603,17 +1414,15 @@ where
         let format = match (common.rate, format) {
             (TxPhyRate::Ht(rate), _) => AmpduFormat::Ht {
                 rate,
-                protection_spacing: ampdu::protection_spacing(
-                    attempt.payload.min_mpdu_start_spacing,
-                ),
+                protection_spacing: ampdu::protection_spacing(min_mpdu_start_spacing),
             },
             (_, Some(policy)) => AmpduFormat::He {
                 policy,
                 bss_color: self.tx.policy().he_bss_color(),
             },
-            (_, None) => return Err(SubmitError::Unsupported),
+            (_, None) => return Err(AmpduRefusal::LegacyRate),
         };
-        Ok(AmpduPlan {
+        Ok(ampdu::AmpduSettings {
             queue,
             format,
             role: AmpduTxRoleAdapter {
@@ -2624,14 +1433,725 @@ where
             publication,
         })
     }
+
+    /// Consume one interrupt or deadline edge of the published attempts.
+    ///
+    /// Every published queue is offered the edge and claims only its own
+    /// queue's state. When a timeout abort ends, the CCA it forced is
+    /// released, and every queue is offered a timeout edge once more: one
+    /// whose timeout arrived during the settle aborts now.
+    ///
+    /// # Errors
+    ///
+    /// A fault of the transmit owner.
+    pub fn service<
+        H: HtAmpduHardware + CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+        sink: &mut K,
+    ) -> Result<(), LowerMacFault> {
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        let mut wake = wake;
+        loop {
+            let mut abort_ended = false;
+            for index in 0..LOWER_MAC_TX_QUEUES {
+                let Some(attempt) = self.queues[index].take() else {
+                    continue;
+                };
+                let may_begin_timeout_abort = !self.abort_settling();
+                let Attempt {
+                    queue,
+                    role,
+                    admission,
+                    rate,
+                    work,
+                } = attempt;
+                let queued = match work {
+                    held @ (Work::Held { .. } | Work::Quarantined { .. }) => {
+                        self.queues[index] = Some(Attempt {
+                            queue,
+                            role,
+                            admission,
+                            rate,
+                            work: held,
+                        });
+                        continue;
+                    }
+                    Work::Published(queued) => queued,
+                };
+                let settling = queued.abort_settling();
+                match self.tx.service_queued_single_attempt(
+                    hardware,
+                    queued,
+                    wake,
+                    may_begin_timeout_abort,
+                ) {
+                    Ok(QueuedSingleAttemptProgress::Pending(queued)) => {
+                        self.queues[index] = Some(Attempt {
+                            queue,
+                            role,
+                            admission,
+                            rate,
+                            work: Work::Published(queued),
+                        });
+                    }
+                    Ok(QueuedSingleAttemptProgress::Complete { outcome, slot }) => {
+                        abort_ended |= settling;
+                        self.finish_attempt(
+                            hardware,
+                            queue,
+                            admission,
+                            slot,
+                            publication_end(outcome),
+                            rate,
+                            sink,
+                        );
+                    }
+                    Err(QueuedSingleAttemptFailed { error, quarantine }) => {
+                        self.queues[index] = Some(Attempt {
+                            queue,
+                            role,
+                            admission,
+                            rate,
+                            work: Work::Quarantined { _owner: quarantine },
+                        });
+                        let fault = LowerMacFault::Tx(error);
+                        self.fault = Some(fault);
+                        return Err(fault);
+                    }
+                }
+            }
+            if !abort_ended {
+                break;
+            }
+            wake = WifiTxWake::Interrupt {
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT,
+            };
+        }
+        Ok(())
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one terminal returns the complete admitted attempt"
+    )]
+    fn finish_attempt<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        queue: FreeQueue<'core, Path>,
+        admission: TxAdmission<'core, Path>,
+        slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        end: PublicationEnd,
+        rate: PhyRate,
+        sink: &mut K,
+    ) {
+        match admission {
+            TxAdmission::Open(ticket) => sink.tx_completed(queue, ticket, slot, end, rate),
+            TxAdmission::Protected(key) => {
+                let index = key.index;
+                let ticket = self.keys.uses[index].release(key);
+                sink.tx_completed(queue, ticket, slot, end, rate);
+                self.finish_key_removal(hardware, index, sink);
+            }
+        }
+    }
+
+    /// The owned view of one received MPDU, or `None` while the port does
+    /// not receive or no receive rule admits it. The hardware policies pass
+    /// a superset of the requested rules; this narrows it to them.
+    ///
+    /// The receive prefix carries no noise floor; the frame's is the PHY's
+    /// noise-floor estimate when it is received, the value the S31 station
+    /// reads for its rate control (`StaNoiseFloorHardware`).
+    fn received<'frame, H: StaNoiseFloorHardware>(
+        &self,
+        hardware: &H,
+        frame: &NormalizedRxFrame<'frame>,
+    ) -> Option<(&'frame [u8], Esp32s31RxMeta)> {
+        let admitted = self.monitor || self.vifs.iter().flatten().any(|vif| vif.admits(frame.mpdu));
+        (self.fault.is_none() && admitted).then(|| {
+            let noise_floor_dbm = hardware.read_noise_floor_dbm();
+            let mut common = portable::rx_meta(frame.metadata, self.channel());
+            common.noise_floor_dbm = RxEvidence::HardwareObserved(noise_floor_dbm);
+            (
+                frame.mpdu,
+                Esp32s31RxMeta {
+                    common,
+                    rssi_dbm: frame.rssi_dbm,
+                    noise_floor_dbm,
+                },
+            )
+        })
+    }
+
+    /// End a queue's held attempt as [`PublicationEnd::Withdrawn`]: it
+    /// never reached the hardware, and its slot comes back with it.
+    fn abort_held<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        index: usize,
+        sink: &mut K,
+    ) {
+        let Some(attempt) = self.queues[index].take() else {
+            return;
+        };
+        match attempt {
+            Attempt {
+                queue,
+                work: Work::Held { slot, .. },
+                admission,
+                rate,
+                ..
+            } => {
+                self.finish_attempt(
+                    hardware,
+                    queue,
+                    admission,
+                    slot,
+                    PublicationEnd::Withdrawn,
+                    rate,
+                    sink,
+                );
+            }
+            published => self.queues[index] = Some(published),
+        }
+    }
+
+    /// Return every held attempt without publishing it.
+    fn withdraw_held_attempts<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        sink: &mut K,
+    ) {
+        for index in 0..LOWER_MAC_TX_QUEUES {
+            self.abort_held(hardware, index, sink);
+        }
+    }
+
+    /// Retain the phase's six-bit color proof through the core boundary.
+    pub fn set_checked_he_bss_color(&mut self, color: oer_ieee80211_lower_mac::BssColor) {
+        self.tx.policy_mut().install_he_bss_color(color.get());
+    }
+
+    /// The beacon receive priority.
+    // SOURCE(esp32s31): complete pinned `libpp[pm_coex.o]::pm_coex_update_rx_beacon_pti`
+    // passes `coex_pti_get(0)`, or zero, as both arguments of
+    // `hal_set_rx_beacon_pti`.
+    pub fn set_rx_beacon_priority<H: RxBeaconPriorityHardware>(
+        &mut self,
+        hardware: &mut H,
+        priority: RxBeaconPriority,
+    ) {
+        match priority {
+            RxBeaconPriority::BeaconWindow => {
+                hardware.set_rx_beacon_pti(self.coex.beacon_window_pti());
+            }
+            RxBeaconPriority::Zero => hardware.set_rx_beacon_pti(PRIORITY_ZERO),
+            RxBeaconPriority::Cleared => hardware.clear_rx_beacon_pti(),
+        }
+    }
+
+    /// The EDCA parameters every queue's attempts contend with, whose
+    /// records lie within the capabilities' limits: a set the policy
+    /// refuses leaves the installed one.
+    ///
+    /// # Errors
+    ///
+    /// The record the policy refused.
+    pub fn set_checked_edca(
+        &mut self,
+        parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
+    ) -> Result<(), oer_esp32s31_ieee80211_mac::edca::EdcaParametersError> {
+        self.tx.policy_mut().install_wmm(parameters)
+    }
+
+    /// Tune the next `Enable` to `channel`, on a disabled port.
+    fn set_checked_channel(&mut self, channel: WifiChannel) {
+        if self.channel != channel {
+            self.break_tsf_relation(VifRole::Station);
+            self.break_tsf_relation(VifRole::AccessPoint);
+        }
+        self.channel = channel;
+    }
+
+    /// The station address the cold start published.
+    pub const fn station_address(&self) -> MacAddress {
+        self.config.station_address
+    }
+
+    /// Apply `config` and its receive `policy` to its role's interface.
+    fn apply_vif<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        config: CoreVif,
+        policy: ReceivePolicy,
+    ) {
+        match policy {
+            ReceivePolicy::StationDisabled => hardware.disable_station_receive_registers(),
+            ReceivePolicy::Station { bssid } => hardware.apply_sta_link_policy(bssid),
+            ReceivePolicy::StationOtherBss { bssid } => hardware.apply_sta_esp_now_policy(bssid),
+            ReceivePolicy::AccessPointDisabled => hardware.disable_ap_link_policy(),
+            ReceivePolicy::AccessPoint { address } => hardware.apply_ap_link_policy(address),
+        }
+        let previous = self.vifs[config.role as usize].replace(config);
+        // A new association, a reassociation or a roam: the interface
+        // follows another TSF.
+        if previous.is_none_or(|previous| previous.bss() != config.bss()) {
+            self.break_tsf_relation(config.role);
+        }
+    }
+
+    /// Install a key whose values and state a caller's types guarantee:
+    /// the scope's slots have room (an access point's `association_id` is
+    /// free), and a group key identifier is a valid one.
+    ///
+    /// # Errors
+    ///
+    /// The hardware refused the key.
+    pub fn install_checked_key<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        installation: association::TransmitKeyInstallation<'_, 'core, Path>,
+        temporal_key: &[u8; CCMP_128_KEY_BYTES],
+    ) -> Result<KeyHandle<'core, Path>, association::KeyInstallRefused<'core, Path>> {
+        let (spp, scope, slot) = installation.into_parts();
+        let free = match self.vacant_key(scope.into()) {
+            Ok(index) => index,
+            Err(fault) => return Err(association::KeyInstallRefused { fault, slot }),
+        };
+        hardware.configure_ccmp_association(
+            match scope {
+                TransmitKeyScope::StationPairwise { .. } => {
+                    oer_esp32s31_hal::types::MacInterface::Station
+                }
+                _ => oer_esp32s31_hal::types::MacInterface::AccessPoint,
+            },
+            spp_mode(spp),
+        );
+        let token = match scope {
+            TransmitKeyScope::StationPairwise { peer } => {
+                install_sta_pairwise_ccmp(hardware, peer, temporal_key)
+                    .map(TransmitKeyToken::StaPairwise)
+            }
+            TransmitKeyScope::AccessPointPairwise {
+                peer,
+                association_id,
+            } => install_ap_pairwise_ccmp(hardware, peer, association_id, temporal_key)
+                .map(TransmitKeyToken::ApPairwise),
+            TransmitKeyScope::AccessPointGroup { key_id } => {
+                install_ap_group_ccmp(hardware, key_id, temporal_key).map(TransmitKeyToken::ApGroup)
+            }
+        };
+        let token = match token {
+            Ok(token) => token,
+            Err(error) => {
+                return Err(association::KeyInstallRefused {
+                    fault: LowerMacFault::Key(error),
+                    slot,
+                });
+            }
+        };
+        self.keys.installed[free] = Some(scope.into());
+        Ok(KeyHandle {
+            slot,
+            index: free,
+            token,
+            scope,
+            brand: core::marker::PhantomData,
+        })
+    }
+
+    /// Install a station GTK for reception. The returned handle cannot issue
+    /// TX rights or allocate TX packet numbers; removal consumes it normally.
+    pub fn install_station_group_key<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        association: &association::StationAssociation<'core, Path>,
+        slot: association::StationGroupSlot<'core, Path>,
+        key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
+        temporal_key: &[u8; CCMP_128_KEY_BYTES],
+    ) -> Result<ReceiveKeyHandle<'core, Path>, association::KeyInstallRefused<'core, Path>> {
+        let scope = CheckedKeyScope::StationGroup { key_id };
+        let slot = association::VacantKeySlot::StationGroup(slot);
+        let index = match self.vacant_key(scope) {
+            Ok(index) => index,
+            Err(fault) => return Err(association::KeyInstallRefused { fault, slot }),
+        };
+        hardware.configure_ccmp_association(
+            oer_esp32s31_hal::types::MacInterface::Station,
+            spp_mode(association.spp()),
+        );
+        let token = match install_sta_group_ccmp(hardware, key_id, temporal_key) {
+            Ok(token) => token,
+            Err(error) => {
+                return Err(association::KeyInstallRefused {
+                    fault: LowerMacFault::Key(error),
+                    slot,
+                });
+            }
+        };
+        self.keys.installed[index] = Some(scope);
+        Ok(ReceiveKeyHandle {
+            slot,
+            index,
+            token,
+            key_id,
+            brand: core::marker::PhantomData,
+        })
+    }
+
+    fn vacant_key(&self, scope: CheckedKeyScope) -> Result<usize, LowerMacFault> {
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        if self
+            .keys
+            .installed
+            .iter()
+            .flatten()
+            .any(|installed| installed.same_slot(scope))
+        {
+            return Err(LowerMacFault::Key(CryptoKeyError::Occupied));
+        }
+        self.keys
+            .installed
+            .iter()
+            .position(Option::is_none)
+            .ok_or(LowerMacFault::Key(CryptoKeyError::Occupied))
+    }
+
+    /// Admit one protected attempt from the live handle and one TX ticket.
+    /// No reference into the core is held. The ticket bounds all admissions
+    /// by the same `TICKETS` used by `CorePools<TICKETS>`; the counter cannot
+    /// overflow and there is no capacity-refusal branch.
+    pub fn admit_key(
+        &mut self,
+        key: &KeyHandle<'core, Path>,
+        ticket: TxTicket<'core, Path>,
+    ) -> Result<KeyUse<'core, Path>, KeyAdmissionRefused<'core, Path>> {
+        if self.fault.is_some() {
+            return Err(KeyAdmissionRefused {
+                ticket,
+                reason: KeyAdmissionError::Poisoned,
+            });
+        }
+        Ok(self.keys.uses[key.index].admit(key, ticket))
+    }
+
+    /// Consume the sole installed handle at removal's FIFO position. The
+    /// programmed material stays until the last admitted use returns. No
+    /// further right can be obtained from the moved handle.
+    pub fn remove_checked_key<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        key: impl Into<RemovingKey<'core, Path>>,
+        sink: &mut K,
+    ) {
+        let key = key.into();
+        let index = key.index;
+        self.keys.removals[index] = Some(key);
+        self.finish_key_removal(hardware, index, sink);
+    }
+
+    fn finish_key_removal<H: CcmpKeyHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &mut self,
+        hardware: &mut H,
+        index: usize,
+        sink: &mut K,
+    ) {
+        if self.fault.is_some() || !self.keys.uses[index].is_empty() {
+            return;
+        }
+        if let Some(key) = self.keys.removals[index].take() {
+            key.token.clear(hardware);
+            self.keys.installed[index] = None;
+            sink.key_removed(KeyRemoved {
+                slot: key.slot,
+                scope: key.scope,
+                brand: key.brand,
+            });
+        }
+    }
+
+    /// Return an admission which was never published (including submission
+    /// refusal), or one carried by a detached aggregate's terminal. Published
+    /// MPDUs keep this owner private and return it through their terminal.
+    pub fn return_admission<
+        H: CcmpKeyHardware,
+        K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>,
+    >(
+        &mut self,
+        hardware: &mut H,
+        admission: TxAdmission<'core, Path>,
+        sink: &mut K,
+    ) -> Result<TxTicket<'core, Path>, QuarantinedAdmission<'core, Path>> {
+        if self.fault.is_some() {
+            return Err(QuarantinedAdmission {
+                _admission: admission,
+            });
+        }
+        Ok(match admission {
+            TxAdmission::Open(ticket) => ticket,
+            TxAdmission::Protected(key) => {
+                let index = key.index;
+                let ticket = self.keys.uses[index].release(key);
+                self.finish_key_removal(hardware, index, sink);
+                ticket
+            }
+        })
+    }
+
+    /// Start an agreement whose values a caller's types guarantee: its TID
+    /// and window within the limits, its peer individual. It replaces the
+    /// agreement of the same peer and TID in its bank, or takes a free one.
+    ///
+    /// # Errors
+    ///
+    /// No bank is free, or the hardware refused or misread the agreement.
+    pub fn start_checked_rx_block_ack<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+        agreement: RxBlockAckValues,
+    ) -> Result<(), LowerMacFault> {
+        let bank = self
+            .rx_block_ack_bank(agreement.role, agreement.peer, agreement.tid)
+            .or_else(|| self.rx_block_acks.iter().position(Option::is_none))
+            .ok_or(LowerMacFault::NoRxBlockAckBank)?;
+        hardware
+            .program_rx_block_ack(S31RxBlockAckAgreement {
+                hardware_index: bank as u8,
+                interface: mac_interface(agreement.role),
+                peer: agreement.peer,
+                tid: agreement.tid,
+                starting_sequence: agreement.start_sequence,
+                window: u16::from(agreement.window),
+            })
+            .map_err(|error| match error {
+                S31RxBlockAckAgreementError::HardwareReadbackMismatch => {
+                    LowerMacFault::RxBlockAckReadback
+                }
+                error => LowerMacFault::RxBlockAck(error),
+            })?;
+        self.rx_block_acks[bank] = Some(RxBlockAckEntry {
+            role: agreement.role,
+            peer: agreement.peer,
+            tid: agreement.tid,
+        });
+        Ok(())
+    }
+
+    /// End the agreement of `role` with `peer` on `tid`: `false` when none
+    /// exists.
+    ///
+    /// # Errors
+    ///
+    /// The hardware refused to clear its bank.
+    pub fn end_checked_rx_block_ack<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+        role: VifRole,
+        peer: MacAddress,
+        tid: u8,
+    ) -> Result<bool, LowerMacFault> {
+        let Some(bank) = self.rx_block_ack_bank(role, peer, tid) else {
+            return Ok(false);
+        };
+        hardware
+            .clear_rx_block_ack(bank as u8)
+            .map_err(LowerMacFault::RxBlockAck)?;
+        self.rx_block_acks[bank] = None;
+        Ok(true)
+    }
+
+    fn rx_block_ack_bank(&self, role: VifRole, peer: MacAddress, tid: u8) -> Option<usize> {
+        self.rx_block_acks
+            .iter()
+            .position(|entry| *entry == Some(RxBlockAckEntry { role, peer, tid }))
+    }
+
+    /// Whether every queue is empty or retains only an unpublished attempt.
+    pub fn published_idle(&self) -> bool {
+        !self.attempts().any(|attempt| !attempt.work.held())
+    }
+
+    /// The station's TSF and the generation of its relation, for a
+    /// [`TsfSample`](oer_ieee80211_lower_mac::TsfSample) the backend pairs
+    /// with its radio clock: the access-point timer has no read seam.
+    pub fn station_tsf_reading<H: StationTsfHardware>(
+        &self,
+        hardware: &mut H,
+    ) -> (VifTsf, TsfGeneration) {
+        let at = self.station_tsf.read(hardware);
+        (
+            VifTsf {
+                vif: VifRole::Station,
+                at,
+            },
+            self.station_tsf.generation(),
+        )
+    }
+
+    /// Start a new generation of the TSF relation of the interface with
+    /// `role`.
+    fn break_tsf_relation(&mut self, role: VifRole) {
+        match role {
+            VifRole::Station => self.station_tsf.break_relation(),
+            VifRole::AccessPoint => self.access_point_tsf.break_relation(),
+        }
+    }
+
+    /// Set the station's TSF. A set beyond the drift its relation allows
+    /// starts a new generation of the relation.
+    ///
+    /// # Errors
+    ///
+    /// The set the relation cannot take.
+    pub fn set_station_tsf<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        at: TsfInstant,
+    ) -> Result<(), TsfTimingError> {
+        self.station_tsf.set(hardware, at).map(|_| ())
+    }
+
+    /// Restart the access point's TSF from zero, a new generation of its
+    /// relation.
+    pub fn restart_access_point_tsf<H: LowerMacHardware>(&mut self, hardware: &mut H) {
+        self.access_point_tsf.restart(hardware);
+    }
+
+    /// Program the station TBTT schedule. The event fires the schedule's
+    /// lead before each TBTT; the wake lead published beside it keeps the
+    /// vendor's window above the lead.
+    ///
+    /// # Errors
+    ///
+    /// A schedule the timer registers cannot hold: nothing changed.
+    pub fn set_station_tbtt<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        next: TsfInstant,
+        beacon_interval_micros: u64,
+        lead_micros: u64,
+    ) -> Result<(), UnsupportedTbtt> {
+        let interval_micros = u32::try_from(beacon_interval_micros)
+            .ok()
+            .filter(|&interval| interval != 0)
+            .ok_or(UnsupportedTbtt)?;
+        let ahead_micros = u16::try_from(lead_micros).map_err(|_| UnsupportedTbtt)?;
+        let wake_ahead_micros = ahead_micros
+            .checked_add(STATION_TBTT_WAKE_WINDOW_MICROS)
+            .ok_or(UnsupportedTbtt)?;
+        let first = next.as_micros();
+        hardware.start_station_tbtt(StaTbttSchedule {
+            first_tbtt_tsf: first,
+            interval_micros,
+            ahead_micros,
+            wake_ahead_micros,
+        });
+        self.tbtt = Some(StationTbtt {
+            first,
+            interval: u64::from(interval_micros),
+        });
+        Ok(())
+    }
+
+    /// Stop the station's TBTT schedule.
+    pub fn stop_station_tbtt<H: LowerMacHardware>(&mut self, hardware: &mut H) {
+        if self.tbtt.take().is_some() {
+            hardware.stop_station_tbtt();
+        }
+    }
+
+    /// Report the station TBTT whose event the power interrupt delivered
+    /// (`MacPowerWakeCause::StaTbtt`). Without a schedule the edge is stale
+    /// and reports nothing.
+    pub fn station_tbtt<H: StationTsfHardware, K: LowerMacSink<'core, 'slot, BUFFER_SIZE, Path>>(
+        &self,
+        hardware: &mut H,
+        sink: &mut K,
+    ) {
+        if let Some(tbtt) = self.tbtt {
+            let now = self.station_tsf.read(hardware).as_micros();
+            let at = TsfInstant::from_micros(tbtt.announced(now));
+            sink.tbtt(TbttEvent {
+                tbtt: VifTsf {
+                    vif: VifRole::Station,
+                    at,
+                },
+            });
+        }
+    }
+
+    /// Start or stop monitor reception through the open promiscuous
+    /// policy, which runs only while no interface receives.
+    ///
+    /// # Errors
+    ///
+    /// An interface receives: nothing changed.
+    pub fn set_monitor<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        enabled: bool,
+    ) -> Result<(), UnsupportedVif> {
+        if enabled {
+            if self
+                .vifs
+                .iter()
+                .flatten()
+                .any(|vif| !vif.receive.is_empty())
+            {
+                return Err(UnsupportedVif);
+            }
+            hardware.configure_open_promiscuous_receive();
+        } else if self.monitor {
+            hardware.disable_open_promiscuous_receive();
+        }
+        self.monitor = enabled;
+        Ok(())
+    }
 }
 
-/// What every admitted attempt shares.
+/// MAC priority zero.
+const PRIORITY_ZERO: MacPti = match MacPti::new(0) {
+    Some(priority) => priority,
+    None => panic!("priority zero is a MAC priority"),
+};
+
+/// A publication the transmit owner refused: its fault, and the slot that
+/// goes back.
+#[must_use = "retain the returned transmit slot and handle the publication fault"]
+pub struct SubmitFault<'core, 'slot, const BUFFER_SIZE: usize, Path: PoolPath = Root> {
+    pub queue: FreeQueue<'core, Path>,
+    pub fault: LowerMacFault,
+    pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    pub admission: TxAdmission<'core, Path>,
+}
+
+/// An interface configuration the receive policies cannot take.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnsupportedVif;
+
+/// A TBTT schedule the station timer cannot hold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnsupportedTbtt;
+
+/// What every attempt shares.
 struct CommonAdmission {
     queue: LegacyTxQueue,
     role: VifRole,
     rate: TxPhyRate,
-    key: Option<KeyHandle>,
     hardware_key_selector: u8,
     hardware_mic_length: usize,
     /// Protection, backoff and power ceiling; `no_ack` is the MPDU's.
@@ -2645,56 +2165,214 @@ pub enum CheckedKeyScope {
         peer: MacAddress,
     },
     StationGroup {
-        key_id: u8,
+        key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
     },
     AccessPointPairwise {
         peer: MacAddress,
         association_id: u16,
     },
     AccessPointGroup {
-        key_id: u8,
+        key_id: oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId,
     },
 }
 
-/// An MPDU attempt the core may publish, its publication planned: every
-/// value one the core supports and every state precondition holding. The
-/// core makes one inside the call that publishes it.
-struct CheckedMpdu<'slot, const BUFFER_SIZE: usize> {
-    id: TxId,
-    vif: VifId,
-    frame: Esp32s31TxBuffer<'slot, BUFFER_SIZE>,
-    admission: Admission,
+impl CheckedKeyScope {
+    const fn role(self) -> VifRole {
+        match self {
+            Self::StationPairwise { .. } | Self::StationGroup { .. } => VifRole::Station,
+            Self::AccessPointPairwise { .. } | Self::AccessPointGroup { .. } => {
+                VifRole::AccessPoint
+            }
+        }
+    }
+    fn same_slot(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::StationPairwise { .. }, Self::StationPairwise { .. })
+            | (Self::StationGroup { .. }, Self::StationGroup { .. }) => true,
+            (
+                Self::AccessPointPairwise {
+                    association_id: a, ..
+                },
+                Self::AccessPointPairwise {
+                    association_id: b, ..
+                },
+            ) => a == b,
+            (Self::AccessPointGroup { key_id: a }, Self::AccessPointGroup { key_id: b }) => a == b,
+            _ => false,
+        }
+    }
 }
 
 /// The values of an MPDU attempt a caller's types guarantee: the port
-/// enabled, `id` new, the access category's queue free, `vif` configured,
-/// `key` installed for `vif`, the rate carried on the channel, the power,
+/// enabled, the access category's queue free, `role` configured, `key`
+/// installed for `role`, the rate carried on the channel, the power,
 /// backoff and coexistence level within the capabilities, the length at
 /// least the header through Address 1 and at most the capabilities'
-/// `max_mpdu_length`, and `no_ack`
-/// only of an individual frame at a rate that sends one without an ACK
-/// ([`LowerMacCore::submit_checked`]).
+/// `max_mpdu_length`, and `no_ack` only of an individual frame at a rate
+/// that sends one without an ACK ([`EnabledCore::submit_checked`]).
 pub struct MpduValues<'slot, const BUFFER_SIZE: usize> {
-    pub id: TxId,
-    pub vif: VifId,
-    pub access_category: WmmAccessCategory,
-    pub frame: Esp32s31TxBuffer<'slot, BUFFER_SIZE>,
+    role: VifRole,
+    /// The slot holding the MPDU after the TX metadata word.
+    slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    /// The MPDU's length, without its MIC and FCS.
+    len: usize,
     /// An individual frame sent without soliciting its ACK.
+    no_ack: bool,
+    rate: TxPhyRate,
+    /// The rate the completion reports.
+    reported: PhyRate,
+    protection: Protection,
+    power_ceiling_dbm: Option<i8>,
+    /// The backoff selected for this publication, in slots.
+    backoff_slots: u16,
+    coex: CoexPriority,
+    /// A transmission of an MPDU the plan sends again.
+    retry: bool,
+}
+
+/// Untrusted parameters checked before constructing an MPDU publication.
+#[derive(Clone, Copy, Debug)]
+pub struct MpduParameters {
+    pub role: VifRole,
+    pub len: usize,
     pub no_ack: bool,
-    pub rate: TxPhyRate,
+    pub rate: PhyRate,
     pub protection: Protection,
-    pub key: Option<KeyHandle>,
     pub power_ceiling_dbm: Option<i8>,
     pub backoff_slots: u16,
     pub coex: CoexPriority,
+    pub retry: bool,
 }
 
-/// An MPDU submission that passed admission.
+/// Why an MPDU cannot become checked submission values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MpduValueError {
+    Length,
+    Rate,
+    Backoff,
+    Coexistence,
+    PowerCeiling,
+    NoAck,
+}
+
+/// Checked construction refuses with the complete, unpublished slot.
+#[must_use = "retain the refused slot"]
+pub struct MpduValuesRefused<'slot, const BUFFER_SIZE: usize> {
+    pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    pub reason: MpduValueError,
+}
+
+impl<'slot, const BUFFER_SIZE: usize> MpduValues<'slot, BUFFER_SIZE> {
+    /// Validate the public request once; callers cannot mutate the resulting
+    /// length, rate or protection fields before submission. Encryption itself
+    /// comes from the separately consumed `TxAdmission`, never these values.
+    pub fn checked(
+        slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        values: MpduParameters,
+    ) -> Result<Self, MpduValuesRefused<'slot, BUFFER_SIZE>> {
+        let capabilities = esp32s31_lower_mac_capabilities(BUFFER_SIZE);
+        let checked = (|| {
+            if !(MIN_FRAME_LENGTH..=usize::from(capabilities.max_mpdu_length)).contains(&values.len)
+            {
+                return Err(MpduValueError::Length);
+            }
+            let rate = TxPhyRate::try_from(values.rate).map_err(|_| MpduValueError::Rate)?;
+            if values.backoff_slots > MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS {
+                return Err(MpduValueError::Backoff);
+            }
+            if !matches!(values.coex, CoexPriority::Normal | CoexPriority::Elevated) {
+                return Err(MpduValueError::Coexistence);
+            }
+            if values.power_ceiling_dbm.is_some_and(|ceiling| ceiling < 0) {
+                return Err(MpduValueError::PowerCeiling);
+            }
+            if values.no_ack && !matches!(rate, TxPhyRate::Legacy(_)) {
+                return Err(MpduValueError::NoAck);
+            }
+            Ok(rate)
+        })();
+        match checked {
+            Ok(rate) => Ok(Self {
+                role: values.role,
+                slot,
+                len: values.len,
+                no_ack: values.no_ack,
+                rate,
+                reported: values.rate,
+                protection: values.protection,
+                power_ceiling_dbm: values.power_ceiling_dbm,
+                backoff_slots: values.backoff_slots,
+                coex: values.coex,
+                retry: values.retry,
+            }),
+            Err(reason) => Err(MpduValuesRefused { slot, reason }),
+        }
+    }
+}
+
+/// The values of an aggregate a caller's types guarantee: `role`
+/// configured, `key` installed for it, the power and backoff within the
+/// capabilities ([`LowerMacCore::plan_ampdu`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmpduValues {
+    pub role: VifRole,
+    pub access_category: WmmAccessCategory,
+    pub rate: TxPhyRate,
+    pub protection: Protection,
+    pub power_ceiling_dbm: Option<i8>,
+    /// The backoff selected for this publication, in slots.
+    pub backoff_slots: u16,
+    pub coex: CoexPriority,
+    /// The recipient's Minimum MPDU Start Spacing encoding, 0 to 7.
+    pub min_mpdu_start_spacing: u8,
+}
+
+/// A refused aggregate plan returns its admission without publishing.
+#[must_use = "retain both admission owners and handle the reason"]
+pub struct AmpduPlanningRefused<'core, Path: PoolPath = Root> {
+    pub queue: FreeQueue<'core, Path>,
+    pub admission: TxAdmission<'core, Path>,
+    pub reason: AmpduRefusal,
+}
+
+impl<Path: PoolPath> core::fmt::Debug for AmpduPlanningRefused<'_, Path> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AmpduPlanningRefused")
+            .field("reason", &self.reason)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Why an aggregate cannot go as one publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmpduRefusal {
+    /// A connection frame's coexistence level: an aggregate is ordinary
+    /// data.
+    ElevatedCoexistence,
+    /// No subframe.
+    Empty,
+    /// More subframes than the aggregate owner holds.
+    TooManySubframes,
+    /// A start spacing encoding above 7.
+    StartSpacing,
+    /// A subframe shorter than its header through Address 1.
+    ShortSubframe,
+    /// The first subframe is group addressed: no one recipient answers.
+    GroupRecipient,
+    /// Longer than the rate's ceiling, the declared maximum or the HE TXOP
+    /// limit allows, with every subframe's MIC, FCS and delimiters.
+    Length,
+    /// A non-HT rate: aggregates go in HT or HE PPDUs.
+    LegacyRate,
+    /// A subframe or interface does not match the owned encryption admission.
+    KeyUseMismatch,
+}
+
+/// An MPDU submission planned.
 struct Admission {
     queue: LegacyTxQueue,
     plan: OrdinaryTxPlan,
     single: SingleAttempt,
-    key: Option<KeyHandle>,
 }
 
 const fn mac_interface(role: VifRole) -> MacInterface {
@@ -2725,17 +2403,17 @@ enum ReceivePolicy {
 }
 
 /// Map a receive filter onto the smallest S31 receive policy that passes a
-/// superset of it; [`LowerMacCore::received`] narrows the superset.
-fn receive_policy(config: &LowerMacConfig, vif: &VifConfig) -> Result<ReceivePolicy, SettingError> {
+/// superset of it; [`EnabledCore::received`] narrows the superset.
+fn receive_policy(config: &LowerMacConfig, vif: &CoreVif) -> Result<ReceivePolicy, UnsupportedVif> {
     let limits = esp32s31_lower_mac_capabilities(0).receive_filters(vif.role);
     if !limits.contains(vif.receive) {
-        return Err(SettingError::Unsupported);
+        return Err(UnsupportedVif);
     }
     match vif.role {
         VifRole::Station => {
             // The station address is published by the cold start only.
             if vif.address != config.station_address {
-                return Err(SettingError::Unsupported);
+                return Err(UnsupportedVif);
             }
             let other_bss = vif.receive.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT);
             match vif.bssid {
@@ -2748,14 +2426,14 @@ fn receive_policy(config: &LowerMacConfig, vif: &VifConfig) -> Result<ReceivePol
                         bssid: BROADCAST_ADDRESS,
                     })
                 }
-                None => Err(SettingError::Unsupported),
+                None => Err(UnsupportedVif),
                 Some(bssid) if other_bss => Ok(ReceivePolicy::StationOtherBss { bssid }),
                 Some(bssid) => Ok(ReceivePolicy::Station { bssid }),
             }
         }
         VifRole::AccessPoint => {
             if vif.address[0] & 1 != 0 || vif.bssid.is_some_and(|bssid| bssid != vif.address) {
-                return Err(SettingError::Unsupported);
+                return Err(UnsupportedVif);
             }
             if vif.receive.is_empty() {
                 Ok(ReceivePolicy::AccessPointDisabled)
@@ -2768,33 +2446,39 @@ fn receive_policy(config: &LowerMacConfig, vif: &VifConfig) -> Result<ReceivePol
     }
 }
 
-/// The portable completion of one single-attempt transaction.
-fn completion(id: TxId, outcome: OrdinaryTxOutcome) -> TxCompletion {
-    let report = outcome.report();
-    let status = match outcome {
-        OrdinaryTxOutcome::Success(_) => TxStatus::Success,
-        OrdinaryTxOutcome::HardwareFailure(report) => report
-            .completion
-            .map_or(TxStatus::Fault(TxFault::Unrecognized), |completion| {
-                completion.tx_status()
-            }),
-        // The hardware timeout edge and its abort: whether the PPDU reached
-        // the air is unknown.
-        OrdinaryTxOutcome::HardwareTimeout(_) => TxStatus::Aborted,
-        OrdinaryTxOutcome::CollisionLimit(_) => TxStatus::Collision,
-    };
-    TxCompletion {
-        id,
-        status,
-        // The S31 completion carries an ACK SNR sample but no ACK RSSI.
-        ack_rssi_dbm: None,
-        ack_snr_db: report.status.ack_snr_db,
-        block_ack: report.block_ack.map(|observation| BlockAckReport {
-            start_sequence: observation.block_ack.starting_sequence,
-            bitmap: observation.block_ack.bitmap,
-        }),
+/// How one publication ended.
+fn publication_end(outcome: OrdinaryTxOutcome) -> PublicationEnd {
+    match outcome {
+        OrdinaryTxOutcome::Success(completed) | OrdinaryTxOutcome::HardwareFailure(completed) => {
+            PublicationEnd::Completed {
+                status: completed.status(),
+                ack_snr_db: completed.report().status.ack_snr_db,
+                block_ack: block_ack(completed.report()),
+            }
+        }
+        OrdinaryTxOutcome::HardwareTimeout(_) => PublicationEnd::TimedOut,
+        OrdinaryTxOutcome::CollisionLimit(_) => PublicationEnd::Collision,
     }
 }
 
-#[cfg(all(test, not(target_pointer_width = "32")))]
+/// The BlockAck a BlockAckReq's completion carried.
+fn block_ack(report: crate::ordinary_tx::OrdinaryTxReport) -> Option<BlockAckReport> {
+    report.block_ack.map(|observation| BlockAckReport {
+        start_sequence: observation.block_ack.starting_sequence,
+        bitmap: observation.block_ack.bitmap,
+    })
+}
+
+#[cfg(test)]
 mod tests;
+
+fn spp_mode(spp: oer_ieee80211_mac::security::Spp) -> oer_esp32s31_hal::types::MacSppMode {
+    match spp {
+        oer_ieee80211_mac::security::Spp::Negotiated => {
+            oer_esp32s31_hal::types::MacSppMode::Authenticated
+        }
+        oer_ieee80211_mac::security::Spp::NotNegotiated => {
+            oer_esp32s31_hal::types::MacSppMode::Unauthenticated
+        }
+    }
+}

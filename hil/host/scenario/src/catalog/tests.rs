@@ -134,7 +134,7 @@ fn a_diagnostic_image_serves_only_an_investigation_scenario() {
             std::path::Path::new("exit.toml"),
         )
     };
-    for image in ["diagnostic-station-exit", "diagnostic-ieee802154-radio"] {
+    for image in ["diagnostic-bluetooth-gatt-trace", "diagnostic-usb-jtag-off"] {
         assert!(scenario(image, "investigation", "").is_ok(), "{image}");
         assert!(scenario(image, "qualification", "").is_err(), "{image}");
         assert!(
@@ -142,10 +142,10 @@ fn a_diagnostic_image_serves_only_an_investigation_scenario() {
             "{image}"
         );
     }
-    assert!(scenario("correctness", "qualification", "").is_ok());
-    assert!(scenario("correctness", "investigation", "").is_ok());
+    assert!(scenario("bluetooth-gatt", "qualification", "").is_ok());
+    assert!(scenario("bluetooth-gatt", "investigation", "").is_ok());
     assert!(
-        scenario("correctness", "triage", "").is_err(),
+        scenario("bluetooth-gatt", "triage", "").is_err(),
         "an unknown role"
     );
 }
@@ -171,24 +171,26 @@ fn a_profile_needs_a_sampling_image_a_period_in_range_and_a_diagnostic_scenario(
             std::path::Path::new("profiled.toml"),
         )
     };
-    let profiled = parse(document(
-        "diagnostic-task-residence",
-        "\"diagnostic\"",
-        1999,
-    ))
-    .unwrap();
-    assert_eq!(
-        profiled.header.profile,
-        Some(crate::ProfileRequest {
-            harts: crate::ProfileHarts::Both,
-            period_us: 1999,
-        })
+    // No image class samples the program counter, so every profile
+    // request is refused.
+    assert!(
+        parse(document(
+            "diagnostic-bluetooth-gatt-trace",
+            "\"diagnostic\"",
+            1999
+        ))
+        .is_err()
     );
-    // The profile is part of the procedure the scenario records.
-    assert!(serde_json::to_value(&profiled).unwrap()["profile"].is_object());
-    assert!(parse(document("correctness", "\"diagnostic\"", 1999)).is_err());
-    assert!(parse(document("diagnostic-task-residence", "\"diagnostic\"", 50)).is_err());
+    assert!(parse(document("bluetooth-gatt", "\"diagnostic\"", 1999)).is_err());
+    assert!(
+        parse(document(
+            "diagnostic-bluetooth-gatt-trace",
+            "\"diagnostic\"",
+            50
+        ))
+        .is_err()
+    );
     for gated in ["\"performance\"", "\"qualification\""] {
-        assert!(parse(document("diagnostic-task-residence", gated, 1999)).is_err());
+        assert!(parse(document("diagnostic-bluetooth-gatt-trace", gated, 1999)).is_err());
     }
 }

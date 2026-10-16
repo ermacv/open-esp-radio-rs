@@ -45,7 +45,7 @@ pub const fn all_subframes(count: u8) -> u64 {
     if count >= 64 {
         u64::MAX
     } else {
-        (1_u64 << count) - 1
+        (1_u64 << count).wrapping_sub(1)
     }
 }
 
@@ -62,13 +62,23 @@ pub fn unacknowledged(sequences: &[SequenceNumber], report: Option<BlockAckRepor
 }
 
 /// Keep the entries of `items` whose bit is set in `mask`, moved to the
-/// front in their order; returns how many were kept.
-pub fn compact<T: Copy>(items: &mut [T], mask: u64) -> usize {
-    let mut kept = 0;
-    for index in 0..items.len().min(64) {
+/// front in their order; returns how many were kept. Only the first 64
+/// entries have mask bits. The suffix after the kept prefix is unspecified.
+///
+/// Compaction swaps each selected entry into the next free prefix position,
+/// using at most one entry of temporary storage rather than copying the array.
+pub fn compact<T: Copy, const N: usize>(items: &mut [T; N], mask: u64) -> usize {
+    // This helper moves copyable metadata, never affine MPDU/body owners.
+    let mut kept = 0_usize;
+    // The mask represents at most MAX_AMPDU_SUBFRAMES entries.
+    for index in 0..N.min(usize::from(MAX_AMPDU_SUBFRAMES)) {
         if mask & (1_u64 << index) != 0 {
-            items[kept] = items[index];
-            kept += 1;
+            // kept counts selected entries before index, hence kept <= index
+            // < N. Both swap indices are in bounds, and the displaced value
+            // is behind the unread suffix. Selected order is preserved.
+            items.swap(kept, index);
+            // The count is bounded by the 64 mask positions.
+            kept = kept.saturating_add(1);
         }
     }
     kept
@@ -273,6 +283,9 @@ impl AmpduRetryState {
                 self.protection_failures = self.protection_failures.saturating_add(1);
                 // No subframe reached the recipient.
                 self.missing_original_indices = self.pending_original_indices;
+                if self.aged(now) {
+                    return Ok(AmpduRetryDecision::Finish { retry_mask: every });
+                }
                 if self.protection_failures < self.retry_limit {
                     return Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask: every });
                 }
@@ -337,7 +350,7 @@ impl AmpduRetryState {
                 retry_mask |= 1_u64 << index;
                 retry_original_indices |= 1_u64 << original_index;
             }
-            index += 1;
+            index = index.saturating_add(1);
         }
         self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
@@ -424,8 +437,8 @@ impl AmpduRetryState {
             if position == 0 || remaining == 0 {
                 return original;
             }
-            remaining &= remaining - 1;
-            position -= 1;
+            remaining &= remaining.wrapping_sub(1);
+            position = position.saturating_sub(1);
         }
     }
 }

@@ -41,9 +41,8 @@ Read existing evidence for a selected program, without running any checks:
 
 ```console
 cargo qualification status \
-  --manifest qualification/targets/esp32s31/wifi-sta.toml \
-  --capability runtime-phy-calibration \
-  --json-report target/qualification/wifi-calibration-map.json
+  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
+  --json-report target/qualification/bluetooth-le.json
 
 cargo qualification next \
   --manifest qualification/targets/esp32s31/bluetooth-secure-gatt.toml \
@@ -109,19 +108,22 @@ These links never alter readiness requirements. Source contracts continue to
 own implementation paths and limits; vendor roots, evidence rows and HIL
 requirements retain their existing owners.
 
-Focused links cover Wi-Fi DMA, calibration/RFPLL and peripheral BLE
+Focused links cover calibration/RFPLL and peripheral BLE
 maintenance/security. Other declarations remain visible with missing links;
 missing navigation is not an absent implementation or an unexplored chip.
 
-The focused product programs are Wi-Fi STA and BLE peripheral/ACL, followed by
-secure peripheral GATT. Their definitions share canonical capability declarations:
+The focused product programs are BLE peripheral/ACL, followed by secure
+peripheral GATT; no Wi-Fi program exists. Their definitions share canonical capability declarations:
 
 | Program | Required product boundary |
 | --- | --- |
-| [Wi-Fi AP availability](targets/esp32s31/wifi-ap-availability.toml) | Controlled AP-loss recovery with fresh IP exchange, and bounded initial no-candidate exhaustion |
-| [Wi-Fi STA](targets/esp32s31/wifi-sta.toml) | Station association/WPA2, datapath, recovery and PHY/power lifecycle |
 | [BLE peripheral/ACL](targets/esp32s31/bluetooth-peripheral-acl.toml) | One LE 1M connection, bidirectional ACL, recovery and terminal powered release |
 | [Secure peripheral GATT](targets/esp32s31/bluetooth-secure-gatt.toml) | The complete peripheral/ACL boundary plus encrypted traffic, Secure Connections, protected ATT access and bonded reconnect |
+
+The AP-availability program keeps its reconnect, IP-exchange and control
+requirements while a port integration gap is open. Its catalog regression
+test preserves that gap instead of inferring completeness from selecting
+the focused program.
 
 The [full Bluetooth LE program](targets/esp32s31/bluetooth-le.toml) retains its
 wider role and feature requirements. [IEEE 802.15.4](targets/esp32s31/ieee802154.toml)
@@ -163,10 +165,10 @@ but it is not a readiness axis.
 
 ### Catalog owners
 
-The ESP32-S31 [Wi-Fi/PHY catalog](catalog/esp32s31/wifi-phy.toml) owns all 14
-Wi-Fi STA qualification declarations and the wider Wi-Fi/shared-PHY source
-inventory. Direct roots and their dependency closure resolve to the same exact
-14 required IDs. Source-facet
+The ESP32-S31 [Wi-Fi/PHY catalog](catalog/esp32s31/wifi-phy.toml) owns the
+shared-PHY capabilities and inventory and the Bluetooth source facts the
+Bluetooth catalog imports; it holds no Wi-Fi declaration and no program
+selects it directly. Source-facet
 inventory status and native/lower/composed level are separate from evaluator
 axes; unselected inventory entries have no readiness value.
 
@@ -210,8 +212,8 @@ cargo qualification catalog render \
   --out target/qualification/catalog/wifi-phy-static
 
 cargo qualification catalog render \
-  --manifest qualification/targets/esp32s31/wifi-sta.toml \
-  --out target/qualification/catalog/wifi-sta
+  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
+  --out target/qualification/catalog/bluetooth-le
 
 cargo qualification catalog check \
   --catalog qualification/catalog/esp32s31/wifi-phy.toml \
@@ -278,9 +280,6 @@ maps these requirements to current source boundaries.
 Validate each program from the repository root:
 
 ```console
-cargo qualification validate \
-  --manifest qualification/targets/esp32s31/wifi-sta.toml
-
 cargo qualification validate \
   --manifest qualification/targets/esp32s31/bluetooth-le.toml
 
@@ -391,11 +390,9 @@ evaluator also derives a gap whenever required machine evidence is absent.
 ## Source contracts
 
 A capability may attach `[[capabilities.source-contracts]]` reference entries
-to describe its hardware-facing implementation paths. The ESP32-S31 Wi-Fi
-catalog keeps SRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache
-handoff boundaries under `rx-tx-dma`. Cold calibration/cache, Bluetooth DTM and
-PHY lifetime, coexistence, and IEEE 802.15.4 lower operation contracts likewise
-make implemented subsets visible without promoting their broader parents.
+to describe its hardware-facing implementation paths. Cold calibration/cache,
+Bluetooth DTM and PHY lifetime, coexistence, and IEEE 802.15.4 lower operation
+contracts make implemented subsets visible without promoting their broader parents.
 The [inventory agreement contract](../docs/verification-and-qualification.md#agreement-with-feature-inventories)
 requires matching implementation descriptions for the same scope.
 
@@ -425,9 +422,9 @@ facts or catalog capabilities that item owns (the line grammar has one
 recogniser, `oer_tidy::anchors`, which `cargo tidy check` uses too):
 
 ```rust
-/// Finite station attempts and reconnect generations.
-// CAPABILITY: station-lifecycle-owners
-pub struct StationSupervisor { /* ... */ }
+/// Fixed pool of role instances of one kind.
+// CAPABILITY: bluetooth-controller-sram-ownership
+pub struct SchedulerRolePool { /* ... */ }
 ```
 
 `cargo qualification catalog anchors --catalog PATH ...` scans every Rust file
@@ -569,10 +566,10 @@ criterion likewise does not turn a failed lifecycle into PASS. A completed
 observation below the requested criterion is an unresolved failure; an absent
 measurement is missing evidence, not an invented failure.
 
-Named checks cover station UDP RX rates, configured maximum RX
-silence, a validated maintenance transaction, and absence of station lifecycle
-change through that transaction's traffic session. Semantic checks are recorded
-only when attempted. They do not establish RF quality, a qualified PHY execution
+No named check has an evaluator contract now: the Wi-Fi contracts (station
+UDP RX rates, RX silence, maintenance transactions) were deleted with their
+scenarios (#762), and typed criteria replace the mechanism in #761. Semantic
+checks are recorded only when attempted. They do not establish RF quality, a qualified PHY execution
 bound, or relative performance non-regression. Default applicability is
 `current-source-composition`: verified current source binding and no unbound
 replay. Currency is judged on the run's closure, the files that can change its
@@ -713,8 +710,8 @@ Use a JSON report for CI and downstream presentation:
 
 ```console
 cargo qualification evaluate \
-  --manifest qualification/targets/esp32s31/wifi-sta.toml \
-  --json-report target/qualification/wifi-sta.json
+  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
+  --json-report target/qualification/bluetooth-le.json
 ```
 
 The console `INPUT` row and JSON `evidence_inputs` object expose how many
@@ -797,27 +794,3 @@ only for an observation nothing else excludes, or of a run `hil-evidence
 observation already excluded, for example by its commit, is listed without
 an observer exclusion, so evaluation time follows the current runs, not the
 store.
-
-## Functional AP availability
-
-The [focused program](targets/esp32s31/wifi-ap-availability.toml) selects two
-independent functional contracts. `station-ap-loss-recovery` requires the same
-boot to observe generation-zero connection, beacon-loss disconnection,
-generation-one connection, three fresh ICMP replies and a control response.
-`station-initial-ap-absence` stops the AP before the first station start and
-requires service admission, generation-zero no-candidate exhaustion after three
-attempts without a connection, and a control response. A successful start admits
-the station service; it does not report association. Each requires three complete
-repetitions on the configured HT40 WPA2 fixture.
-
-The existing `station-ap-absence` scenario instead removes an already connected
-AP and observes generation-one exhaustion. It does not establish initial-start
-behavior. The broader `interrupt-recovery`, `async-deadlines` and
-`timeout-error-recovery` capabilities retain their own vendor contracts and
-hardware gaps. Functional scope does not prove all fault, cancellation, timing,
-throughput or radio-retirement paths.
-
-```console
-cargo qualification status --manifest qualification/targets/esp32s31/wifi-ap-availability.toml --details
-cargo qualification next --manifest qualification/targets/esp32s31/wifi-ap-availability.toml
-```

@@ -46,9 +46,6 @@ name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
-dependencies = [
- "portable-atomic",
-]
 
 [[package]]
 name = "autocfg"
@@ -1020,18 +1017,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-bluetooth-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
- "oer-bluetooth-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -1044,17 +1032,6 @@ dependencies = [
  "addr2line",
  "gimli",
  "object",
-]
-
-[[package]]
-name = "oer-embassy-net-owned"
-version = "0.1.0"
-dependencies = [
- "embassy-sync 0.8.0",
- "oer-ieee80211-datapath",
- "oer-memory",
- "oer-network-interface",
- "xarxa-driver",
 ]
 
 [[package]]
@@ -1112,23 +1089,7 @@ dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
  "oer-memory",
- "oer-time",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-ap"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-mac",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-ap",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-softmac",
- "oer-memory",
+ "oer-radio-port",
  "oer-time",
 ]
 
@@ -1147,6 +1108,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-mac"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "bytemuck",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211-dma",
@@ -1162,64 +1124,6 @@ dependencies = [
  "pin-project",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "oer-embassy-net-owned",
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-ap",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-ieee80211-sta",
- "oer-esp32s31-phy",
- "oer-esp32s31-radio-runtime",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-datapath",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-port",
- "oer-ieee80211-rsn",
- "oer-ieee80211-rsn-service",
- "oer-ieee80211-runtime",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-sta-service",
- "oer-ieee80211-trace",
- "oer-memory",
- "oer-network-interface",
- "oer-radio-permit-pool",
- "oer-radio-port",
- "oer-time",
- "oer-trace",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee80211-sta"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "oer-esp32s31-hal",
- "oer-esp32s31-ieee80211",
- "oer-esp32s31-ieee80211-dma",
- "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-phy",
- "oer-espressif-ieee80211-policy",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-softmac",
- "oer-ieee80211-sta",
- "oer-ieee80211-trace",
- "oer-time",
- "oer-trace",
- "static_cell",
 ]
 
 [[package]]
@@ -1283,14 +1187,12 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "embassy-futures",
- "embassy-sync 0.8.0",
  "esp-hal",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211",
  "oer-esp32s31-ieee80211-dma",
  "oer-esp32s31-ieee80211-mac",
- "oer-esp32s31-ieee80211-runtime",
  "oer-esp32s31-pac",
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-relation",
@@ -1342,17 +1244,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-radio-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-sync 0.8.0",
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-time",
-]
-
-[[package]]
 name = "oer-espressif-coex"
 version = "0.1.0"
 dependencies = [
@@ -1391,28 +1282,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-ieee80211-ap"
+name = "oer-ieee80211-arbiter"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
+ "oer-radio-port",
  "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-datapath"
-version = "0.1.0"
-dependencies = [
- "oer-memory",
- "oer-network-interface",
 ]
 
 [[package]]
 name = "oer-ieee80211-lower-mac"
 version = "0.1.0"
 dependencies = [
+ "heapless 0.9.3",
  "oer-ieee80211-mac",
- "oer-ieee80211-port",
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
@@ -1423,6 +1307,7 @@ name = "oer-ieee80211-mac"
 version = "0.1.0"
 dependencies = [
  "oer-time",
+ "zeroize",
 ]
 
 [[package]]
@@ -1437,14 +1322,6 @@ name = "oer-ieee80211-pac-raw"
 version = "0.1.0"
 dependencies = [
  "vcell",
-]
-
-[[package]]
-name = "oer-ieee80211-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
 ]
 
 [[package]]
@@ -1465,30 +1342,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-ieee80211-rsn-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-rsn",
- "oer-time",
-]
-
-[[package]]
-name = "oer-ieee80211-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "oer-ieee80211-lower-mac",
- "oer-ieee80211-mac",
- "oer-ieee80211-port",
- "oer-ieee80211-softmac",
- "oer-memory",
- "oer-radio-permit-pool",
- "oer-radio-port",
- "oer-time",
-]
-
-[[package]]
 name = "oer-ieee80211-softmac"
 version = "0.1.0"
 dependencies = [
@@ -1502,23 +1355,16 @@ dependencies = [
 name = "oer-ieee80211-sta"
 version = "0.1.0"
 dependencies = [
- "critical-section",
+ "heapless 0.9.3",
+ "oer-ieee80211-arbiter",
+ "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
  "oer-ieee80211-trace",
  "oer-ieee80211-upper-mac",
+ "oer-radio-port",
  "oer-time",
  "oer-trace",
-]
-
-[[package]]
-name = "oer-ieee80211-sta-service"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211-mac",
- "oer-ieee80211-rsn",
- "oer-ieee80211-sta",
- "oer-time",
 ]
 
 [[package]]
@@ -1542,22 +1388,14 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
- "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-port"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
- "oer-time",
-]
 
 [[package]]
 name = "oer-ieee802154-trace"
@@ -1576,10 +1414,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
 ]
-
-[[package]]
-name = "oer-network-interface"
-version = "0.1.0"
 
 [[package]]
 name = "oer-phy-trace"
@@ -1621,17 +1455,12 @@ name = "oer-radio-coex"
 version = "0.1.0"
 
 [[package]]
-name = "oer-radio-permit-pool"
-version = "0.1.0"
-dependencies = [
- "oer-radio-port",
-]
-
-[[package]]
 name = "oer-radio-port"
 version = "0.1.0"
 dependencies = [
+ "atomic-waker",
  "oer-time",
+ "scopeguard",
 ]
 
 [[package]]
@@ -2148,15 +1977,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "xarxa-driver"
-version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=9e0e3293724c30c5892e6af56150c849f5231eb2#9e0e3293724c30c5892e6af56150c849f5231eb2"
-dependencies = [
- "atomic-waker",
- "document-features",
 ]
 
 [[package]]

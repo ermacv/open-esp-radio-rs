@@ -22,6 +22,7 @@ pub enum RxEvidence<T> {
 }
 
 impl<T> RxEvidence<T> {
+    /// Borrow the value without changing its provenance.
     pub const fn as_ref(&self) -> RxEvidence<&T> {
         match self {
             Self::HardwareObserved(value) => RxEvidence::HardwareObserved(value),
@@ -30,6 +31,7 @@ impl<T> RxEvidence<T> {
         }
     }
 
+    /// Whether either hardware or protocol evidence carries a value.
     pub const fn is_available(&self) -> bool {
         !matches!(self, Self::Unavailable)
     }
@@ -52,6 +54,7 @@ impl<T> RxEvidence<T> {
 /// Crypto result visible for an accepted receive MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxCryptoStatus {
+    /// The received frame did not use link-layer encryption.
     Unprotected,
     /// The payload is plaintext and its integrity check has succeeded. Key
     /// identity and cipher negotiation remain upper-MAC security state.
@@ -61,15 +64,58 @@ pub enum RxCryptoStatus {
 /// The backend's memory of one received MPDU, lent with its event: the MPDU
 /// from its header to the end of its body, without the FCS.
 ///
-/// The consumer keeps it for as long as it needs the frame and drops it to
-/// return the memory to the backend; a backend whose receive DMA buffer
-/// is the frame lends that buffer, so the
-/// frame is never copied on its way up. Memory a consumer keeps is memory
-/// the backend cannot receive into: a consumer that holds a frame for
-/// longer than one step (an out-of-order MPDU in a reorder window) copies
-/// it and drops the buffer.
+/// The consumer owns it until it passes the buffer to
+/// [`LowerMacPhase::recycle`](crate::LowerMacPhase::recycle). Dropping it does
+/// not satisfy that protocol; the host model poisons its installation on an
+/// unrecycled drop. A DMA backend can lend the receive buffer itself without
+/// copying the frame. A retained buffer occupies receive capacity, so an
+/// owner that needs longer storage may copy the frame and recycle this buffer.
 pub trait RxBuffer {
+    /// Borrow the MPDU bytes while retaining ownership of its receive buffer.
     fn bytes(&self) -> &[u8];
+}
+
+/// The metadata a backend gives a received MPDU: the portable fields
+/// ([`RxMeta`]), and whatever more the backend's type guarantees
+/// ([`SignalMetadata`]).
+pub trait RxMetadata: Copy {
+    /// The portable fields.
+    fn common(&self) -> &RxMeta;
+}
+
+impl RxMetadata for RxMeta {
+    fn common(&self) -> &RxMeta {
+        self
+    }
+}
+
+/// A peer's signal over the noise floor in one received frame, in dB,
+/// narrowed to a signed byte as the vendor's `ic_set_trc` does: what a rate
+/// controller starts from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LinkMetric(i8);
+
+impl LinkMetric {
+    /// The metric of a frame received at `rssi_dbm` over `noise_floor_dbm`.
+    pub const fn new(rssi_dbm: i8, noise_floor_dbm: i8) -> Self {
+        Self(rssi_dbm.wrapping_sub(noise_floor_dbm))
+    }
+
+    /// The metric in dB.
+    pub const fn db(self) -> i8 {
+        self.0
+    }
+}
+
+/// The metadata of a backend that measures every received frame's signal
+/// and the noise floor it was received over: a property of the backend,
+/// so code that needs the metric requires this trait and a backend
+/// without it does not build with that code ([owner decision on #563]).
+///
+/// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
+pub trait SignalMetadata: RxMetadata {
+    /// The frame's signal over the noise floor.
+    fn link_metric(&self) -> LinkMetric;
 }
 
 /// Portable metadata of one received MPDU.
@@ -82,7 +128,9 @@ pub struct RxMeta {
     /// frame. This is configuration, not a per-frame observation: a
     /// receive report need carry no channel field the MAC can trust.
     pub channel: Channel,
+    /// The received PPDU's decoded PHY rate, with its provenance.
     pub rate: RxEvidence<PhyRate>,
+    /// The received signal level in dBm, with its provenance.
     pub rssi_dbm: RxEvidence<i8>,
     /// The receiver's noise floor when the frame arrived: a per-frame
     /// measurement, or the PHY's running estimate read at reception,
@@ -91,6 +139,7 @@ pub struct RxMeta {
     /// Reception time in the port's radio clock, with the generation of
     /// the clock relation it was taken in.
     pub timestamp: RxEvidence<Ieee80211Stamp>,
+    /// Encryption and integrity status, with its provenance.
     pub crypto: RxEvidence<RxCryptoStatus>,
     /// Whether this is an IEEE VHT/HE S-MPDU: the sole MPDU of an A-MPDU,
     /// its delimiter's EOF bit set. Not a synonym for a non-aggregated MPDU.

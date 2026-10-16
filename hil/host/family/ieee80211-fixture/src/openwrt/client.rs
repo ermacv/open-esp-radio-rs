@@ -11,7 +11,7 @@ use std::{
 
 use zeroize::{Zeroize, Zeroizing};
 
-use oer_hil_protocol::wifi::WifiAccessPointSecurity;
+use oer_hil_lab::wifi::WifiAccessPointSecurity;
 
 use crate::Result;
 use oer_hil_lab::config::{AccessPointConfig, OpenWrtConfig};

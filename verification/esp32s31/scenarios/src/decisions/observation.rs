@@ -4,17 +4,39 @@ use crate::observation::Decision;
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
-        reason: "status-four transmit-error classification, compared through the stop goal: \
-            each dispatch case completes only at its reviewed retry leaf, which dependence on \
-            compared effects does not record",
+        reason: "the CCMP association boundary orders the interface's SPP mode before \
+            subsequent key publication with one additional device fence; the hal_crypto_enable \
+            contract compares every register read and write for both interfaces, both SPP \
+            modes and every fill, and requires exactly one production fence",
+        places: &[(
+            "pac/src/wifi/mac/crypto.rs",
+            "matches!(mode, MacSppMode::Authenticated),\n\
+            );\n\
+            device_fence();",
+        )],
+    },
+    Decision {
+        reason: "ordinary status-four transmit-error classification (dispatcher argument zero), \
+            compared through the stop goal: \
+            queues 0/4 and details 0..6/0xc0 each complete only at the independently selected \
+            CTS-timeout, ACK-timeout, collision or security-key leaf. A wrong leaf fails the \
+            dispatch goal even though dependence on compared register effects does not record \
+            that control-flow observation. The context anchor covers only tx_error's dispatch, \
+            not rts_error's identical match line or unexecuted detail/selector combinations",
         places: &[
             (
-                "driver/ieee80211/mac/src/tx.rs",
-                "4 => match self.detail() {",
+                "driver/ieee80211/mac/src/tx/completion.rs",
+                "4 => tx_error(raw.detail),",
             ),
             (
-                "driver/ieee80211/mac/src/tx.rs",
-                "1 | 3..=5 => TxCompletionDisposition::Collision,",
+                "driver/ieee80211/mac/src/tx/completion.rs",
+                "1 | 3..=5 => Ok(Observed(TxStatus::Collision)),",
+            ),
+            (
+                "driver/ieee80211/mac/src/tx/completion.rs",
+                "const fn tx_error(detail: u8) -> Result<CompletionObservation, CompletionFault> {\n\
+                use CompletionObservation::Observed;\n\
+                match detail {",
             ),
         ],
     },

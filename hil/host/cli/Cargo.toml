@@ -24,7 +24,6 @@ oer-image-compare = { path = "../../../tools/image/compare" }
 oer-hil-image = { path = "../image" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
-oer-toolchain = { path = "../../../tools/toolchain" }
 oer-hil-schema = { path = "../../schema" }
 oer-hil-observer = { path = "../../observer" }
 oer-hil-lab = { path = "../lab" }

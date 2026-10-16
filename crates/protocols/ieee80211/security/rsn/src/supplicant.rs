@@ -156,38 +156,64 @@ impl<E> From<RsnStaSupplicantError> for RsnStaProcessError<E> {
 ///
 /// Both keys are owned and zeroized on drop. The private state ticket makes a
 /// completion valid only for the exact Message 3 that produced this request.
+#[must_use]
 pub struct RsnStaKeyInstallRequest {
-    ticket: crate::state::RsnTicket,
-    replay_counter: u64,
-    encrypted_key_data: bool,
-    plain_key_data_len: usize,
     pairwise: RsnKeyInstall,
-    group: RsnKeyInstall,
-    igtk: Option<RsnIgtk>,
+    group: RsnStaRetryInstall,
 }
 
 impl RsnStaKeyInstallRequest {
     pub const fn replay_counter(&self) -> u64 {
-        self.replay_counter
+        self.group.replay_counter()
     }
-
     pub const fn encrypted_key_data(&self) -> bool {
-        self.encrypted_key_data
+        self.group.encrypted_key_data()
     }
-
     pub const fn plain_key_data_len(&self) -> usize {
-        self.plain_key_data_len
+        self.group.plain_key_data_len()
     }
-
     pub const fn pairwise(&self) -> &RsnKeyInstall {
         &self.pairwise
     }
+    pub const fn group(&self) -> &RsnKeyInstall {
+        self.group.group()
+    }
+    pub const fn igtk(&self) -> Option<&RsnIgtk> {
+        self.group.igtk()
+    }
 
+    /// Move the pairwise installation to its consumer and retain group
+    /// publication authority separately. No temporal-key bytes are copied.
+    pub fn into_parts(self) -> (RsnKeyInstall, RsnStaRetryInstall) {
+        (self.pairwise, self.group)
+    }
+}
+
+/// Group-only work from an authenticated repeated M3. It cannot publish PTK
+/// material or reset its packet numbers because it contains no pairwise key.
+#[must_use]
+pub struct RsnStaRetryInstall {
+    ticket: crate::state::RsnTicket,
+    replay_counter: u64,
+    encrypted_key_data: bool,
+    plain_key_data_len: usize,
+    group: RsnKeyInstall,
+    igtk: Option<RsnIgtk>,
+}
+
+impl RsnStaRetryInstall {
+    pub const fn replay_counter(&self) -> u64 {
+        self.replay_counter
+    }
+    pub const fn encrypted_key_data(&self) -> bool {
+        self.encrypted_key_data
+    }
+    pub const fn plain_key_data_len(&self) -> usize {
+        self.plain_key_data_len
+    }
     pub const fn group(&self) -> &RsnKeyInstall {
         &self.group
     }
-
-    /// The IGTK of an association that protects its management frames.
     pub const fn igtk(&self) -> Option<&RsnIgtk> {
         self.igtk.as_ref()
     }
@@ -222,13 +248,20 @@ impl<const N: usize> RsnStaKeyDataRequest<N> {
     }
 }
 
+#[must_use]
 pub enum RsnStaSupplicantAction<const N: usize> {
+    Ready(RsnStaReady<N>),
+    /// Unwrap this owned request and complete it before applying an effect.
+    UnwrapKeyData(RsnStaKeyDataRequest<N>),
+}
+
+/// Resolved effects contain no outstanding key-data unwrap request.
+#[must_use]
+pub enum RsnStaReady<const N: usize> {
     None,
     Transmit(RsnTxFrame<N>),
-    /// Unwrap Message 3 key data, then call
-    /// [`RsnStaSupplicant::complete_key_data_unwrap`].
-    UnwrapKeyData(RsnStaKeyDataRequest<N>),
     InstallKeys(RsnStaKeyInstallRequest),
+    RetryInstall(RsnStaRetryInstall),
     Deauthenticate,
 }
 
@@ -239,14 +272,12 @@ pub enum RsnConnectedSupplicantError {
     ProtocolVersionMismatch,
     UnsupportedDescriptorVersion,
     UnsupportedMessage,
-    ReplayCounterMismatch,
     AuthenticatorNonceMismatch,
     RetainedMessage3Mismatch,
     RetainedGroupMessage1Mismatch,
     MissingEncryptedKeyData,
     InvalidMic,
     StaleReplayCounter,
-    Busy,
     StaleCompletion,
     InstallFailed,
     Frame(RsnFrameError),
@@ -260,9 +291,8 @@ pub enum RsnConnectedProcessError<E> {
 
 /// Exact connected-state GTK publication ticket.
 pub struct RsnGroupKeyInstallRequest<const N: usize> {
-    ticket: u32,
     replay_counter: u64,
-    commitment: RsnCompletedGroupMessage1,
+    commitment: RsnCompletedKeyMessage,
     group: RsnKeyInstall,
     igtk: Option<RsnIgtk>,
     response: RsnTxFrame<N>,
@@ -289,10 +319,11 @@ impl<const N: usize> RsnGroupKeyInstallRequest<N> {
 /// The caller unwraps [`Self::wrapped_key_data`] under [`Self::kek`] and
 /// returns the result to
 /// [`RsnConnectedSupplicant::complete_group_key_data_unwrap`]. The supplicant
-/// stays busy until that completion, so every request must be completed. The
-/// KEK copy is cleared on drop.
+/// request is an affine owner of the authenticated frame and KEK. A station
+/// may retain it until the current TX ends, or replace it with a newer checked
+/// frame. No ticket or busy latch is needed; completion checks the committed
+/// replay frontier. The KEK copy is cleared on drop.
 pub struct RsnGroupKeyDataRequest<const N: usize> {
-    ticket: u32,
     frame: crate::OwnedEapolFrame<N>,
     kek: RsnKeyEncryptionKey,
 }
@@ -310,6 +341,13 @@ impl<const N: usize> RsnGroupKeyDataRequest<N> {
 
     pub fn replay_counter(&self) -> u64 {
         self.frame.key_frame().replay_counter()
+    }
+    /// Return the authenticated frame when its exchange is disabled. Consuming
+    /// the request also clears its private KEK copy.
+    pub fn into_frame(self) -> crate::OwnedEapolFrame<N> {
+        let Self { frame, kek } = self;
+        drop(kek);
+        frame
     }
 }
 
@@ -334,7 +372,7 @@ struct RsnCompletedMessage3 {
     protocol_version: u8,
     key_info: u16,
     replay_counter: u64,
-    authenticator_nonce_tag: u32,
+    authenticator_nonce: [u8; 32],
     mic: [u8; 16],
 }
 
@@ -344,7 +382,7 @@ impl RsnCompletedMessage3 {
             protocol_version: frame.protocol_version(),
             key_info: frame.key_info().raw(),
             replay_counter: frame.replay_counter(),
-            authenticator_nonce_tag: message3_nonce_tag(frame.nonce()),
+            authenticator_nonce: *frame.nonce(),
             mic: *frame.mic(),
         }
     }
@@ -365,13 +403,7 @@ impl RsnCompletedMessage3 {
         {
             return Err(RsnConnectedSupplicantError::UnsupportedMessage);
         }
-        if frame.replay_counter() != self.replay_counter {
-            return Err(RsnConnectedSupplicantError::ReplayCounterMismatch);
-        }
-        // This compact tag is only a diagnostic prefilter over public ANonce;
-        // the verified retained MIC below remains the cryptographic authority
-        // and catches tag collisions as a completed-frame mismatch.
-        if message3_nonce_tag(frame.nonce()) != self.authenticator_nonce_tag {
+        if frame.nonce() != &self.authenticator_nonce {
             return Err(RsnConnectedSupplicantError::AuthenticatorNonceMismatch);
         }
         Ok(())
@@ -399,10 +431,9 @@ impl RsnCompletedGroupMessage1 {
     }
 }
 
-fn message3_nonce_tag(nonce: &[u8; 32]) -> u32 {
-    nonce.iter().fold(0x811c_9dc5, |tag, byte| {
-        (tag ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
-    })
+enum RsnCompletedKeyMessage {
+    Pairwise(RsnCompletedMessage3),
+    Group(RsnCompletedGroupMessage1),
 }
 
 /// WPA2 state which must survive for the complete connected association.
@@ -413,11 +444,10 @@ pub struct RsnConnectedSupplicant {
     authenticator: [u8; 6],
     key_confirmation: RsnKeyConfirmationKey,
     key_encryption: RsnKeyEncryptionKey,
+    authenticator_security_ies: OwnedAssociationSecurityIes,
     completed_message3: RsnCompletedMessage3,
     replay_counter: u64,
     completed_group_message1: Option<RsnCompletedGroupMessage1>,
-    pending: Option<(u32, u64)>,
-    next_ticket: u32,
     management_protection: bool,
 }
 
@@ -426,17 +456,13 @@ impl RsnConnectedSupplicant {
         self.replay_counter
     }
 
-    /// Authenticate an exact retransmission of the Message 3 which completed
-    /// this association and produce a retransmission-marked Message 4.
-    ///
-    /// This path cannot publish key-install work. A frame with a valid MIC but
-    /// any changed completed-handshake field is still rejected, preventing a
-    /// peer from replacing key material or receive sequence state after the
-    /// hardware keys have been installed.
-    pub fn on_duplicate_message3<const N: usize>(
+    /// Authenticate a repeat of Message 3 without producing pairwise work.
+    /// An exact repeat reuses M4. A larger counter authenticates and unwraps
+    /// the new GTK/IGTK while retaining the installed PTK and its frontiers.
+    pub fn on_message3<const N: usize>(
         &mut self,
         frame: crate::OwnedEapolFrame<N>,
-    ) -> Result<RsnTxFrame<N>, RsnConnectedSupplicantError> {
+    ) -> Result<RsnConnectedAction<N>, RsnConnectedSupplicantError> {
         if frame.interface() != RsnInterface::Station {
             return Err(RsnConnectedSupplicantError::WrongInterface);
         }
@@ -449,35 +475,40 @@ impl RsnConnectedSupplicant {
         if !key.verify_mic_with_confirmation_key(&self.key_confirmation) {
             return Err(RsnConnectedSupplicantError::InvalidMic);
         }
-        if key.mic() != &self.completed_message3.mic {
-            return Err(RsnConnectedSupplicantError::RetainedMessage3Mismatch);
+        if key.replay_counter() == self.completed_message3.replay_counter {
+            if key.mic() != &self.completed_message3.mic {
+                return Err(RsnConnectedSupplicantError::RetainedMessage3Mismatch);
+            }
+            return RsnTxFrame::message4(
+                self.key_confirmation.akm(),
+                self.authenticator,
+                key.replay_counter(),
+            )
+            .map_err(RsnConnectedSupplicantError::Frame)
+            .map(|response| {
+                RsnConnectedAction::Retransmit(
+                    response
+                        .authenticate_with_confirmation_key(&self.key_confirmation)
+                        .mark_retransmission(),
+                )
+            });
         }
-        RsnTxFrame::message4(
-            self.key_confirmation.akm(),
-            self.authenticator,
-            self.completed_message3.replay_counter,
-        )
-        .map_err(RsnConnectedSupplicantError::Frame)
-        .map(|frame| {
-            frame
-                .authenticate_with_confirmation_key(&self.key_confirmation)
-                .mark_retransmission()
-        })
+        if key.replay_counter() <= self.replay_counter {
+            return Err(RsnConnectedSupplicantError::StaleReplayCounter);
+        }
+        self.request_group_unwrap(frame)
     }
 
     /// Authenticate one Group Message 1.
     ///
     /// An exact repeat of the Group Message 1 whose GTK was published answers
-    /// with the cached Group Message 2; a new one requests the unwrap of its
-    /// key data and keeps the supplicant busy until
-    /// [`Self::complete_group_key_data_unwrap`] consumes that request.
+    /// with the cached Group Message 2; a new one returns an affine request
+    /// owning its verified frame. Issuing a request does not block validation
+    /// of a newer frame while an older response is in flight.
     pub fn on_group_message1<const N: usize>(
         &mut self,
         frame: crate::OwnedEapolFrame<N>,
     ) -> Result<RsnConnectedAction<N>, RsnConnectedSupplicantError> {
-        if self.pending.is_some() {
-            return Err(RsnConnectedSupplicantError::Busy);
-        }
         if frame.interface() != RsnInterface::Station {
             return Err(RsnConnectedSupplicantError::WrongInterface);
         }
@@ -522,15 +553,19 @@ impl RsnConnectedSupplicant {
             .authenticate_with_confirmation_key(&self.key_confirmation);
             return Ok(RsnConnectedAction::Retransmit(response));
         }
+        self.request_group_unwrap(frame)
+    }
+
+    fn request_group_unwrap<const N: usize>(
+        &mut self,
+        frame: crate::OwnedEapolFrame<N>,
+    ) -> Result<RsnConnectedAction<N>, RsnConnectedSupplicantError> {
+        let key = frame.key_frame();
         if !key.key_info().encrypted_key_data() || key.key_data().is_empty() {
             return Err(RsnConnectedSupplicantError::MissingEncryptedKeyData);
         }
-        let ticket = self.next_ticket;
-        self.next_ticket = self.next_ticket.wrapping_add(1).max(1);
-        self.pending = Some((ticket, replay_counter));
         Ok(RsnConnectedAction::UnwrapGroupKeyData(
             RsnGroupKeyDataRequest {
-                ticket,
                 frame,
                 kek: RsnKeyEncryptionKey::copy_from(self.key_encryption.as_bytes()),
             },
@@ -547,50 +582,65 @@ impl RsnConnectedSupplicant {
         request: RsnGroupKeyDataRequest<N>,
         unwrapped: Result<RsnUnwrappedKeyData, E>,
     ) -> Result<RsnGroupKeyInstallRequest<N>, RsnConnectedProcessError<E>> {
-        let RsnGroupKeyDataRequest { ticket, frame, kek } = request;
+        let RsnGroupKeyDataRequest { frame, kek } = request;
         drop(kek);
         let replay_counter = frame.key_frame().replay_counter();
-        if self.pending != Some((ticket, replay_counter)) {
+        if replay_counter <= self.replay_counter {
             return Err(RsnConnectedProcessError::Supplicant(
                 RsnConnectedSupplicantError::StaleCompletion,
             ));
         }
-        let prepared = self.prepare_group_key_install(ticket, &frame, unwrapped);
-        if prepared.is_err() {
-            self.pending = None;
-        }
-        prepared
+        self.prepare_group_key_install(&frame, unwrapped)
     }
 
     fn prepare_group_key_install<const N: usize, E>(
         &self,
-        ticket: u32,
         frame: &crate::OwnedEapolFrame<N>,
         unwrapped: Result<RsnUnwrappedKeyData, E>,
     ) -> Result<RsnGroupKeyInstallRequest<N>, RsnConnectedProcessError<E>> {
         let key = frame.key_frame();
         let replay_counter = key.replay_counter();
         let plain = unwrapped.map_err(RsnConnectedProcessError::KeyUnwrap)?;
-        let RsnGroupKeys { gtk, igtk } =
-            parse_group_gtk_key_data(plain.as_bytes(), self.management_protection).map_err(
-                |error| {
-                    RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error))
-                },
-            )?;
+        let (keys, commitment, response) = match key.message() {
+            crate::EapolKeyMessage::PairwiseMessage3 => (
+                parse_gtk_key_data(
+                    plain.as_bytes(),
+                    self.authenticator_security_ies.rsn_ie(),
+                    self.authenticator_security_ies.rsnxe(),
+                    self.management_protection,
+                ),
+                RsnCompletedKeyMessage::Pairwise(RsnCompletedMessage3::capture(key)),
+                RsnTxFrame::message4(
+                    self.key_confirmation.akm(),
+                    self.authenticator,
+                    replay_counter,
+                ),
+            ),
+            crate::EapolKeyMessage::GroupMessage1 => (
+                parse_group_gtk_key_data(plain.as_bytes(), self.management_protection),
+                RsnCompletedKeyMessage::Group(RsnCompletedGroupMessage1::capture(key)),
+                RsnTxFrame::group_message2(
+                    self.key_confirmation.akm(),
+                    self.authenticator,
+                    replay_counter,
+                ),
+            ),
+            _ => {
+                return Err(RsnConnectedProcessError::Supplicant(
+                    RsnConnectedSupplicantError::UnsupportedMessage,
+                ));
+            }
+        };
+        let map_error =
+            |error| RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error));
+        let RsnGroupKeys { gtk, igtk } = keys.map_err(map_error)?;
         let group = RsnKeyInstall::group(RsnInterface::Station, &gtk, *key.key_receive_sequence());
-        let response = RsnTxFrame::group_message2(
-            self.key_confirmation.akm(),
-            self.authenticator,
-            replay_counter,
-        )
-        .map_err(|error| {
-            RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error))
-        })?
-        .authenticate_with_confirmation_key(&self.key_confirmation);
+        let response = response
+            .map_err(map_error)?
+            .authenticate_with_confirmation_key(&self.key_confirmation);
         Ok(RsnGroupKeyInstallRequest {
-            ticket,
             replay_counter,
-            commitment: RsnCompletedGroupMessage1::capture(key),
+            commitment,
             group,
             igtk,
             response,
@@ -602,21 +652,27 @@ impl RsnConnectedSupplicant {
         request: RsnGroupKeyInstallRequest<N>,
         installed: bool,
     ) -> Result<RsnTxFrame<N>, RsnConnectedSupplicantError> {
-        if self.pending != Some((request.ticket, request.replay_counter)) {
+        if request.replay_counter <= self.replay_counter {
             return Err(RsnConnectedSupplicantError::StaleCompletion);
         }
-        self.pending = None;
         if !installed {
             return Err(RsnConnectedSupplicantError::InstallFailed);
         }
         self.replay_counter = request.replay_counter;
-        self.completed_group_message1 = Some(request.commitment);
+        match request.commitment {
+            RsnCompletedKeyMessage::Pairwise(completed) => {
+                self.completed_message3 = completed;
+                self.completed_group_message1 = None;
+            }
+            RsnCompletedKeyMessage::Group(completed) => {
+                self.completed_group_message1 = Some(completed);
+            }
+        }
         Ok(request.response)
     }
 }
 
 /// One WPA2-Personal station handshake with owned cryptographic state.
-// CAPABILITY: wifi-security-wpa2-personal-ccmp
 pub struct RsnStaSupplicant {
     state: RsnStaState,
     ptk: Option<Ptk>,
@@ -689,11 +745,10 @@ impl RsnStaSupplicant {
             authenticator: *self.state.peer(),
             key_confirmation,
             key_encryption,
+            authenticator_security_ies: self.authenticator_security_ies,
             completed_message3,
             replay_counter,
             completed_group_message1: None,
-            pending: None,
-            next_ticket: 1,
             management_protection: self.management_protection,
         })
     }
@@ -708,12 +763,31 @@ impl RsnStaSupplicant {
         frame: crate::OwnedEapolFrame<N>,
         pmk: &Pmk,
     ) -> Result<RsnStaSupplicantAction<N>, RsnStaSupplicantError> {
+        // A completed installation may still be waiting for M4 delivery.
+        // Authenticate a repeated M3 before changing its replay frontier;
+        // exact-counter repeats must also match the retained authenticated M3.
+        if self.state.phase() == RsnStaPhase::Completed
+            && frame.key_frame().message() == crate::EapolKeyMessage::PairwiseMessage3
+        {
+            let key = frame.key_frame();
+            if !key.verify_mic(self.ptk()?) {
+                return Err(RsnStaSupplicantError::InvalidMessage3Mic);
+            }
+            if let Some(completed) = &self.completed_message3
+                && key.replay_counter() == completed.replay_counter
+                && key.mic() != &completed.mic
+            {
+                return Err(RsnStaSupplicantError::State(
+                    RsnStateError::UnexpectedMessage,
+                ));
+            }
+        }
         let action = self
             .state
             .on_frame(frame)
             .map_err(RsnStaSupplicantError::State)?;
         match action {
-            RsnStaAction::None => Ok(RsnStaSupplicantAction::None),
+            RsnStaAction::None => Ok(RsnStaSupplicantAction::Ready(RsnStaReady::None)),
             RsnStaAction::DerivePtk { ticket, context } => {
                 self.completed_message3 = None;
                 self.ptk = Some(pmk.derive_ptk(
@@ -733,8 +807,11 @@ impl RsnStaSupplicant {
                     return Err(RsnStaSupplicantError::UnexpectedAction);
                 };
                 self.build_transmit(transmit)
+                    .map(RsnStaSupplicantAction::Ready)
             }
-            RsnStaAction::Transmit(transmit) => self.build_transmit(transmit),
+            RsnStaAction::Transmit(transmit) => self
+                .build_transmit(transmit)
+                .map(RsnStaSupplicantAction::Ready),
             RsnStaAction::VerifyMessage3Mic { ticket, frame } => {
                 if !frame.key_frame().verify_mic(self.ptk()?) {
                     self.state
@@ -748,7 +825,9 @@ impl RsnStaSupplicant {
                     .map_err(RsnStaSupplicantError::State)?;
                 self.resolve_message3(action)
             }
-            RsnStaAction::Deauthenticate => Ok(RsnStaSupplicantAction::Deauthenticate),
+            RsnStaAction::Deauthenticate => {
+                Ok(RsnStaSupplicantAction::Ready(RsnStaReady::Deauthenticate))
+            }
             RsnStaAction::DecryptMessage3KeyData { .. } | RsnStaAction::InstallKeys { .. } => {
                 Err(RsnStaSupplicantError::UnexpectedAction)
             }
@@ -764,7 +843,7 @@ impl RsnStaSupplicant {
         &mut self,
         request: RsnStaKeyDataRequest<N>,
         unwrapped: Result<RsnUnwrappedKeyData, E>,
-    ) -> Result<RsnStaKeyInstallRequest, RsnStaProcessError<E>> {
+    ) -> Result<RsnStaReady<N>, RsnStaProcessError<E>> {
         let RsnStaKeyDataRequest { ticket, frame, kek } = request;
         drop(kek);
         let unwrapped = match unwrapped {
@@ -794,14 +873,25 @@ impl RsnStaSupplicant {
         &mut self,
         request: RsnStaKeyInstallRequest,
         installed: bool,
-    ) -> Result<RsnStaSupplicantAction<N>, RsnStaSupplicantError> {
+    ) -> Result<RsnStaReady<N>, RsnStaSupplicantError> {
+        let (pairwise, group) = request.into_parts();
+        drop(pairwise);
+        self.complete_retry_install(group, installed)
+    }
+
+    /// Complete group work without obtaining pairwise installation authority.
+    pub fn complete_retry_install<const N: usize>(
+        &mut self,
+        request: RsnStaRetryInstall,
+        installed: bool,
+    ) -> Result<RsnStaReady<N>, RsnStaSupplicantError> {
         let action = self
             .state
             .complete_key_install::<N>(request.ticket, installed)
             .map_err(RsnStaSupplicantError::State)?;
         match action {
             RsnStaAction::Transmit(transmit) => self.build_transmit(transmit),
-            RsnStaAction::Deauthenticate => Ok(RsnStaSupplicantAction::Deauthenticate),
+            RsnStaAction::Deauthenticate => Ok(RsnStaReady::Deauthenticate),
             _ => Err(RsnStaSupplicantError::UnexpectedAction),
         }
     }
@@ -819,7 +909,7 @@ impl RsnStaSupplicant {
             }
             RsnStaAction::InstallKeys { ticket, frame } => self
                 .prepare_key_install(ticket, frame, None)
-                .map(RsnStaSupplicantAction::InstallKeys),
+                .map(RsnStaSupplicantAction::Ready),
             _ => Err(RsnStaSupplicantError::UnexpectedAction),
         }
     }
@@ -829,7 +919,7 @@ impl RsnStaSupplicant {
         ticket: crate::state::RsnTicket,
         frame: crate::OwnedEapolFrame<N>,
         plain_key_data: Option<&[u8]>,
-    ) -> Result<RsnStaKeyInstallRequest, RsnStaSupplicantError> {
+    ) -> Result<RsnStaReady<N>, RsnStaSupplicantError> {
         let key = frame.key_frame();
         let encrypted_key_data = key.key_info().encrypted_key_data();
         let replay_counter = key.replay_counter();
@@ -850,34 +940,40 @@ impl RsnStaSupplicant {
                 return Err(RsnStaSupplicantError::Frame(error));
             }
         };
-        let pairwise = RsnKeyInstall::pairwise(
-            RsnInterface::Station,
-            *self.state.peer(),
-            [0; 8],
-            self.ptk()?,
-        );
-        let group = RsnKeyInstall::group(RsnInterface::Station, &gtk, key_receive_sequence);
-        self.completed_message3 = Some(RsnCompletedMessage3::capture(key));
-        Ok(RsnStaKeyInstallRequest {
+        let retry = self.completed_message3.is_some();
+        let group = RsnStaRetryInstall {
             ticket,
             replay_counter,
             encrypted_key_data,
             plain_key_data_len,
-            pairwise,
-            group,
+            group: RsnKeyInstall::group(RsnInterface::Station, &gtk, key_receive_sequence),
             igtk,
-        })
+        };
+        self.completed_message3 = Some(RsnCompletedMessage3::capture(key));
+        if retry {
+            Ok(RsnStaReady::RetryInstall(group))
+        } else {
+            Ok(RsnStaReady::InstallKeys(RsnStaKeyInstallRequest {
+                pairwise: RsnKeyInstall::pairwise(
+                    RsnInterface::Station,
+                    *self.state.peer(),
+                    [0; 8],
+                    self.ptk()?,
+                ),
+                group,
+            }))
+        }
     }
 
     fn build_transmit<const N: usize>(
         &self,
         transmit: RsnTransmit,
-    ) -> Result<RsnStaSupplicantAction<N>, RsnStaSupplicantError> {
+    ) -> Result<RsnStaReady<N>, RsnStaSupplicantError> {
         let frame =
             build_sta_action_frame::<N, _>(&self.state, transmit, &self.association_security_ies)
                 .map_err(RsnStaSupplicantError::Frame)?
                 .authenticate(self.ptk()?);
-        Ok(RsnStaSupplicantAction::Transmit(frame))
+        Ok(RsnStaReady::Transmit(frame))
     }
 
     fn ptk(&self) -> Result<&Ptk, RsnStaSupplicantError> {

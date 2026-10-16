@@ -747,3 +747,34 @@ fn zeroed_arena_is_the_free_arena_new_builds() {
         assert_eq!(zeroed.0, new.0);
     }
 }
+
+#[test]
+fn review_forgotten_dma_owner_cannot_release_live_backings_from_retention() {
+    let drops = Rc::new(Cell::new(0));
+    {
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage(), &mut retention);
+        owner.begin().unwrap();
+        let backing = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let address = owner
+            .reserved_backing_mut(&backing)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        let entry = backing.external_descriptor(address, 64, 32).unwrap();
+        owner
+            .publish_external_chain(&[entry])
+            .unwrap()
+            .commit(|_| {});
+        assert_eq!(owner.state(), AmpduDmaState::HardwareOwned);
+        core::mem::forget(owner);
+        // This is all safe caller code. Forget does not run the owner destructor,
+        // and the borrowed retention arena is an ordinary local value.
+    }
+    assert_eq!(
+        drops.get(),
+        0,
+        "hardware-visible backing was returned/freed without detach"
+    );
+}

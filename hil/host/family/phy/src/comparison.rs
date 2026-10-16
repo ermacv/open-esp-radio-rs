@@ -1,10 +1,9 @@
 //! The comparison port: the chip's half of the cross-check.
 //!
-//! The family captures both sides on the board and records every boot
+//! Both sides' boots are recorded as typed observations
 //! (`oer-phy-calibration-capture`); what a chip compares, and which register
 //! images both sides read, is the chip's. A chip-specific composition
-//! implements [`Comparison`] and registers the family for it with
-//! [`crate::family`]; this crate names no chip.
+//! implements [`Comparison`]; this crate names no chip.
 use std::path::Path;
 
 use oer_phy_calibration_capture::boots::{Images, Lifecycle, ProductionBoot, VendorBoot};

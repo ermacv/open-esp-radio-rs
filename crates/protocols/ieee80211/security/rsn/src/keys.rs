@@ -4,49 +4,14 @@
 //! Hardware slot selection remains in the chip MAC crate; this module owns
 //! key material, slot identity, replacement, and zeroization.
 
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use oer_ieee80211_mac::ccmp::{Ccmp128Key, GroupKeyId};
 
 use crate::{Ptk, RsnInterface, frames::RsnGtk};
-
-pub const RSN_TK_LEN: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnKeyKind {
     Pairwise,
-    Group { key_id: u8, transmit: bool },
-}
-
-/// Owned CCMP temporal-key bytes, zeroized on drop.
-///
-/// Hardware adapters borrow bytes; the restricted PAC converts them into
-/// register words without casting this owner or publishing its address to DMA.
-/// The historical four-byte alignment is retained for layout compatibility.
-#[derive(Zeroize, ZeroizeOnDrop)]
-#[repr(C, align(4))]
-pub struct CcmpKey {
-    bytes: [u8; RSN_TK_LEN],
-}
-
-impl CcmpKey {
-    pub const fn new(bytes: [u8; RSN_TK_LEN]) -> Self {
-        Self { bytes }
-    }
-
-    pub fn from_ptk(ptk: &Ptk) -> Self {
-        Self::new(*ptk.temporal_key())
-    }
-
-    pub fn from_gtk(gtk: &RsnGtk) -> Self {
-        Self::new(*gtk.key())
-    }
-
-    pub const fn as_bytes(&self) -> &[u8; RSN_TK_LEN] {
-        &self.bytes
-    }
-
-    pub fn is_word_aligned(&self) -> bool {
-        self.bytes.as_ptr().addr() & 3 == 0
-    }
+    Group { key_id: GroupKeyId, transmit: bool },
 }
 
 /// One key installation request with all key material owned by the request.
@@ -55,7 +20,7 @@ pub struct RsnKeyInstall {
     peer: [u8; 6],
     kind: RsnKeyKind,
     receive_sequence: [u8; 8],
-    key: CcmpKey,
+    key: Ccmp128Key,
 }
 
 impl RsnKeyInstall {
@@ -70,7 +35,7 @@ impl RsnKeyInstall {
             peer,
             kind: RsnKeyKind::Pairwise,
             receive_sequence,
-            key: CcmpKey::from_ptk(ptk),
+            key: Ccmp128Key::new(ptk.temporal_key()),
         }
     }
 
@@ -83,7 +48,7 @@ impl RsnKeyInstall {
                 transmit: gtk.transmit(),
             },
             receive_sequence,
-            key: CcmpKey::from_gtk(gtk),
+            key: Ccmp128Key::new(gtk.key()),
         }
     }
 
@@ -103,8 +68,14 @@ impl RsnKeyInstall {
         &self.receive_sequence
     }
 
-    pub const fn key(&self) -> &CcmpKey {
+    pub const fn key(&self) -> &Ccmp128Key {
         &self.key
+    }
+
+    /// Move installation material into the port after its metadata has been
+    /// checked. No array is extracted or copied at the RSN/lower-MAC boundary.
+    pub fn into_key(self) -> Ccmp128Key {
+        self.key
     }
 
     fn same_slot(&self, other: &Self) -> bool {

@@ -4,6 +4,10 @@
 //! compact publication plan. Descriptor ownership, EDCA state, retry state,
 //! calibrated power, entropy and executor deadlines remain here across both
 //! the pre-connected control path and the connected data path.
+//! A diagnostic-only completion retains the publication while the same step
+//! still handles collision, timeout and an expired watchdog. BAR terminals
+//! use the independent valid-BlockAck observation; raw TX status alone cannot
+//! prove either receipt or absence of the solicited response.
 
 use core::pin::Pin;
 
@@ -16,16 +20,17 @@ use oer_esp32s31_ieee80211_mac::{
     tx::ampdu::HtBlockAckObservation,
     tx::protection::{ProtectedPpdu, TxProtection, TxProtectionDecision, TxPsdu, TxReceiver},
     tx::runtime::{
-        OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
-        OrdinaryRetryError, OrdinaryRetryRatePolicy, VENDOR_RTS_THRESHOLD_BYTES,
-        WifiTxRuntimePolicy,
+        OrdinaryCollisionDecision, OrdinaryFrameClass, OrdinaryMpduRetryState,
+        OrdinaryRetryCounters, OrdinaryRetryDecision, OrdinaryRetryError, OrdinaryRetryRatePolicy,
+        VENDOR_RTS_THRESHOLD_BYTES, WifiTxRuntimePolicy,
     },
     tx::{
-        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, MacLegacyTxResponse,
-        TxCompletion, TxControlFrame, TxCookie, TxError, TxHardware, TxPhyRate, TxSlot,
-        TxSlotState,
+        CompletionObservation, HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue,
+        MacLegacyTxResponse, TxCompletion, TxControlFrame, TxCookie, TxError, TxHardware,
+        TxPhyRate, TxSlot, TxSlotState,
     },
 };
+use oer_ieee80211_mac::frame::FrameControl;
 use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
 
 use crate::tx::{WifiTxProgress, WifiTxWake};
@@ -151,10 +156,34 @@ impl OrdinaryTxRetryReport {
     }
 }
 
+/// A completed publication, retaining the decoder's status proof.
+/// The diagnostic report alone has an optional raw completion and cannot
+/// prove this fact. Only the observed finish path constructs this value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrdinaryTxCompleted {
+    completion: TxCompletion,
+    status: oer_ieee80211_lower_mac::TxStatus,
+    report: OrdinaryTxReport,
+}
+
+impl OrdinaryTxCompleted {
+    pub const fn status(&self) -> oer_ieee80211_lower_mac::TxStatus {
+        self.status
+    }
+
+    pub const fn report(self) -> OrdinaryTxReport {
+        self.report
+    }
+
+    pub const fn completion(self) -> TxCompletion {
+        self.completion
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryTxOutcome {
-    Success(OrdinaryTxReport),
-    HardwareFailure(OrdinaryTxReport),
+    Success(OrdinaryTxCompleted),
+    HardwareFailure(OrdinaryTxCompleted),
     HardwareTimeout(OrdinaryTxReport),
     CollisionLimit(OrdinaryTxReport),
 }
@@ -162,10 +191,8 @@ pub enum OrdinaryTxOutcome {
 impl OrdinaryTxOutcome {
     pub const fn report(self) -> OrdinaryTxReport {
         match self {
-            Self::Success(report)
-            | Self::HardwareFailure(report)
-            | Self::HardwareTimeout(report)
-            | Self::CollisionLimit(report) => report,
+            Self::HardwareTimeout(report) | Self::CollisionLimit(report) => report,
+            Self::Success(completed) | Self::HardwareFailure(completed) => completed.report(),
         }
     }
 
@@ -194,6 +221,24 @@ pub enum OrdinaryTxError {
     /// A BlockAckReq was planned at a non-legacy rate; only the legacy
     /// publication program solicits a BlockAck for a single frame.
     BlockAckRequestRate,
+    /// A retry needs a complete, supported management/data Frame Control field.
+    InvalidRetryHeader,
+}
+
+/// Mark a retry before publication, preserving every other MPDU byte.
+/// The encoded MPDU length bounds the field, independently of slot capacity.
+pub(crate) fn mark_retry(buffer: &mut [u8], frame_length: usize) -> Result<(), OrdinaryTxError> {
+    let frame = buffer
+        .get_mut(TX_METADATA_SIZE..)
+        .and_then(|frame| frame.get_mut(..frame_length))
+        .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
+    let control = frame
+        .first_chunk_mut::<2>()
+        .ok_or(OrdinaryTxError::InvalidRetryHeader)?;
+    let checked = FrameControl::new(u16::from_le_bytes(*control))
+        .ok_or(OrdinaryTxError::InvalidRetryHeader)?;
+    *control = checked.with_retry(true).get().to_le_bytes();
+    Ok(())
 }
 
 impl From<TxError> for OrdinaryTxError {
@@ -335,6 +380,7 @@ pub const MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS: u16 = 0x03ff;
 /// deadline and phase. Only [`OrdinaryTxOwner::service_queued_single_attempt`]
 /// advances it; dropping it forgets a descriptor the hardware may still
 /// own, which only a radio reset recovers.
+#[must_use = "service the published attempt until its slot returns"]
 pub struct QueuedSingleAttempt<'slot, const BUFFER_SIZE: usize> {
     slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
     active: ActiveTx,
@@ -365,6 +411,7 @@ impl<const BUFFER_SIZE: usize> QueuedSingleAttempt<'_, BUFFER_SIZE> {
 }
 
 /// How a serviced [`QueuedSingleAttempt`] stands.
+#[must_use = "retain the pending attempt or its completed slot"]
 pub enum QueuedSingleAttemptProgress<'slot, const BUFFER_SIZE: usize> {
     /// The hardware still owns the attempt.
     Pending(QueuedSingleAttempt<'slot, BUFFER_SIZE>),
@@ -375,7 +422,22 @@ pub enum QueuedSingleAttemptProgress<'slot, const BUFFER_SIZE: usize> {
     },
 }
 
+/// An execution fault retains the potentially published DMA slot for reset.
+/// Its ownership cannot be projected back into an ordinary submission.
+#[must_use = "retain the quarantined DMA owner until the backend is reset"]
+pub struct QuarantinedSingleAttempt<'slot, const BUFFER_SIZE: usize> {
+    _slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+}
+
+/// A failed execution returns custody of its publication, never a free slot.
+#[must_use = "move the failed publication into the backend's quarantine"]
+pub struct QueuedSingleAttemptFailed<'slot, const BUFFER_SIZE: usize> {
+    pub error: OrdinaryTxError,
+    pub quarantine: QuarantinedSingleAttempt<'slot, BUFFER_SIZE>,
+}
+
 /// A queued attempt that was not published; its slot comes back.
+#[must_use = "retain the unpublished slot and handle the refusal"]
 pub struct QueuedSingleAttemptRefused<'slot, const BUFFER_SIZE: usize> {
     pub error: OrdinaryTxError,
     pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
@@ -408,6 +470,33 @@ struct ActiveTx {
     deadline: oer_time::Instant,
     phase: OrdinaryTxPhase,
     retries: OrdinaryTxRetryReport,
+}
+
+type OrdinaryCompletion = CompletionObservation<(TxCompletion, Option<HtBlockAckObservation>)>;
+
+/// A published operation moves into this value only after Observed(status).
+struct FinishedTx {
+    active: ActiveTx,
+    status: oer_ieee80211_lower_mac::TxStatus,
+}
+
+impl ActiveTx {
+    fn finish(
+        self,
+        completion: TxCompletion,
+        block_ack: Option<HtBlockAckObservation>,
+    ) -> FinishedTx {
+        use oer_ieee80211_lower_mac::TxStatus;
+        let status = match (self.response, block_ack, completion.tx_status()) {
+            (MacLegacyTxResponse::BlockAck, Some(_), _) => TxStatus::Success,
+            (MacLegacyTxResponse::BlockAck, None, TxStatus::Success) => TxStatus::AckTimeout,
+            (_, _, status) => status,
+        };
+        FinishedTx {
+            active: self,
+            status,
+        }
+    }
 }
 
 enum OrdinaryTxPhase {
@@ -771,17 +860,23 @@ where
     /// abort settles; the attempt then stays pending with its timeout latched
     /// in the queue state until it is serviced again.
     ///
-    /// On an error the attempt is dropped: the owner poisoned or quarantined
-    /// its descriptor, and only a radio reset recovers the slot.
+    /// On an error the descriptor and its slot stay in the returned quarantine;
+    /// only a radio reset can recover it.
     pub fn service_queued_single_attempt<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         queued: QueuedSingleAttempt<'slot, BUFFER_SIZE>,
         wake: WifiTxWake,
         may_begin_timeout_abort: bool,
-    ) -> Result<QueuedSingleAttemptProgress<'slot, BUFFER_SIZE>, OrdinaryTxError> {
+    ) -> Result<
+        QueuedSingleAttemptProgress<'slot, BUFFER_SIZE>,
+        QueuedSingleAttemptFailed<'slot, BUFFER_SIZE>,
+    > {
         if self.active.is_some() {
-            return Err(OrdinaryTxError::Busy);
+            return Err(QueuedSingleAttemptFailed {
+                error: OrdinaryTxError::Busy,
+                quarantine: QuarantinedSingleAttempt { _slot: queued.slot },
+            });
         }
         let QueuedSingleAttempt { mut slot, active } = queued;
         core::mem::swap(&mut self.slot, &mut slot);
@@ -807,7 +902,10 @@ where
             }),
             Err(error) => {
                 self.active = None;
-                Err(error)
+                Err(QueuedSingleAttemptFailed {
+                    error,
+                    quarantine: QuarantinedSingleAttempt { _slot: slot },
+                })
             }
         }
     }
@@ -829,11 +927,17 @@ where
             WifiTxWake::Interrupt { events } => events,
             WifiTxWake::Deadline => 0,
         };
-        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
-            self.slot
-                .as_mut()
-                .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion, block_ack);
+        if let Some(event) = self.acknowledge_completion(hardware, &active)? {
+            match event {
+                CompletionObservation::Observed((completion, block_ack)) => {
+                    self.slot
+                        .as_mut()
+                        .detach_completed(hardware, active.cookie)?;
+                    let finished = active.finish(completion, block_ack);
+                    return self.finish_completion(hardware, finished, completion, block_ack);
+                }
+                CompletionObservation::NoEffect => {}
+            }
         }
         if events & EVENT_COLLISION != 0
             && self
@@ -843,7 +947,7 @@ where
         {
             return self.finish_aborted_attempt(hardware, active, false);
         }
-        let expired = matches!(wake, WifiTxWake::Deadline) && self.timer.now() >= active.deadline;
+        let expired = self.timer.now() >= active.deadline;
         if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
             if self
                 .slot
@@ -1026,30 +1130,35 @@ where
                 .reset_required(active, TxResetReason::ConflictingInterruptEvents(tx_events));
         }
 
-        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
-            self.slot
-                .as_mut()
-                .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion, block_ack);
+        let observation = self.acknowledge_completion(hardware, &active)?;
+        let diagnostic = matches!(observation, Some(CompletionObservation::NoEffect));
+        if let Some(event) = observation {
+            match event {
+                CompletionObservation::Observed((completion, block_ack)) => {
+                    self.slot
+                        .as_mut()
+                        .detach_completed(hardware, active.cookie)?;
+                    let finished = active.finish(completion, block_ack);
+                    return self.finish_completion(hardware, finished, completion, block_ack);
+                }
+                CompletionObservation::NoEffect => {}
+            }
         }
 
         use oer_esp32s31_ieee80211_mac::irq::{
             EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
         };
-        if tx_events == EVENT_TX_COMPLETE {
+        if tx_events == EVENT_TX_COMPLETE && !diagnostic {
             return self.reset_required(active, TxResetReason::CompletionInterruptWithoutState);
         }
-        if tx_events == EVENT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
-            if matches!(wake, WifiTxWake::Deadline) && self.timer.now() < active.deadline {
-                self.active = Some(active);
-                return Ok(WifiTxProgress::Pending);
-            }
+        let expired = self.timer.now() >= active.deadline;
+        if tx_events == EVENT_TX_TIMEOUT || expired {
             if !self
                 .slot
                 .as_mut()
                 .begin_timeout_abort(hardware, active.cookie)?
             {
-                let reason = if matches!(wake, WifiTxWake::Deadline) {
+                let reason = if expired {
                     TxResetReason::ExecutorDeadline
                 } else {
                     TxResetReason::TimeoutInterruptWithoutState
@@ -1106,11 +1215,17 @@ where
         if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
             return self.service_abort_settle(hardware, active);
         }
-        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
-            self.slot
-                .as_mut()
-                .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion, block_ack);
+        if let Some(event) = self.acknowledge_completion(hardware, &active)? {
+            match event {
+                CompletionObservation::Observed((completion, block_ack)) => {
+                    self.slot
+                        .as_mut()
+                        .detach_completed(hardware, active.cookie)?;
+                    let finished = active.finish(completion, block_ack);
+                    return self.finish_completion(hardware, finished, completion, block_ack);
+                }
+                CompletionObservation::NoEffect => {}
+            }
         }
         if self
             .slot
@@ -1132,25 +1247,25 @@ where
         &mut self,
         hardware: &mut H,
         active: &ActiveTx,
-    ) -> Result<Option<(TxCompletion, Option<HtBlockAckObservation>)>, OrdinaryTxError> {
+    ) -> Result<Option<OrdinaryCompletion>, OrdinaryTxError> {
         if active.response != MacLegacyTxResponse::BlockAck {
             return Ok(self
                 .slot
                 .as_mut()
                 .acknowledge_completion(hardware)?
-                .map(|completion| (completion, None)));
+                .map(|event| event.map(|completion| (completion, None))));
         }
         Ok(self
             .slot
             .as_mut()
             .acknowledge_block_ack_completion(hardware)?
-            .map(|completion| {
-                (
-                    completion.tx,
-                    completion
-                        .block_ack_received
-                        .then_some(completion.block_ack),
-                )
+            .map(|event| {
+                event.map(|completion| {
+                    (
+                        completion.tx,
+                        completion.valid_block_ack().map(|_| completion.block_ack),
+                    )
+                })
             }))
     }
 
@@ -1189,42 +1304,34 @@ where
     fn finish_completion<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-        mut active: ActiveTx,
+        finished: FinishedTx,
         completion: TxCompletion,
         block_ack: Option<HtBlockAckObservation>,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let FinishedTx { mut active, status } = finished;
         let attempts = active.retry.publications();
         let final_rate = active.retry.current_rate()?;
-        let disposition = completion.disposition();
         let decision = if active.single_attempt.is_some() {
             // One publication is the whole transaction: the retry state
             // never sees the completion, so it can never re-publish.
-            if matches!(
-                disposition,
-                oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::Success
-            ) {
+            if status == oer_ieee80211_lower_mac::TxStatus::Success {
                 self.policy.record_success(active.route.queue());
             } else {
                 active.retry.abort(&mut self.policy);
             }
             OrdinaryRetryDecision::Complete
         } else {
-            active
-                .retry
-                .observe_completion(&mut self.policy, disposition)
+            active.retry.observe_completion(&mut self.policy, status)
         };
         match decision {
             OrdinaryRetryDecision::Complete => {
-                let success = matches!(
-                    disposition,
-                    oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::Success
-                );
+                let success = status == oer_ieee80211_lower_mac::TxStatus::Success;
                 let report = OrdinaryTxReport {
                     status: MacTxStatus {
                         result: if success {
                             MacTxResult::Transmitted
                         } else {
-                            MacTxResult::HardwareFailure(completion.tx_status())
+                            MacTxResult::HardwareFailure(status)
                         },
                         attempts,
                         final_rate,
@@ -1240,28 +1347,36 @@ where
                     block_ack: if success { block_ack } else { None },
                 };
                 self.last_outcome = Some(if success {
-                    OrdinaryTxOutcome::Success(report)
+                    OrdinaryTxOutcome::Success(OrdinaryTxCompleted {
+                        completion,
+                        status,
+                        report,
+                    })
                 } else {
-                    OrdinaryTxOutcome::HardwareFailure(report)
+                    OrdinaryTxOutcome::HardwareFailure(OrdinaryTxCompleted {
+                        completion,
+                        status,
+                        report,
+                    })
                 });
                 Ok(WifiTxProgress::Complete)
             }
             OrdinaryRetryDecision::Retry { set_retry_bit } => {
-                use oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition;
-                match disposition {
-                    TxCompletionDisposition::AckTimeout => {
+                use oer_ieee80211_lower_mac::TxStatus;
+                match status {
+                    TxStatus::AckTimeout => {
                         active.retries.ack_timeouts = active.retries.ack_timeouts.saturating_add(1);
                     }
-                    TxCompletionDisposition::CtsTimeout => {
+                    TxStatus::CtsTimeout => {
                         active.retries.cts_timeouts = active.retries.cts_timeouts.saturating_add(1);
                     }
-                    TxCompletionDisposition::Collision => {
+                    TxStatus::Collision => {
                         active.retries.collisions = active.retries.collisions.saturating_add(1);
                     }
-                    TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+                    TxStatus::Success | TxStatus::TimedOut => {}
                 }
                 if set_retry_bit {
-                    self.mark_retry_bit()?;
+                    mark_retry(self.slot.as_mut().buffer_mut()?, active.frame_length)?;
                 }
                 self.publish_attempt(hardware, &mut active)?;
                 self.active = Some(active);
@@ -1302,19 +1417,18 @@ where
 
         let decision = if active.single_attempt.is_some() {
             active.retry.abort(&mut self.policy);
-            OrdinaryRetryDecision::Complete
+            OrdinaryCollisionDecision::Complete
         } else {
             active.retry.observe_collision(&mut self.policy)
         };
         match decision {
-            OrdinaryRetryDecision::Retry { set_retry_bit } => {
-                debug_assert!(!set_retry_bit);
+            OrdinaryCollisionDecision::Retry => {
                 active.retries.collisions = active.retries.collisions.saturating_add(1);
                 self.publish_attempt(hardware, &mut active)?;
                 self.active = Some(active);
                 Ok(WifiTxProgress::Pending)
             }
-            OrdinaryRetryDecision::Complete => {
+            OrdinaryCollisionDecision::Complete => {
                 let report = OrdinaryTxReport {
                     status: MacTxStatus {
                         result: MacTxResult::CollisionLimit,
@@ -1333,11 +1447,6 @@ where
                 Ok(WifiTxProgress::Complete)
             }
         }
-    }
-
-    fn mark_retry_bit(&mut self) -> Result<(), OrdinaryTxError> {
-        self.slot.as_mut().buffer_mut()?[TX_METADATA_SIZE + 1] |= 0x08;
-        Ok(())
     }
 
     fn publish_attempt<H: TxHardware>(

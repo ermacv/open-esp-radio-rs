@@ -1,5 +1,6 @@
 //! Association epoch, retransmission schedule and terminal response policy.
 
+use oer_ieee80211_mac::address::{Bssid, OwnAddress};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::{
     security::LinkProtection,
@@ -12,7 +13,6 @@ use oer_ieee80211_mac::{
 use oer_time::{Duration, Instant};
 
 use super::STA_RESPONSE_TIMEOUT;
-use crate::time::deadline_after;
 
 /// Compatibility schedule for Association retransmission inside the vendor
 /// one-second state deadline.
@@ -32,7 +32,9 @@ impl StaAssociationRetrySchedule {
         if ordinal == 0 {
             return None;
         }
-        let micros = (ordinal as u64 - 1) * Self::INTERVAL.as_micros();
+        let micros = (ordinal as u64)
+            .saturating_sub(1)
+            .saturating_mul(Self::INTERVAL.as_micros());
         if micros < STA_RESPONSE_TIMEOUT.as_micros() {
             Some(Duration::from_micros(micros))
         } else {
@@ -54,6 +56,8 @@ pub struct StaAssociationAttempt {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaAssociationFailure {
     Timeout,
+    /// The complete response/comeback deadline cannot fit monotonic time.
+    DeadlineOverflow,
     PeerDisconnect(StaDisconnect),
     Rejected {
         status_code: u16,
@@ -71,9 +75,10 @@ pub enum StaAssociationFailure {
 }
 
 /// Result of observing a management frame.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
+#[must_use = "retain the active association or deliver its terminal"]
 pub enum StaAssociationEvent {
-    Irrelevant,
+    Irrelevant(StaAssociationRuntime),
     Associated {
         response: AssociationResponse,
         total_received_frames: u32,
@@ -84,18 +89,16 @@ pub enum StaAssociationEvent {
     },
 }
 
-/// Invalid executor interaction with [`StaAssociationRuntime`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaAssociationRuntimeError {
-    Terminal,
-}
-
 /// What the association asks of its executor at one instant.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
+#[must_use = "retain the active association or deliver its terminal"]
 pub enum StaAssociationPoll {
-    Idle,
+    Idle(StaAssociationRuntime),
     /// Send this Association Request now.
-    Transmit(StaAssociationAttempt),
+    Transmit {
+        runtime: StaAssociationRuntime,
+        attempt: StaAssociationAttempt,
+    },
     Failed {
         failure: StaAssociationFailure,
         total_received_frames: u32,
@@ -107,7 +110,9 @@ pub enum StaAssociationPoll {
 /// A target executor polls it with the time, transmits the request it asks
 /// for, reports every completed RX descriptor and supplies extracted
 /// management frames, and waits until [`Self::next_deadline`] or the next
-/// frame. This type owns the one-second deadline, retransmission cadence,
+/// frame. Polling and RX consume this owner: only an active result returns
+/// it, so a terminal cannot be polled or delivered twice. This type owns
+/// the one-second deadline, retransmission cadence,
 /// management sequence consumption and terminal response policy; it does not
 /// own timers, DMA or MAC registers.
 ///
@@ -116,22 +121,51 @@ pub enum StaAssociationPoll {
 /// The 160-ms retransmission cadence is the hardware-qualified open STA policy
 /// previously owned by the ESP32-S31 HIL and remains isolated in
 /// [`StaAssociationRetrySchedule`] pending recovery of the vendor timer body.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
+#[must_use = "retain this association until its terminal or cancel it"]
 pub struct StaAssociationRuntime {
-    local: [u8; 6],
-    bssid: [u8; 6],
+    local: OwnAddress,
+    bssid: Bssid,
     security: LinkProtection,
-    /// Start of the current request epoch: `None` before the first poll and
-    /// while the station waits out a temporary refusal.
-    epoch_start: Option<Instant>,
-    /// Requests sent in the current epoch.
-    sent: u16,
-    terminal: bool,
+    stage: AssociationStage,
     received_frames: u32,
-    /// When the station comes back after a temporary refusal; the epoch's
-    /// deadline and retransmissions pause meanwhile.
-    comeback_until: Option<Instant>,
-    came_back: bool,
+}
+
+#[derive(Debug)]
+enum AssociationStage {
+    Initial(RequestEpoch),
+    /// A complete next epoch, starting only at its scheduled comeback time.
+    Comeback(RequestEpoch),
+    Returned(RequestEpoch),
+}
+
+#[derive(Debug)]
+struct RequestEpoch {
+    start: Instant,
+    deadline: Instant,
+    sent: u16,
+}
+
+impl RequestEpoch {
+    const fn new(start: Instant) -> Result<Self, StaAssociationFailure> {
+        let Some(deadline) = start.checked_add(STA_RESPONSE_TIMEOUT) else {
+            return Err(StaAssociationFailure::DeadlineOverflow);
+        };
+        Ok(Self {
+            start,
+            deadline,
+            sent: 0,
+        })
+    }
+
+    fn next_deadline(&self) -> Instant {
+        StaAssociationRetrySchedule::offset(self.sent.saturating_add(1)).map_or(
+            self.deadline,
+            // Construction checked the full one-second deadline. Every
+            // offset is strictly smaller, so this addition cannot saturate.
+            |offset| self.start.saturating_add(offset),
+        )
+    }
 }
 
 /// Status of a temporary association refusal: the access point protects the
@@ -145,128 +179,123 @@ const COMEBACK_MARGIN_TU: u32 = 100;
 const MICROS_PER_TU: u64 = 1_024;
 
 impl StaAssociationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6], security: LinkProtection) -> Self {
-        Self {
+    pub const fn new(
+        local: OwnAddress,
+        bssid: Bssid,
+        security: LinkProtection,
+        now: Instant,
+    ) -> Result<Self, StaAssociationFailure> {
+        let epoch = match RequestEpoch::new(now) {
+            Ok(epoch) => epoch,
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
             local,
             bssid,
             security,
-            epoch_start: None,
-            sent: 0,
-            terminal: false,
+            stage: AssociationStage::Initial(epoch),
             received_frames: 0,
-            comeback_until: None,
-            came_back: false,
-        }
+        })
     }
 
-    /// Advance to `now`: start the epoch on its first poll, expire its
+    /// Advance to `now`: expire the epoch started at construction and its
     /// one-second deadline, or consume a management sequence number exactly
     /// when the retry schedule calls for a new request.
-    pub fn poll(
-        &mut self,
-        now: Instant,
-        sequence: &mut StaSequenceCounter,
-    ) -> Result<StaAssociationPoll, StaAssociationRuntimeError> {
-        if self.terminal {
-            return Err(StaAssociationRuntimeError::Terminal);
-        }
-        if let Some(until) = self.comeback_until {
-            if now < until {
-                return Ok(StaAssociationPoll::Idle);
+    pub fn poll(mut self, now: Instant, sequence: &mut StaSequenceCounter) -> StaAssociationPoll {
+        if let AssociationStage::Comeback(epoch) = self.stage {
+            if now < epoch.start {
+                self.stage = AssociationStage::Comeback(epoch);
+                return StaAssociationPoll::Idle(self);
             }
-            self.comeback_until = None;
+            self.stage = AssociationStage::Returned(epoch);
         }
-        let start = *self.epoch_start.get_or_insert(now);
-        if now >= deadline_after(start, STA_RESPONSE_TIMEOUT) {
-            self.terminal = true;
-            return Ok(StaAssociationPoll::Failed {
+        let epoch = match &mut self.stage {
+            AssociationStage::Initial(epoch)
+            | AssociationStage::Comeback(epoch)
+            | AssociationStage::Returned(epoch) => epoch,
+        };
+        if now >= epoch.deadline {
+            return StaAssociationPoll::Failed {
                 failure: StaAssociationFailure::Timeout,
                 total_received_frames: self.received_frames,
-            });
+            };
         }
-        let ordinal = self.sent + 1;
+        let ordinal = epoch.sent.saturating_add(1);
         match StaAssociationRetrySchedule::offset(ordinal) {
-            Some(offset) if now >= deadline_after(start, offset) => {
-                self.sent = ordinal;
-                Ok(StaAssociationPoll::Transmit(StaAssociationAttempt {
-                    ordinal,
-                    sequence_number: sequence.take(),
-                    offset,
-                }))
+            Some(offset) if now >= epoch.next_deadline() => {
+                epoch.sent = ordinal;
+                StaAssociationPoll::Transmit {
+                    runtime: self,
+                    attempt: StaAssociationAttempt {
+                        ordinal,
+                        sequence_number: sequence.take(),
+                        offset,
+                    },
+                }
             }
-            _ => Ok(StaAssociationPoll::Idle),
+            _ => StaAssociationPoll::Idle(self),
         }
     }
 
     /// When the association next needs a poll: the end of a comeback wait,
     /// the next scheduled request or the epoch's deadline.
-    pub fn next_deadline(&self) -> Option<Instant> {
-        if self.terminal {
-            return None;
+    pub fn next_deadline(&self) -> Instant {
+        match &self.stage {
+            AssociationStage::Comeback(epoch) => epoch.start,
+            AssociationStage::Initial(epoch) | AssociationStage::Returned(epoch) => {
+                epoch.next_deadline()
+            }
         }
-        if self.comeback_until.is_some() {
-            return self.comeback_until;
+    }
+
+    /// The state deadline remains active while a request waits for a TX
+    /// credit. A retry's earlier due time is not a wake source in that wait.
+    pub(crate) fn response_deadline(&self) -> Instant {
+        match &self.stage {
+            AssociationStage::Initial(epoch)
+            | AssociationStage::Comeback(epoch)
+            | AssociationStage::Returned(epoch) => epoch.deadline,
         }
-        let start = self.epoch_start?;
-        let timeout = deadline_after(start, STA_RESPONSE_TIMEOUT);
-        Some(
-            StaAssociationRetrySchedule::offset(self.sent + 1)
-                .map_or(timeout, |offset| deadline_after(start, offset).min(timeout)),
-        )
     }
 
     /// Account for one completed RX descriptor, including a frame which is
-    /// not a valid management input.
-    pub fn observe_received_frame(&mut self) -> Result<(), StaAssociationRuntimeError> {
-        self.require_running()?;
+    /// not a valid management input. The station owns this runtime only while
+    /// its exchange is active; accounting has no dynamic refusal.
+    pub fn observe_received_frame(&mut self) {
         self.received_frames = self.received_frames.saturating_add(1);
-        Ok(())
     }
 
     /// Classify one extracted management frame for the selected peer,
     /// received at `now`.
-    pub fn observe_management_frame(
-        &mut self,
-        frame: &[u8],
-        now: Instant,
-    ) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
-        self.require_running()?;
+    pub fn observe_management_frame(self, frame: &[u8], now: Instant) -> StaAssociationEvent {
         if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
-            return Ok(self.fail(StaAssociationFailure::PeerDisconnect(disconnect)));
+            return self.fail(StaAssociationFailure::PeerDisconnect(disconnect));
         }
-        let Some(response) = parse_association_response(frame, self.local, self.bssid) else {
-            return Ok(StaAssociationEvent::Irrelevant);
+        let Some(response) = parse_association_response(frame, self.local.get(), self.bssid.get())
+        else {
+            return StaAssociationEvent::Irrelevant(self);
         };
         if response.status_code == REJECTED_TEMPORARILY
             && let Some(comeback_tu) = response.association_comeback_tu
         {
-            return Ok(self.come_back(comeback_tu, now));
+            return self.come_back(comeback_tu, now);
         }
         if response.status_code != 0 {
-            return Ok(self.fail(StaAssociationFailure::Rejected {
+            return self.fail(StaAssociationFailure::Rejected {
                 status_code: response.status_code,
-            }));
+            });
         }
         if !response.matches_security(self.security) {
-            return Ok(self.fail(StaAssociationFailure::SecurityModeMismatch));
+            return self.fail(StaAssociationFailure::SecurityModeMismatch);
         }
-        self.terminal = true;
-        Ok(StaAssociationEvent::Associated {
+        StaAssociationEvent::Associated {
             response,
             total_received_frames: self.received_frames,
-        })
+        }
     }
 
     pub const fn total_received_frames(&self) -> u32 {
         self.received_frames
-    }
-
-    fn require_running(&self) -> Result<(), StaAssociationRuntimeError> {
-        if self.terminal {
-            Err(StaAssociationRuntimeError::Terminal)
-        } else {
-            Ok(())
-        }
     }
 
     /// Wait out one temporary refusal, then send a fresh Association Request
@@ -277,20 +306,30 @@ impl StaAssociationRuntime {
     ///
     /// SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_sta.o]::
     /// sta_recv_assoc` and `sta_assoc_comeback`.
-    fn come_back(&mut self, comeback_tu: u32, now: Instant) -> StaAssociationEvent {
-        if self.came_back || comeback_tu > MAXIMUM_COMEBACK_TU {
+    fn come_back(mut self, comeback_tu: u32, now: Instant) -> StaAssociationEvent {
+        if !matches!(self.stage, AssociationStage::Initial(_)) || comeback_tu > MAXIMUM_COMEBACK_TU
+        {
             return self.fail(StaAssociationFailure::ComebackRefused { comeback_tu });
         }
-        self.came_back = true;
-        self.epoch_start = None;
-        self.sent = 0;
-        let wait = Duration::from_micros((comeback_tu + COMEBACK_MARGIN_TU) as u64 * MICROS_PER_TU);
-        self.comeback_until = Some(deadline_after(now, wait));
-        StaAssociationEvent::Irrelevant
+        // The checked comeback is at most 5000 TUs; widening before the
+        // fixed margin/product preserves its exact value.
+        let wait = Duration::from_micros(
+            u64::from(comeback_tu)
+                .saturating_add(u64::from(COMEBACK_MARGIN_TU))
+                .saturating_mul(MICROS_PER_TU),
+        );
+        let Some(until) = now.checked_add(wait) else {
+            return self.fail(StaAssociationFailure::DeadlineOverflow);
+        };
+        let epoch = match RequestEpoch::new(until) {
+            Ok(epoch) => epoch,
+            Err(error) => return self.fail(error),
+        };
+        self.stage = AssociationStage::Comeback(epoch);
+        StaAssociationEvent::Irrelevant(self)
     }
 
-    fn fail(&mut self, failure: StaAssociationFailure) -> StaAssociationEvent {
-        self.terminal = true;
+    fn fail(self, failure: StaAssociationFailure) -> StaAssociationEvent {
         StaAssociationEvent::Failed {
             failure,
             total_received_frames: self.received_frames,

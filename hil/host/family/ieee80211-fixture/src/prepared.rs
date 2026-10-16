@@ -157,7 +157,7 @@ fn protection_peer(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Option
 }
 
 /// The protection fields of every beacon in one observation window.
-fn from_beacons(beacons: &[oer_hil_family_ieee80211_evidence::air::AirFrame]) -> BeaconProtection {
+fn from_beacons(beacons: &[crate::air::AirFrame]) -> BeaconProtection {
     let ht_protection = beacons
         .first()
         .and_then(|beacon| beacon.ht_protection)
@@ -190,9 +190,9 @@ fn satisfies(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_family_ieee80211_evidence::air::{FrameKind, test_support::frame};
+    use crate::air::{FrameKind, test_support::frame};
 
-    fn beacon(erp: u8, ht: u8) -> oer_hil_family_ieee80211_evidence::air::AirFrame {
+    fn beacon(erp: u8, ht: u8) -> crate::air::AirFrame {
         let mut beacon = frame(0, FrameKind::BEACON);
         beacon.erp_information = Some(erp);
         beacon.ht_protection = Some(ht);

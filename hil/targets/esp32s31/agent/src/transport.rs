@@ -10,19 +10,7 @@ use oer_hil_agent::console::{Console, Logger};
 use oer_hil_protocol::RequestIdentity;
 use oer_hil_protocol::base::{BootEvidence, ImageKeySet, PostMortemCheckpoints};
 
-// Images with the Wi-Fi system's diagnostics (every driver-observation image
-// and the station-exit diagnostic) log whole Debug records of driver state,
-// up to about 900 bytes; production-like images keep the smaller footprint.
-#[cfg(feature = "station-exit-evidence")]
-const LINE: usize = 1024;
-#[cfg(not(feature = "station-exit-evidence"))]
 const LINE: usize = 384;
-// Diagnostic role transitions emit synchronous register/status bursts before
-// the console task can run. Reserve bounded burst storage only in observer
-// images; production-like measurements retain the smaller footprint.
-#[cfg(feature = "station-exit-evidence")]
-const LINES: usize = 32;
-#[cfg(not(feature = "station-exit-evidence"))]
 const LINES: usize = 8;
 const MESSAGES: usize = 8;
 

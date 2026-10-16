@@ -4,13 +4,16 @@
 use core::{convert::Infallible, future::Future};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_bluetooth_port::{EnableResult, Lent, PhaseParts, PortBackend, RadioPortEvents, Retire};
 use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio, LeRadioBackend,
     Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest, RequestError,
 };
 use oer_esp32s31_bluetooth_radio::{BluetoothCapabilities, BluetoothRadioConfig};
 use oer_radio_port::Mint;
+use oer_radio_port::{
+    Call, Detached, DriverExit, EnableResult, InstallParts, PhaseParts, PortBackend, PortPhase,
+    Retire, Retired,
+};
 use oer_time::Timer;
 
 use crate::runtime::Radio;
@@ -20,41 +23,35 @@ use crate::{
 };
 
 /// The port backend of an installed [`BluetoothRuntime`]: what
-/// [`oer_bluetooth_port::run_port`] wraps in the port's owner.
+/// [`oer_radio_port::run_port`] wraps in the port's owner.
 ///
-/// [`BluetoothRuntime::install`] returns it with the radio's driver `D`
-/// ([`BluetoothDriver`]) inside, so no backend meets a runtime without a
-/// radio: no call is refused as not installed. It is neither `Copy` nor
-/// `Clone` and has no public constructor. [`PortBackend::drive`] moves the
-/// driver, which owns the radio and its hardware, into the future
-/// `run_port` joins with the body; the backend's calls are then requests to
-/// it, and the interrupt entry only wakes it. The uninstall takes the
-/// retired driver's radio and hardware out by value.
+/// [`BluetoothRuntime::install`] pairs it with the independent driver `D`
+/// ([`BluetoothDriver`]) in `Installed`. Both are consumed by `run_port`
+/// once, so backend requests always have their installed driver. It is neither `Copy` nor
+/// `Clone` and has no public constructor. [`PortBackend::drive`] consumes
+/// the core's affine driver loan; the future borrows the radio and hardware
+/// held in the driver's private state. The backend's calls are requests to
+/// it, and the interrupt entry only wakes it. Uninstall receives the driver
+/// by value through `Retired`; quarantine retains it without Drop.
 #[must_use = "an installed radio leaves only through its owner's uninstall or fail-stop"]
 pub struct BluetoothBackend<'r, R, D> {
     runtime: &'r R,
-    /// `None` once [`PortBackend::drive`] took it.
-    driver: Option<D>,
+    driver: core::marker::PhantomData<fn() -> D>,
 }
 
 impl<'r, R, D> BluetoothBackend<'r, R, D> {
-    pub(crate) const fn new(runtime: &'r R, driver: D) -> Self {
+    pub(crate) const fn new(runtime: &'r R) -> Self {
         Self {
             runtime,
-            driver: Some(driver),
+            driver: core::marker::PhantomData,
         }
-    }
-
-    /// Take the driver out, for host tests that drive it themselves.
-    #[cfg(test)]
-    pub(crate) fn take_driver(&mut self) -> D {
-        self.driver.take().expect("the driver is taken once")
     }
 }
 
 /// The event consumer of one running phase.
-pub struct BluetoothEvents<'a, R> {
+pub struct BluetoothEvents<'a, R, F> {
     runtime: &'a R,
+    end: &'a mut Option<oer_radio_port::EventEnd<F>>,
 }
 
 /// The control of one running phase: it publishes the Controller's active
@@ -117,83 +114,84 @@ impl<
         >,
     >
 {
-    type Event = BluetoothOutcome;
+    type Event<'id> = BluetoothOutcome;
+    type Terminal<'id> = BluetoothOutcome;
+    type Phase<'a, 'id>
+        = PhaseParts<
+        BluetoothEvents<
+            'a,
+            BluetoothRuntime<
+                M,
+                H,
+                T,
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+                EVENTS,
+            >,
+            BluetoothFault<H::StartError>,
+        >,
+        BluetoothPhaseControl<
+            'a,
+            BluetoothRuntime<
+                M,
+                H,
+                T,
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+                EVENTS,
+            >,
+        >,
+        BluetoothClient<
+            'a,
+            BluetoothRuntime<
+                M,
+                H,
+                T,
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+                EVENTS,
+            >,
+        >,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+    type Local<'id> = Option<oer_radio_port::EventEnd<Self::Fault>>;
+    type State = ();
     type Domain = LeRadio;
     type Fault = BluetoothFault<H::StartError>;
     type Refusal = Infallible;
     type Setup<'a, 'id>
         = ()
     where
-        Self: 'a;
-    type Events<'a, 'id>
-        = BluetoothEvents<
-        'a,
-        BluetoothRuntime<
-            M,
-            H,
-            T,
-            C,
-            LEGACY,
-            CONNECTABLE,
-            SCANNERS,
-            CONNECTIONS,
-            SCAN_PACKETS,
-            RX_PACKETS,
-            ITEMS,
-            EVENTS,
-        >,
-    >
-    where
         Self: 'a,
         'id: 'a;
-    type Control<'a, 'id>
-        = BluetoothPhaseControl<
-        'a,
-        BluetoothRuntime<
-            M,
-            H,
-            T,
-            C,
-            LEGACY,
-            CONNECTABLE,
-            SCANNERS,
-            CONNECTIONS,
-            SCAN_PACKETS,
-            RX_PACKETS,
-            ITEMS,
-            EVENTS,
-        >,
-    >
-    where
-        Self: 'a,
-        'id: 'a;
-    type Clients<'a, 'id>
-        = BluetoothClient<
-        'a,
-        BluetoothRuntime<
-            M,
-            H,
-            T,
-            C,
-            LEGACY,
-            CONNECTABLE,
-            SCANNERS,
-            CONNECTIONS,
-            SCAN_PACKETS,
-            RX_PACKETS,
-            ITEMS,
-            EVENTS,
-        >,
-    >
-    where
-        Self: 'a,
-        'id: 'a;
+
+    type Pools = ();
     type Resources<'id> = ();
     /// The shared part lives in the runtime the backend and the driver
     /// both reach.
     type Held<'id> = ();
     /// The driver, which owns the radio and its hardware.
-    type State = BluetoothDriver<
+    type Driver = BluetoothDriver<
         'r,
         M,
         H,
@@ -211,7 +209,7 @@ impl<
     type Uninstall = ();
     /// The radio and hardware, or the radio the driver did not leave for
     /// the uninstall, with why.
-    type Uninstalled = Result<
+    type Uninstalled = crate::Uninstalled<
         (
             Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
             H,
@@ -226,16 +224,42 @@ impl<
             RX_PACKETS,
             ITEMS,
         >,
+        (
+            &'r BluetoothRuntime<
+                M,
+                H,
+                T,
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+                EVENTS,
+            >,
+            crate::RuntimeQueue,
+        ),
     >;
-
-    fn enable(&mut self) -> impl Future<Output = EnableResult<Infallible, Self::Fault>> + '_ {
+    fn enable<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> impl Future<Output = EnableResult<Infallible, Self::Fault>> + 'a
+    where
+        'id: 'a,
+    {
         self.runtime.enable()
     }
 
     fn disable<'a, 'id>(
         &'a mut self,
+        _: Call,
         (): &'a (),
-        sink: &'a mut dyn FnMut(BluetoothOutcome),
+        _: &'a mut Self::Local<'id>,
+        sink: &'a mut dyn FnMut(BluetoothOutcome) -> core::ops::ControlFlow<BluetoothOutcome>,
     ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
     where
         'id: 'a,
@@ -243,36 +267,54 @@ impl<
         self.runtime.disable(sink)
     }
 
-    fn now(&self) -> impl Future<Output = PortResult<LeInstant, ClockError, Self::Fault>> + '_ {
+    fn now(
+        &self,
+        _: Call,
+    ) -> impl Future<Output = PortResult<LeInstant, ClockError, Self::Fault>> + '_ {
         self.runtime.read_now()
     }
 
-    fn resources<'id>(&mut self, _: Mint<'id>) -> ((), ()) {
-        ((), ())
+    fn resources<'id>(&mut self, mint: Mint<'id, Self::Pools>) -> InstallParts<'id, Self> {
+        mint.into_pools();
+        InstallParts {
+            held: (),
+            local: None,
+            resources: (),
+        }
     }
 
-    fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
-        Lent::new(())
+    fn setup<'a, 'id>(
+        &'a mut self,
+        _: Call,
+        _: &'a Self::Held<'id>,
+        _: &'a mut Self::Local<'id>,
+    ) -> Self::Setup<'a, 'id>
+    where
+        'id: 'a,
+    {
     }
 
     #[allow(clippy::type_complexity, reason = "the phase's three parts")]
-    fn split<'a, 'id>(
+    fn phase<'a, 'id>(
         &'a mut self,
+        _: Call,
         (): &'a (),
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+        end: &'a mut Self::Local<'id>,
+    ) -> Self::Phase<'a, 'id>
     where
         'id: 'a,
     {
         PhaseParts {
-            events: Lent::new(BluetoothEvents {
+            events: BluetoothEvents {
                 runtime: self.runtime,
-            }),
-            control: Lent::new(BluetoothPhaseControl {
+                end,
+            },
+            control: BluetoothPhaseControl {
                 runtime: self.runtime,
-            }),
-            clients: Lent::new(BluetoothClient {
+            },
+            clients: BluetoothClient {
                 runtime: self.runtime,
-            }),
+            },
         }
     }
 
@@ -280,14 +322,38 @@ impl<
     /// scheduler a poisoned owner left running, drains a controller-time
     /// request in flight and restores the BLE PHY route, or it returns
     /// early on a fault, which poisoned the port first.
-    fn drive<'p, 'id>(
-        &mut self,
-        (): &'p (),
+    async fn drive<'p, 'id>(
+        driver: oer_radio_port::DriverLoan<'p, Self::Driver>,
+        _: &'p Self::Held<'id>,
         retire: Retire<'p>,
-    ) -> impl Future<Output = Self::State>
+    ) -> DriverExit<Self::State, Self::Fault> {
+        let result = embassy_futures::select::select(
+            retire.latch().abandoned(),
+            driver.run(|| retire.is_requested(), retire.wait()),
+        )
+        .await;
+        match result {
+            embassy_futures::select::Either::First(())
+            | embassy_futures::select::Either::Second(Ok(())) => DriverExit::Retired {
+                state: (),
+                proof: retire.requested(driver).await,
+            },
+            embassy_futures::select::Either::Second(Err(fault)) => {
+                let (cause, poisoned) = driver.publish_fault(fault);
+                DriverExit::Faulted {
+                    state: (),
+                    cause: cause.cause,
+                    poisoned: driver.fail_stop(poisoned),
+                }
+            }
+        }
+    }
+
+    fn retire_bound(
+        &self,
+        _: Call,
+    ) -> impl Future<Output = ()>
     + use<
-        'p,
-        'id,
         'r,
         M,
         H,
@@ -302,16 +368,6 @@ impl<
         ITEMS,
         EVENTS,
     > {
-        let mut driver = self.driver.take().expect("run_port drives a backend once");
-        async move {
-            // A fault is the driver's own exit: it poisoned the port, and
-            // the uninstall finds the radio retained.
-            let _stopped = driver.run(|| retire.is_requested()).await;
-            driver
-        }
-    }
-
-    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
         let timer = self.runtime.timer();
         async move {
             // A bound the timer cannot express has passed at once.
@@ -322,14 +378,22 @@ impl<
     /// The Bluetooth interrupt entry reaches only the runtime's wake
     /// signal, never the install's state: nothing to detach. The
     /// composition removes the CPU routes after the uninstall.
-    fn detach<'id>(&mut self, (): &()) {}
+    fn detach<'id>(&mut self, _: oer_radio_port::Detach<'_>, (): &()) {}
 
-    fn uninstall<'id>(self, (): (), driver: Self::State, (): ()) -> Self::Uninstalled {
-        driver.into_parts()
+    fn uninstall<'id>(
+        self,
+        _: Self::Held<'id>,
+        _: Self::Local<'id>,
+        retired: Retired<'id, (Self::Driver, Self::State)>,
+        _: Detached<'id>,
+        _: Self::Uninstall,
+    ) -> Self::Uninstalled {
+        retired.into_state().0.into_parts()
     }
 
-    fn abandon(&mut self) {
+    fn abandon(&mut self, call: oer_radio_port::Quarantine) -> oer_radio_port::Abandon {
         self.runtime.abandon();
+        oer_radio_port::Abandon::Unconfirmed(call)
     }
 }
 
@@ -381,6 +445,81 @@ impl<
         >,
     >
 {
+    type Outcome = BluetoothOutcome;
+    type Events<'a, 'id>
+        = BluetoothEvents<
+        'a,
+        BluetoothRuntime<
+            M,
+            H,
+            T,
+            C,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+            EVENTS,
+        >,
+        BluetoothFault<H::StartError>,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+    type Control<'a, 'id>
+        = BluetoothPhaseControl<
+        'a,
+        BluetoothRuntime<
+            M,
+            H,
+            T,
+            C,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+            EVENTS,
+        >,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+    type Clients<'a, 'id>
+        = BluetoothClient<
+        'a,
+        BluetoothRuntime<
+            M,
+            H,
+            T,
+            C,
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+            EVENTS,
+        >,
+    >
+    where
+        Self: 'a,
+        'id: 'a;
+    fn parts<'b, 'a, 'id>(
+        phase: &'b mut Self::Phase<'a, 'id>,
+    ) -> &'b mut PhaseParts<Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+    where
+        Self: 'a,
+        'id: 'a,
+    {
+        phase
+    }
+
     type Caps = BluetoothCapabilities<
         C,
         LEGACY,
@@ -463,7 +602,7 @@ impl<
     const RX_PACKETS: usize,
     const ITEMS: usize,
     const EVENTS: usize,
-> RadioPortEvents
+> PortPhase
     for BluetoothEvents<
         'a,
         BluetoothRuntime<
@@ -480,14 +619,22 @@ impl<
             ITEMS,
             EVENTS,
         >,
+        BluetoothFault<H::StartError>,
     >
 {
     type Event = BluetoothOutcome;
     type Fault = BluetoothFault<H::StartError>;
 
-    fn next_event(
+    async fn next_event(
         &mut self,
-    ) -> impl Future<Output = PortResult<BluetoothOutcome, EventsLost, Self::Fault>> + '_ {
-        self.runtime.wait_event()
+    ) -> Result<Result<BluetoothOutcome, EventsLost>, oer_radio_port::EventEnd<Self::Fault>> {
+        if let Some(end) = *self.end {
+            return Err(end);
+        }
+        let event = self.runtime.wait_event().await;
+        if let Err(end) = event {
+            *self.end = Some(end);
+        }
+        event
     }
 }

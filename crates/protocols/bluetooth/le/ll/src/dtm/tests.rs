@@ -324,30 +324,39 @@ fn failed_reservation_changes_neither_receiver_recurrence_nor_history() {
 }
 
 #[test]
-fn an_aborted_event_is_counted_apart_and_the_next_test_event_follows() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
-    session
-        .start(DtmTest::Receive {
-            channel: TestChannel::new(19).unwrap(),
-            phy: TestPhy::Le1M,
-        })
-        .unwrap();
-    let mut payload = [0; 255];
-    let DtmEvent::Receive(first) = session
-        .next_request(LeInstant::from_micros(1_000), TIMING, &mut payload)
-        .unwrap()
-        .unwrap()
-    else {
-        panic!("receiver event")
-    };
-    ended(&mut session, first.id, EventResult::Aborted);
-    assert_eq!(session.counters.aborted, 1);
-    assert_eq!(session.counters.executed, 0);
-    assert_eq!(session.counters.not_executed, 0);
-    assert!(
+fn uncertain_events_are_counted_apart_and_the_next_test_event_follows() {
+    for result in [EventResult::Aborted, EventResult::Indeterminate] {
+        let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
         session
-            .next_request(LeInstant::from_micros(2_000), TIMING, &mut payload)
+            .start(DtmTest::Receive {
+                channel: TestChannel::new(19).unwrap(),
+                phy: TestPhy::Le1M,
+            })
+            .unwrap();
+        let mut payload = [0; 255];
+        let DtmEvent::Receive(first) = session
+            .next_request(LeInstant::from_micros(1_000), TIMING, &mut payload)
             .unwrap()
-            .is_some()
-    );
+            .unwrap()
+        else {
+            panic!("receiver event")
+        };
+        ended(&mut session, first.id, result);
+        assert_eq!(
+            session.counters.aborted,
+            u32::from(result == EventResult::Aborted)
+        );
+        assert_eq!(
+            session.counters.indeterminate,
+            u32::from(result == EventResult::Indeterminate)
+        );
+        assert_eq!(session.counters.executed, 0);
+        assert_eq!(session.counters.not_executed, 0);
+        assert!(
+            session
+                .next_request(LeInstant::from_micros(2_000), TIMING, &mut payload)
+                .unwrap()
+                .is_some()
+        );
+    }
 }

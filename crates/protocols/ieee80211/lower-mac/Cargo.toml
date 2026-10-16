@@ -9,12 +9,11 @@ description = "Portable IEEE 802.11 lower-MAC radio port: one hardware transmiss
 readme = "README.md"
 
 [features]
-# Lets a host test's dropped owner skip its debug assertion while a panic
-# unwinds.
-test-support = ["oer-radio-port/test-support", "oer-ieee80211-port/test-support"]
+# The shared port's host testing support, used by model consumers.
+test-support = ["oer-radio-port/test-support"]
 
 [dependencies]
-oer-ieee80211-port = { path = "../port" }
+heapless = "0.9.3"
 oer-ieee80211-mac = { path = "../mac" }
 oer-radio-coex = { path = "../../../radio/coex" }
 oer-radio-port = { path = "../../../radio/port" }
@@ -23,7 +22,6 @@ oer-time = { path = "../../../time" }
 [dev-dependencies]
 # The crate's own tests run the shared conformance suite on the model.
 oer-radio-port = { path = "../../../radio/port", features = ["test-support"] }
-oer-ieee80211-port = { path = "../port", features = ["test-support"] }
 
 [lints]
 workspace = true

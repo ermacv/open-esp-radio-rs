@@ -7,17 +7,22 @@ license.workspace = true
 repository.workspace = true
 description = "Executor- and chip-independent Wi-Fi station MLME and policy"
 
+[features]
+default = []
+# Resource accounting visible to host compositions that test retirement.
+test-support = []
+
 [dependencies]
-critical-section = "1.2.0"
+heapless = "0.9.3"
 oer-trace = { path = "../../../trace" }
+oer-ieee80211-arbiter = { path = "../arbiter" }
+oer-ieee80211-lower-mac = { path = "../lower-mac" }
 oer-ieee80211-mac = { path = "../mac" }
 oer-ieee80211-rsn = { path = "../security/rsn" }
 oer-ieee80211-trace = { path = "../trace" }
 oer-ieee80211-upper-mac = { path = "../upper-mac" }
 oer-time = { path = "../../../time" }
-
-[dev-dependencies]
-critical-section = { version = "1.2.0", features = ["std"] }
+oer-radio-port = { path = "../../../radio/port" }
 
 [lints]
 workspace = true
@@ -25,3 +30,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "protocol"
 platform = "portable"
+test-feature-sets = ["test-support"]

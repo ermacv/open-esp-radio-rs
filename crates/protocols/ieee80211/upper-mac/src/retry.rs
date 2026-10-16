@@ -1,6 +1,6 @@
 //! Retry policy of one individually addressed MPDU.
 //!
-//! One lower-MAC attempt ends with one [`TxStatus`]. [`MpduRetryState`]
+//! One hardware publication supplies one [`TxStatus`]. [`MpduRetryState`]
 //! decides from it whether the frame is done or is sent again, whether the
 //! next attempt sets the Retry bit, and how the access category's contention
 //! window changes. It keeps the retry counters of the EDCA retransmit
@@ -13,7 +13,9 @@
 //!
 //! The rate of each attempt comes from a [`RateLadder`], the peer's rate
 //! state: the attempt after `n` ladder-advancing failures uses the ladder's
-//! rate for `n`.
+//! rate for `n`. An unknown hardware timeout ends the attempt immediately:
+//! `TimedOut` leaves retry counters unchanged and never republishes the MPDU.
+//! Backend faults are carried by Poisoned and do not enter this policy.
 
 use oer_ieee80211_lower_mac::TxStatus;
 use oer_ieee80211_mac::phy::PhyRate;
@@ -228,7 +230,7 @@ impl MpduRetryState {
                 };
                 self.finish_or_retry(status, reached, false)
             }
-            TxStatus::Aborted | TxStatus::Fault(_) => Self::end(RetryOutcome::Terminal(status)),
+            TxStatus::TimedOut => Self::end(RetryOutcome::Terminal(status)),
         }
     }
 

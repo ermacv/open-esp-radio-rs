@@ -1543,3 +1543,52 @@ fn radio_stamp(micros: u64) -> oer_ieee80211_lower_mac::Ieee80211Stamp {
         generation: crate::clock_generation(1),
     }
 }
+
+#[test]
+fn no_effect_keeps_the_aggregate_and_its_trigger_reservation_published() {
+    use crate::tx::CompletionObservation;
+    let mut storage = core::pin::pin!(HtAmpduTxStorage::<2, 256>::new());
+    let cookie = storage.as_mut().begin().unwrap();
+    let reservation = MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::Three, 2, 2).unwrap();
+    {
+        let storage = storage.as_mut().project();
+        *storage.state = TxSlotState::HardwareOwned;
+        *storage.queue = LegacyTxQueue::BestEffort;
+        *storage.trigger_reservation = Some(reservation);
+    }
+    let mut hardware = CompletionHardware {
+        completion: Some(MacHtAmpduCompletionObservation::new_model(
+            MacTxCompletionObservation::new_model(1, 2),
+            0,
+            0,
+            0,
+            false,
+        )),
+        cleared: None,
+        trigger_snapshot: None,
+    };
+    assert_eq!(
+        storage.as_mut().acknowledge_completion(&mut hardware),
+        Ok(Some(CompletionObservation::NoEffect))
+    );
+    assert_eq!(storage.state(), TxSlotState::HardwareOwned);
+    assert_eq!(hardware.cleared, None);
+    assert_eq!(
+        storage.as_mut().project().trigger_reservation,
+        &Some(reservation)
+    );
+    hardware.completion = Some(MacHtAmpduCompletionObservation::new_model(
+        MacTxCompletionObservation::new_model(0, 0),
+        0,
+        0,
+        1,
+        true,
+    ));
+    assert!(matches!(
+        storage.as_mut().acknowledge_completion(&mut hardware),
+        Ok(Some(CompletionObservation::Observed(_)))
+    ));
+    assert_eq!(storage.state(), TxSlotState::Completed);
+    assert_eq!(hardware.cleared, Some(reservation));
+    assert_eq!(cookie, storage.active);
+}

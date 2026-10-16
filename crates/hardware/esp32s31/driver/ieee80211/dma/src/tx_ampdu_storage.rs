@@ -4,7 +4,7 @@
 //! External zero-copy aggregates receive prepare/start authority only through
 //! an owner which also retains every referenced [`StableDmaBacking`] lease.
 
-use core::{marker::PhantomPinned, mem, pin::Pin};
+use core::{marker::PhantomPinned, mem, mem::ManuallyDrop, pin::Pin};
 
 use oer_esp32s31_hal::types::MacTxQueueDetached;
 use oer_memory::{HardwareOwnedTxDma, PreparedTxDma, StableDmaBacking, StableDmaRange};
@@ -113,7 +113,6 @@ struct AmpduDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 /// Final static allocation for an internal-buffer A-MPDU arena.
 #[pin_project]
 #[derive(bytemuck::Zeroable)]
-// CAPABILITY: rx-tx-dma
 pub struct AmpduDmaStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     #[pin]
     descriptors: [Descriptor; SLOTS],
@@ -141,7 +140,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> AmpduDmaStorage<SLOTS, BUFFER
         }
     }
 
-    #[cfg(target_pointer_width = "32")]
     pub fn pin_static(
         storage: &'static mut Self,
     ) -> Result<PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>, AmpduDmaStorageError> {
@@ -157,7 +155,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> AmpduDmaStorage<SLOTS, BUFFER
     }
 
     /// Bind deterministic target-like addresses in a native model.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn pin_static_model(
         storage: &'static mut Self,
         descriptor_base: u32,
@@ -517,8 +515,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
 /// movable lease object whose underlying allocation is stable. Moving this
 /// owner is safe: descriptor addresses never point at the lease object, only
 /// at the allocation guaranteed by its unsafe [`StableDmaBacking`] contract.
+///
+/// The arena never automatically destroys a retained lease. Only the active
+/// owner can release one after cancellation or proven detach. If that owner
+/// is forgotten, destroying this arena leaks its leases and their allocations;
+/// it cannot free memory still visible to DMA. No destructor is required for
+/// this safety property, including the arena's own destructor.
 pub struct RetainedAmpduDmaStorage<B, const SLOTS: usize> {
-    backings: [Option<B>; SLOTS],
+    backings: [Option<ManuallyDrop<B>>; SLOTS],
     backing_identities: [Option<RetainedDmaBackingIdentity>; SLOTS],
     backing_descriptors: [Option<RetainedDmaDescriptor>; SLOTS],
     active_backing_indices: [u8; SLOTS],
@@ -632,6 +636,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
         self.validate_backing(&backing)?;
         let value = self.retention_mut().backings[index]
             .take()
+            .map(ManuallyDrop::into_inner)
             .ok_or(AmpduDmaStorageError::Count)?;
         self.retention_mut().backing_identities[index] = None;
         self.retention_mut().backing_descriptors[index] = None;
@@ -651,6 +656,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .backings
             .get_mut(usize::from(backing.index))
             .and_then(Option::as_mut)
+            .map(|backing| &mut **backing)
             .ok_or(AmpduDmaStorageError::Count)
     }
 
@@ -666,6 +672,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .backings
             .get_mut(usize::from(backing.index))
             .and_then(Option::as_mut)
+            .map(|backing| &mut **backing)
             .ok_or(AmpduDmaStorageError::Count)
     }
 
@@ -755,7 +762,11 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
 
     fn drop_backings(&mut self) {
         for index in 0..self.held {
-            drop(self.retention_mut().backings[index].take());
+            drop(
+                self.retention_mut().backings[index]
+                    .take()
+                    .map(ManuallyDrop::into_inner),
+            );
             self.retention_mut().backing_identities[index] = None;
             self.retention_mut().backing_descriptors[index] = None;
         }
@@ -766,7 +777,7 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
     fn forget_backings(&mut self) {
         for index in 0..self.held {
             if let Some(backing) = self.retention_mut().backings[index].take() {
-                mem::forget(backing);
+                mem::forget(ManuallyDrop::into_inner(backing));
             }
             self.retention_mut().backing_identities[index] = None;
             self.retention_mut().backing_descriptors[index] = None;
@@ -865,7 +876,7 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
         }
         let descriptor_head = self.descriptor_head();
         let generation = self.next_lease_generation()?;
-        self.retention_mut().backings[index] = Some(backing);
+        self.retention_mut().backings[index] = Some(ManuallyDrop::new(backing));
         // Count the lease before borrowing its region. If a backing's unsafe
         // implementation panics while producing the region, Drop still owns
         // and releases the inserted value. Split the retention fields so the
@@ -1228,7 +1239,7 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Drop
     }
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaStorageError> {
     let address = u32::try_from(address).map_err(|_| AmpduDmaStorageError::Address)?;
     external_tx_buffer_range_valid(address, capacity)
@@ -1236,24 +1247,30 @@ fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaSt
         .ok_or(AmpduDmaStorageError::Address)
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 const fn external_tx_buffer_range_valid(address: u32, size: u32) -> bool {
     dma_range_valid(address, size) || psram_tx_buffer_range_valid(address, size)
 }
 
-#[cfg(all(target_pointer_width = "32", feature = "tx-psram-dma-probe"))]
+#[cfg(all(
+    not(any(test, feature = "test-support")),
+    feature = "tx-psram-dma-probe"
+))]
 const fn psram_tx_buffer_range_valid(address: u32, size: u32) -> bool {
     const PSRAM_LOW: u32 = 0x5000_0000;
     const PSRAM_HIGH: u32 = 0x5400_0000;
     size != 0 && address >= PSRAM_LOW && address < PSRAM_HIGH && size <= PSRAM_HIGH - address
 }
 
-#[cfg(all(target_pointer_width = "32", not(feature = "tx-psram-dma-probe")))]
+#[cfg(all(
+    not(any(test, feature = "test-support")),
+    not(feature = "tx-psram-dma-probe")
+))]
 const fn psram_tx_buffer_range_valid(_address: u32, _size: u32) -> bool {
     false
 }
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 fn external_dma_address(address: usize, _capacity: u32) -> Result<u32, AmpduDmaStorageError> {
     // Native models have no asynchronous DMA actor. Truncation supplies only
     // a model descriptor image for host state-machine tests.

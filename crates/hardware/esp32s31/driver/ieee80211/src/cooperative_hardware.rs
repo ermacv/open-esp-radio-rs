@@ -150,6 +150,14 @@ impl<'arena> CooperativeRadioHardware<'arena> {
 }
 
 impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        self.wifi_mac_hal()
+            .configure_ccmp_association(interface, mode);
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -692,7 +700,7 @@ impl CooperativeRadioHardware<'_> {
     pub fn replace_sta_group_ccmp(
         &mut self,
         slot: &mut StaGroupCcmpSlot,
-        key_id: u8,
+        key_id: oer_ieee80211_mac::ccmp::GroupKeyId,
         temporal_key: &[u8; 16],
     ) -> Result<(), CryptoKeyError> {
         replace_sta_group_ccmp(&mut self.wifi_mac_hal(), slot, key_id, temporal_key)

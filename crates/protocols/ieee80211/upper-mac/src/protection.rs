@@ -115,7 +115,7 @@ pub struct BasicRates(u16);
 impl BasicRates {
     /// The rates in 500-kb/s units with their long-preamble form; bit `i`
     /// of the set is entry `i`.
-    const ORDER: [(u8, LegacyRate); 12] = [
+    pub(crate) const ORDER: [(u8, LegacyRate); 12] = [
         (2, LegacyRate::Dsss1M),
         (4, LegacyRate::Dsss2M(DsssPreamble::Long)),
         (11, LegacyRate::Cck5M5(DsssPreamble::Long)),
@@ -137,6 +137,19 @@ impl BasicRates {
     /// rate: 1, 2, 5.5, 11, 6, 12 and 24 Mb/s.
     pub const ERP_MANDATORY: Self = Self(0b0000_0001_0101_1111);
 
+    const ERP_MANDATORY_HEAD: LegacyRate = {
+        let [(_, first), ..] = Self::ORDER;
+        first
+    };
+}
+
+// The mandatory set's first entry is present and eligible both with and
+// without ERP protection, so its iterator has this head before skip(1).
+const _: [(); 1] = [(); (BasicRates::ERP_MANDATORY.0 & 1 != 0
+    && matches!(BasicRates::ERP_MANDATORY_HEAD, LegacyRate::Dsss1M))
+    as usize];
+
+impl BasicRates {
     /// Collect rates marked basic (bit seven) in Supported Rates and
     /// Extended Supported Rates element bodies, in 500-kb/s units.
     pub fn from_rate_elements(supported: &[u8], extended: &[u8]) -> Self {
@@ -433,28 +446,16 @@ impl ProtectionPolicy {
     pub fn control_rate(&self, data: PhyRate) -> LegacyRate {
         let dsss_only = self.bss.erp.use_protection();
         let eligible = |rate: &LegacyRate| !dsss_only || !rate.is_ofdm();
-        let basic = if self.bss.basic_rates.rates().any(|rate| eligible(&rate)) {
-            self.bss.basic_rates
-        } else {
-            BasicRates::ERP_MANDATORY
-        };
+        let mut advertised = self.bss.basic_rates.rates().filter(eligible);
         let data_kbps = data.nominal_kbps();
-        let mut fastest_not_faster = None;
-        let mut slowest = None;
-        for rate in basic.rates().filter(eligible) {
-            let kbps = rate.kbps();
-            if kbps <= data_kbps
-                && fastest_not_faster.is_none_or(|best: LegacyRate| kbps > best.kbps())
-            {
-                fastest_not_faster = Some(rate);
-            }
-            if slowest.is_none_or(|low: LegacyRate| kbps < low.kbps()) {
-                slowest = Some(rate);
-            }
-        }
-        let rate = fastest_not_faster
-            .or(slowest)
-            .expect("the ERP mandatory set contains an eligible rate");
+        let rate = match advertised.next() {
+            Some(first) => select_control_rate(first, advertised, data_kbps),
+            None => select_control_rate(
+                BasicRates::ERP_MANDATORY_HEAD,
+                BasicRates::ERP_MANDATORY.rates().filter(eligible).skip(1),
+                data_kbps,
+            ),
+        };
         let short = self.bss.short_preamble && !self.bss.erp.long_preamble_required();
         match (rate, short) {
             (LegacyRate::Dsss2M(_), true) => LegacyRate::Dsss2M(DsssPreamble::Short),
@@ -463,6 +464,31 @@ impl ProtectionPolicy {
             (rate, _) => rate,
         }
     }
+}
+
+/// Select from a nonempty candidate sequence. A rate at or below the data
+/// rate outranks every faster rate; within either class choose the fastest
+/// admissible rate or the slowest rate above the data rate, respectively.
+fn select_control_rate(
+    first: LegacyRate,
+    rest: impl Iterator<Item = LegacyRate>,
+    data_kbps: u32,
+) -> LegacyRate {
+    rest.fold(first, |selected, candidate| {
+        let selected_kbps = selected.kbps();
+        let candidate_kbps = candidate.kbps();
+        let prefer_candidate = match (candidate_kbps <= data_kbps, selected_kbps <= data_kbps) {
+            (true, true) => candidate_kbps > selected_kbps,
+            (false, false) => candidate_kbps < selected_kbps,
+            (true, false) => true,
+            (false, true) => false,
+        };
+        if prefer_candidate {
+            candidate
+        } else {
+            selected
+        }
+    })
 }
 
 /// Whether an HT Protection mode protects one HT or HE PPDU of this width.

@@ -27,7 +27,6 @@ serde_json = "1.0"
 [dev-dependencies]
 oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
 # The production access point whose advertisement the probe model reads.
-ap-role = { package = "oer-esp32s31-ieee80211-ap", path = "../../../crates/roles/esp32s31/ieee80211/ap" }
 
 [lints]
 workspace = true

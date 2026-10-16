@@ -43,7 +43,16 @@ mod associated_peer {
     const HE20_OPERATION: [u8; 9] = [255, 7, 36, 0, 0, 0, 5, 0xfd, 0xff];
 
     fn he20_access_point() -> ScanRecord {
-        let mut access_point = ScanRecord::EMPTY;
+        let mut access_point = ScanRecord::new(
+            oer_ieee80211_mac::address::Bssid::new(
+                oer_ieee80211_mac::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+            )
+            .unwrap(),
+            6,
+            -40,
+        );
+        access_point.supported_rates[..4].copy_from_slice(&[0x82, 0x84, 0x8b, 0x96]);
+        access_point.supported_rates_len = 4;
         access_point.ht_capability_ie_present = true;
         access_point.ht_capability_ie[4] = 0x17;
         access_point.he_capability_ie[..HE20_MCS9_CAPABILITY.len()]
@@ -113,10 +122,19 @@ mod associated_peer {
 
     #[test]
     fn the_peer_carries_every_bss_protection_fact() {
-        let mut access_point = ScanRecord::EMPTY;
+        let mut access_point = ScanRecord::new(
+            oer_ieee80211_mac::address::Bssid::new(
+                oer_ieee80211_mac::address::IndividualAddress::new([2, 0, 0, 0, 0, 1]).unwrap(),
+            )
+            .unwrap(),
+            6,
+            -40,
+        );
         access_point.capability_info = 0x0421;
         access_point.supported_rates = [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24];
         access_point.supported_rates_len = 8;
+        access_point.extended_supported_rates[..4].copy_from_slice(&[0x30, 0x48, 0x60, 0x6c]);
+        access_point.extended_supported_rates_len = 4;
         access_point.erp_information = Some(0x07);
         access_point.ht_operation_ie[..2].copy_from_slice(&[61, 22]);
         access_point.ht_operation_ie[4] = 0x03;
@@ -128,6 +146,13 @@ mod associated_peer {
             eight_microseconds,
         )
         .unwrap();
+        let rate_peer = peer.rate_peer();
+        assert_eq!(rate_peer.legacy_rates.rates().count(), 12);
+        assert!(
+            rate_peer
+                .legacy_rates
+                .contains(oer_ieee80211_mac::phy::LegacyRate::Ofdm54M)
+        );
         let protection = peer.protection;
         assert_eq!(protection.erp, ErpProtection::new(true, true));
         assert_eq!(protection.ht, HtProtectionMode::NonHtMixed);

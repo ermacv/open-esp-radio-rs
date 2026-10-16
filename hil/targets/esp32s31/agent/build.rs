@@ -5,14 +5,10 @@ fn main() {
     trace_journal();
 }
 
-/// `cfg(trace_journal)`: the image keeps the event trace. The memory
-/// benchmark builds on `open-radio-hil` but keeps no trace, and a feature
-/// cannot take another away.
+/// `cfg(trace_journal)`: the image keeps the event trace.
 fn trace_journal() {
     println!("cargo::rustc-check-cfg=cfg(trace_journal)");
-    if std::env::var_os("CARGO_FEATURE_TRACE_JOURNAL").is_some()
-        && std::env::var_os("CARGO_FEATURE_MEMORY_BENCHMARK").is_none()
-    {
+    if std::env::var_os("CARGO_FEATURE_TRACE_JOURNAL").is_some() {
         println!("cargo::rustc-cfg=trace_journal");
     }
 }

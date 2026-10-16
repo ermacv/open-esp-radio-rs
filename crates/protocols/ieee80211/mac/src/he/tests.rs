@@ -418,7 +418,6 @@ fn recovers_vendor_ap_he20_peer_state() {
     ];
     let operation = [0xff, 0x07, 0x24, 0x04, 0x00, 0x01, 0x1b, 0xfc, 0xff];
     let state = parse_he20_peer_state(&capability, &operation).unwrap();
-    assert_eq!(state.max_rate_code, 229);
     assert_eq!(state.packet_padding_eight_us, 2);
     assert_eq!(state.default_packet_extension_duration, 4);
     assert_eq!(state.bss_color, 27);

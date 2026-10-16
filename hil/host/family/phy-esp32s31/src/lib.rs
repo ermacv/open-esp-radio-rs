@@ -1,8 +1,6 @@
-//! The ESP32-S31 composition of the PHY HIL family: the family
-//! (`oer-hil-family-phy`) with the chip's vendor calibration comparison
-//! (`oer-esp32s31-phy-vendor-calibration`) behind its comparison port. The
-//! runner's family registry registers [`FAMILY`]; the family itself names
-//! no chip.
+//! The ESP32-S31 implementation of the PHY cross-check's comparison port
+//! (`oer-hil-family-phy`): the chip's vendor calibration comparison
+//! (`oer-esp32s31-phy-vendor-calibration`). The family itself names no chip.
 #![forbid(unsafe_code)]
 
 use std::path::Path;
@@ -12,9 +10,6 @@ use oer_hil_family_phy::comparison::{Compared, Comparison, RegisterImages};
 use oer_phy_calibration_capture::boots::{Images, Lifecycle, ProductionBoot, VendorBoot};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// The PHY family with the ESP32-S31 comparison.
-pub const FAMILY: oer_hil_workload::family::Kind = oer_hil_family_phy::family::<Esp32s31>();
 
 /// The ESP32-S31's comparison: the reviewed `phy_param` relation and
 /// tolerances over the published radio-PHY partition and analog-I2C images.
@@ -73,6 +68,5 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..");
         let images = Esp32s31::images(&root).unwrap();
         assert!(!images.registers.is_empty() && !images.analog.is_empty());
-        assert_eq!(FAMILY.key, "phy");
     }
 }

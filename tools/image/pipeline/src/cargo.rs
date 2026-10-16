@@ -48,15 +48,9 @@ fn inherited_build_overrides(names: impl Iterator<Item = OsString>) -> Vec<OsStr
 pub struct Overrides {
     /// `ESP_HAL_ROOT`: esp-hal, esp-sync and the ESP-IDF bootloader crate.
     pub esp_hal: Option<PathBuf>,
-    /// `EMBASSY_ROOT`: embassy-net and its driver.
-    pub embassy: Option<PathBuf>,
-    /// `OPEN_RADIO_XARXA_ROOT`: Xarxa and its driver. (An `XARXA_*` name
-    /// would collide with Xarxa's build script, which owns that prefix.)
-    pub xarxa: Option<PathBuf>,
 }
 
 const ESP_HAL_PACKAGES: [&str; 3] = ["esp-bootloader-esp-idf", "esp-hal", "esp-sync"];
-const EMBASSY_PACKAGES: [&str; 2] = ["embassy-net", "embassy-net-driver"];
 
 impl Overrides {
     /// The overrides the caller's environment names, each checked for the
@@ -83,50 +77,17 @@ impl Overrides {
         };
         Ok(Self {
             esp_hal: checked("ESP_HAL_ROOT", &ESP_HAL_PACKAGES)?,
-            embassy: checked("EMBASSY_ROOT", &EMBASSY_PACKAGES)?,
-            xarxa: checked("OPEN_RADIO_XARXA_ROOT", &["xarxa-driver"])?,
         })
     }
 
     /// Whether no dependency is overridden: the build then resolves exactly
     /// the committed pins (`--locked`).
     pub fn is_empty(&self) -> bool {
-        self.esp_hal.is_none() && self.embassy.is_none() && self.xarxa.is_none()
+        self.esp_hal.is_none()
     }
 
-    /// Patch the runtime build `command` with every override.
+    /// Patch the build `command` with every override.
     pub(crate) fn apply(&self, command: &mut Command) {
-        self.apply_esp_hal(command);
-        if let Some(local) = &self.embassy {
-            for package in EMBASSY_PACKAGES {
-                patch(
-                    command,
-                    "https://github.com/ermacv/embassy.git",
-                    package,
-                    &local.join(package),
-                );
-            }
-        }
-        if let Some(local) = &self.xarxa {
-            patch(
-                command,
-                "https://github.com/ermacv/xarxa.git",
-                "xarxa",
-                local,
-            );
-            patch(
-                command,
-                "https://github.com/ermacv/xarxa.git",
-                "xarxa-driver",
-                &local.join("xarxa-driver"),
-            );
-        }
-    }
-
-    /// Patch the bootstrap build `command` with esp-hal's override, the
-    /// only one it depends on: a patch it does not use would be recorded in
-    /// its lock file, which `--locked` refuses.
-    pub(crate) fn apply_esp_hal(&self, command: &mut Command) {
         if let Some(local) = &self.esp_hal {
             for package in ESP_HAL_PACKAGES {
                 patch(
@@ -216,35 +177,19 @@ mod tests {
     }
 
     #[test]
-    fn the_bootstrap_takes_only_the_esp_hal_override() {
+    fn the_esp_hal_override_patches_each_of_its_packages() {
         let overrides = Overrides {
             esp_hal: Some("/esp-hal".into()),
-            embassy: Some("/embassy".into()),
-            xarxa: Some("/xarxa".into()),
         };
-        let arguments = |apply: &dyn Fn(&mut Command)| {
-            let mut command = oer_process::command("cargo");
-            apply(&mut command);
-            command
-                .get_args()
-                .map(|argument| argument.to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-        };
-        let bootstrap = arguments(&|command| overrides.apply_esp_hal(command));
-        assert!(
-            bootstrap
-                .iter()
-                .any(|argument| argument.contains("esp-hal"))
-        );
-        assert!(
-            !bootstrap
-                .iter()
-                .any(|argument| argument.contains("xarxa") || argument.contains("embassy"))
-        );
-        let runtime = arguments(&|command| overrides.apply(command));
-        for package in ["esp-sync", "embassy-net-driver", "xarxa-driver"] {
+        let mut command = oer_process::command("cargo");
+        overrides.apply(&mut command);
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        for package in ESP_HAL_PACKAGES {
             assert!(
-                runtime.iter().any(|argument| argument.contains(package)),
+                arguments.iter().any(|argument| argument.contains(package)),
                 "{package}"
             );
         }

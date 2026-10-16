@@ -16,15 +16,9 @@ use oer_hil_protocol::{
 use oer_trace::{Retained, Trace};
 
 const ENTRIES: usize = 512;
-/// Snapshot slots and their words: only images that capture register
-/// windows (`trace-snapshots`) spend RTC memory on them.
-#[cfg(feature = "trace-snapshots")]
-const SLOTS: usize = 2;
-#[cfg(feature = "trace-snapshots")]
-const WORDS: usize = 1024;
-#[cfg(not(feature = "trace-snapshots"))]
+/// Snapshot slots and their words: no image captures register windows, so
+/// none spends RTC memory on them.
 const SLOTS: usize = 0;
-#[cfg(not(feature = "trace-snapshots"))]
 const WORDS: usize = 0;
 
 #[unsafe(link_section = ".rtc_fast.persistent")]

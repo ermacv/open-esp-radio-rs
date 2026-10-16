@@ -1,9 +1,9 @@
 //! Capability-bound A-MPDU metadata, descriptor and backing ownership.
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 extern crate alloc;
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use alloc::boxed::Box;
 use oer_ieee80211_softmac::tx_cost::TxContention;
 
@@ -19,7 +19,9 @@ use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::{
 use oer_ieee80211_upper_mac::ampdu::set_retry_bit;
 use oer_memory::StableDmaBacking;
 
-use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
+use crate::tx::{
+    CompletionObservation, HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState,
+};
 
 use super::{
     AmpduRepublication, HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength,
@@ -34,7 +36,6 @@ use super::{
 /// [`AmpduDmaStorage`] is the only layer allowed to publish raw descriptors.
 /// Keeping them in one handoff value prevents reconnect/teardown code from
 /// accidentally restoring one half without the other.
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-mpdu
 pub struct HtAmpduTxResources<'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
     metadata: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
     dma: PinnedAmpduDmaStorage<SLOTS, 0>,
@@ -57,7 +58,7 @@ impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
     }
 
     /// Supply a deterministic descriptor address for host state-machine tests.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_model(
         metadata: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
     ) -> Result<Self, HtAmpduTxError> {
@@ -80,7 +81,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> Deref
     }
 }
 
-#[cfg(target_pointer_width = "32")]
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxResources<'static, SLOTS, BUFFER_SIZE> {
     /// Bind both statically allocated target arenas at their final addresses.
     pub fn pin_static(
@@ -119,7 +119,7 @@ impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
         }
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new_model(
         storage: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
         retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
@@ -288,7 +288,10 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         block_ack_operational: bool,
     ) -> Result<Option<RetainedAmpduRetryCompletion>, RetainedAmpduRetryCompletionError> {
         retry.validate_stamp(now)?;
-        let Some(completion) = self.acknowledge_completion(hardware)? else {
+        let Some(CompletionObservation::Observed(completion)) =
+            self.acknowledge_completion(hardware)?
+        else {
+            // NoEffect leaves both metadata and DMA owners published.
             return Ok(None);
         };
         self.detach_completed(hardware, cookie)?;
@@ -628,9 +631,11 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     pub fn acknowledge_completion<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<Option<HtAmpduTxCompletion>, HtAmpduTxError> {
+    ) -> Result<Option<CompletionObservation<HtAmpduTxCompletion>>, HtAmpduTxError> {
         let completion = self.metadata_mut().acknowledge_completion(hardware)?;
-        if completion.is_some() && self.dma_mut().mark_completed().is_err() {
+        if matches!(completion, Some(CompletionObservation::Observed(_)))
+            && self.dma_mut().mark_completed().is_err()
+        {
             self.quarantine();
             return Err(HtAmpduTxError::ResetRequired);
         }

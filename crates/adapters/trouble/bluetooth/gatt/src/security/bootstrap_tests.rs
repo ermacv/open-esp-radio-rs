@@ -14,6 +14,7 @@ use oer_bluetooth_hci::*;
 use oer_bluetooth_hci_transport::*;
 use oer_bluetooth_radio::NoRadio;
 use oer_bluetooth_runtime::{ServeExit, Served, serve};
+use oer_radio_port::{Installed, PortEnd};
 use trouble_host::{BleHostError, Error as HostError, prelude::*};
 
 struct Entropy {
@@ -78,7 +79,7 @@ fn run_bootstrap(fail: bool, bonds: bool) {
     // until it is asked to stop, then disables and uninstalls the port.
     let stop = Signal::<NoopRawMutex, ()>::new();
     let mut controller_task = pin!(serve(
-        NoRadio,
+        Installed::new(NoRadio, ()),
         (),
         &controller,
         &mut core,
@@ -143,10 +144,13 @@ fn run_bootstrap(fail: bool, bonds: bool) {
             Either::Second(Either::Second(_)) => panic!("Controller unexpectedly returned"),
         }
         stop.signal(());
-        assert_eq!(
+        assert!(matches!(
             controller_task.as_mut().await,
-            (Served::Stopped(ServeExit::Stopped), Some(()))
-        );
+            PortEnd::Uninstalled {
+                uninstalled: (),
+                output: Served::Stopped(ServeExit::Stopped),
+            }
+        ));
     });
     // All peers live in this deterministic future: bound polling rather than
     // hanging the suite if bootstrap stops making progress. No wall-clock sleep.

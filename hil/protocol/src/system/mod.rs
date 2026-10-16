@@ -1,60 +1,22 @@
 //! The system module: SoC diagnostics independent of any radio: the
-//! watchdogs, stack high-water marks, the timebase probe and the memory
-//! benchmark.
+//! watchdog, the panic and USB-off injections and stack high-water marks.
 
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
-mod interrupt_latency;
-pub use interrupt_latency::*;
 mod payload;
 pub use payload::*;
-#[cfg(feature = "system")]
-mod memory_benchmark;
-#[cfg(feature = "system")]
-pub use memory_benchmark::*;
 
 crate::messages! {
     endpoint WatchdogTest = "system/watchdog/test" => WatchdogArmed;
     topic WatchdogArmed = "system/watchdog/armed";
-    property TimebaseProbe = "system/timebase-probe";
-    property IpcCall = "system/ipc-call";
-    property SourceGate = "system/source-gate";
-    property MemoryBenchmark = "system/memory-benchmark";
-    /// A software interrupt at the radio interrupts' level can be timed
-    /// from its raise to its handler; diagnostic only.
-    property InterruptLatencyProbe = "system/interrupt-latency";
-    endpoint InjectHang = "system/hang/inject" => crate::system::HangInjected;
-    topic HangInjected = "system/hang/injected";
     endpoint InjectPanic = "system/panic/inject" => crate::system::PanicInjected;
     topic PanicInjected = "system/panic/injected";
     endpoint DisableUsb = "system/usb/disable" => crate::system::UsbDisabled;
     topic UsbDisabled = "system/usb/disabled";
-    endpoint GetStacks = "system/stacks/get" => crate::system::Stacks;
-    topic Stacks = "system/stacks";
     endpoint GetInterruptStacks = "system/interrupt-stacks/get" => crate::system::InterruptStacks;
     topic InterruptStacks = "system/interrupt-stacks";
-    endpoint ProbeTimebase = "system/timebase/probe" => crate::system::TimebaseProbed;
-    topic TimebaseProbed = "system/timebase/probed";
-    endpoint CallAcrossCores = "system/ipc/call" => crate::system::CoresCalled;
-    topic CoresCalled = "system/ipc/called";
-    endpoint ProbeSourceGate = "system/source-gate/probe" => crate::system::SourceGated;
-    topic SourceGated = "system/source-gate/probed";
-    endpoint MeasureInterruptLatency = "system/interrupt-latency/measure" => crate::system::InterruptLatency;
-    topic InterruptLatency = "system/interrupt-latency/measured";
-    #[cfg(feature = "system")]
-    endpoint RunMemoryBenchmark = "system/memory-benchmark/run" => crate::system::MemoryBenchmarkCompleted;
-    #[cfg(feature = "system")]
-    topic MemoryBenchmarkCompleted = "system/memory-benchmark/completed";
 }
-
-/// `system/interrupt-latency/measure`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct MeasureInterruptLatency(pub crate::system::InterruptLatencyRequest);
-
-/// `system/interrupt-latency/measured`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct InterruptLatency(pub crate::system::InterruptLatencyEvidence);
 
 /// Arm the SoC deadline watchdog and misbehave as `0` says. Tests the SoC
 /// deadline service, not RF cessation.
@@ -80,26 +42,6 @@ pub enum WatchdogTestMode {
     LateRestoration,
 }
 
-/// What a diagnostic hang stalls.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
-pub enum HangTarget {
-    /// The core 0 protocol executor.
-    ProtocolExecutor,
-    /// The core 1 network executor.
-    NetworkExecutor,
-    /// The protocol console's command consumer, while both executors run.
-    Console,
-}
-
-/// Diagnostic: stall `HangTarget`'s executor with interrupts enabled, so
-/// the hang watchdog records a post-mortem and resets the chip.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct InjectHang(pub crate::system::HangTarget);
-
-/// The stall is armed; the chip resets once the watchdog detects it.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct HangInjected(pub crate::system::HangTarget);
-
 /// Diagnostic: panic in thread context once the acknowledgement is out, so
 /// the platform's panic entry records the panic and resets the chip.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
@@ -118,15 +60,6 @@ pub struct DisableUsb;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct UsbDisabled;
 
-/// Return the boot-lifetime CPU stack high-water marks. This diagnostic
-/// query is valid only outside an active traffic session.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct GetStacks;
-
-/// Correlated response to its request.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct Stacks(pub crate::system::StackUsage);
-
 /// Sample dedicated IRQ stacks on their own harts in thread mode.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct GetInterruptStacks;
@@ -138,50 +71,3 @@ pub struct InterruptStacks {
     pub cpu0: Option<crate::system::StackWatermark>,
     pub cpu1: Option<crate::system::StackWatermark>,
 }
-
-/// Compare alarm deadlines with the monotonic clock before initializing
-/// the radio/network runtime.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct ProbeTimebase(pub crate::system::TimebaseProbeRequest);
-
-/// Correlated response to its request.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct TimebaseProbed(pub crate::system::TimebaseProbeEvidence);
-
-/// Post functions through esp-hal's inter-processor call: one from core 0 to
-/// itself, one from core 0 to core 1, and from that one, one from core 1 to
-/// core 0.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct CallAcrossCores;
-
-/// The core each posted function ran on, by its route; `None` for a function
-/// that did not run within the agent's deadline.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct CoresCalled {
-    pub core0_to_core0: Option<u8>,
-    pub core0_to_core1: Option<u8>,
-    pub core1_to_core0: Option<u8>,
-}
-
-/// Fire an interrupt-table source three times: silent, after its owner
-/// enables it, and after its owner disables it again.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct ProbeSourceGate;
-
-/// How many times the source's handler ran in each phase.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct SourceGated {
-    pub before_enable: u32,
-    pub enabled: u32,
-    pub after_disable: u32,
-}
-
-/// `system/memory-benchmark/run`.
-#[cfg(feature = "system")]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct RunMemoryBenchmark(pub crate::system::MemoryBenchmarkRequest);
-
-/// Correlated terminal result for one memory-copy diagnostic case.
-#[cfg(feature = "system")]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct MemoryBenchmarkCompleted(pub crate::system::MemoryBenchmarkEvidence);

@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn mpdu_spacing_rounds_exact_symbol_rates_up_to_octets() {
+    let ht = PhyRate::Ht(HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true).unwrap());
+    // 260 bits / 3.6 us, multiplied by each spacing then divided by eight.
+    for (encoding, bytes) in [0, 3, 5, 10, 19, 37, 73, 145].into_iter().enumerate() {
+        assert_eq!(ht.minimum_mpdu_spacing_bytes(encoding as u8), Some(bytes));
+    }
+    assert_eq!(ht.minimum_mpdu_spacing_bytes(8), None);
+    assert_eq!(
+        PhyRate::Legacy(LegacyRate::Ofdm54M).minimum_mpdu_spacing_bytes(0),
+        None
+    );
+    let he = PhyRate::He(
+        HeRate::new(
+            HeMcs::new(11).unwrap(),
+            SpatialStreams::new(8).unwrap(),
+            PpduBandwidth::Mhz160,
+            HeGiLtf::Ltf2xGi800Ns,
+            FecCoding::Ldpc,
+            false,
+        )
+        .unwrap(),
+    );
+    // 1960 subcarriers * 10 bits * 5/6 * 8 streams, 13.6 us symbols.
+    assert_eq!(he.minimum_mpdu_spacing_bytes(7), Some(19_216));
+}
+
+#[test]
 fn ht_rates_exist_only_at_20_and_40_mhz() {
     let mcs = HtMcs::new(7).unwrap();
     assert!(HtRate::new(mcs, PpduBandwidth::Mhz40, true).is_some());

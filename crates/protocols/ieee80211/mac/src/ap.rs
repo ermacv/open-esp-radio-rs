@@ -3,17 +3,20 @@
 //! These pure transforms form the source-owned AP protocol boundary.
 //! Association ownership, deferred
 //! queues and wakeups stay with the radio owner.
+//! Management decoding splits the fixed header and each fixed body as arrays
+//! before accessing fields; variable information elements remain borrowed slices.
 
 use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
     channel::{Band, Channel},
-    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN, plan_data_encapsulation},
+    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
     ht::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
     },
     protection::ApBssProtection,
+    qos::WmmUserPriority,
     security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     station::SAE_AUTHENTICATION_ALGORITHM,
@@ -58,7 +61,6 @@ pub enum ApDataFrameError {
     OutputTooSmall { required: usize },
 }
 
-const AMSDU_SUBFRAME_HEADER_LEN: usize = 14;
 /// Baseline HT Max A-MSDU Length selected while HT Capabilities bit 11 is
 /// clear. Every AP frame codec below is fenced to the advertised class.
 pub const AP_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
@@ -91,11 +93,10 @@ impl ApDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet,
-            7,
+            WmmUserPriority::UP7,
             false,
             false,
-        )
-        .expect("priority seven is a valid recovered queue class");
+        );
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(plan.llc_snap.len())
@@ -145,11 +146,10 @@ impl ApUnprotectedDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet_header,
-            0,
+            WmmUserPriority::UP0,
             false,
             false,
-        )
-        .expect("priority zero is valid for plaintext non-QoS data");
+        );
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -179,7 +179,7 @@ impl ApUnprotectedDataFrame<'_> {
 /// One protected Ethernet-II frame sent from an AP to its authorized peer.
 ///
 /// The caller owns the pairwise packet number. This codec merely places the
-/// supplied CCMP header in the DMA image; ESP32-S31 hardware encrypts the
+/// supplied CCMP header in the DMA image; the backend encrypts the
 /// plaintext LLC/SNAP payload and appends the MIC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApProtectedDataFrame<'frame> {
@@ -209,9 +209,8 @@ impl ApProtectedDataFrame<'_> {
         if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
             return Err(ApDataFrameError::InvalidAccessPoint);
         }
-        if self.user_priority > 7 {
-            return Err(ApDataFrameError::InvalidUserPriority);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(ApDataFrameError::InvalidUserPriority)?;
         if self.ethernet.len() < ETHERNET_HEADER_LEN {
             return Err(ApDataFrameError::EthernetFrameTooShort);
         }
@@ -225,11 +224,10 @@ impl ApProtectedDataFrame<'_> {
             self.access_point,
             self.access_point,
             ethernet_header,
-            self.user_priority,
+            priority,
             self.peer_qos,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -287,61 +285,25 @@ pub fn ap_amsdu_frame_length(
     ethernet_frames: &[&[u8]],
     protected: bool,
 ) -> Result<usize, ApDataFrameError> {
-    if ethernet_frames.is_empty() {
-        return Err(ApDataFrameError::NoAmsduFrames);
-    }
-    let mut amsdu_length = 0_usize;
-    for (index, ethernet) in ethernet_frames.iter().copied().enumerate() {
-        if ethernet.len() < ETHERNET_HEADER_LEN {
-            return Err(ApDataFrameError::EthernetFrameTooShort);
-        }
-        let msdu_length = LLC_SNAP_HEADER_LEN
-            .checked_add(ethernet.len() - ETHERNET_HEADER_LEN)
-            .ok_or(ApDataFrameError::AmsduTooLong {
-                length: usize::MAX,
-                maximum: AP_AMSDU_BASELINE_MAX_LEN,
-            })?;
-        if msdu_length > usize::from(u16::MAX) {
-            return Err(ApDataFrameError::AmsduTooLong {
-                length: msdu_length,
-                maximum: AP_AMSDU_BASELINE_MAX_LEN,
-            });
-        }
-        let subframe_length = AMSDU_SUBFRAME_HEADER_LEN.checked_add(msdu_length).ok_or(
-            ApDataFrameError::AmsduTooLong {
-                length: usize::MAX,
-                maximum: AP_AMSDU_BASELINE_MAX_LEN,
-            },
-        )?;
-        amsdu_length =
-            amsdu_length
-                .checked_add(subframe_length)
-                .ok_or(ApDataFrameError::AmsduTooLong {
-                    length: usize::MAX,
-                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
-                })?;
-        if index + 1 != ethernet_frames.len() {
-            amsdu_length = amsdu_length
-                .checked_add((4 - (subframe_length & 3)) & 3)
-                .ok_or(ApDataFrameError::AmsduTooLong {
-                    length: usize::MAX,
-                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
-                })?;
-        }
-    }
-    if amsdu_length > AP_AMSDU_BASELINE_MAX_LEN {
-        return Err(ApDataFrameError::AmsduTooLong {
-            length: amsdu_length,
+    let body = crate::encoding::AmsduBody::checked(ethernet_frames, AP_AMSDU_BASELINE_MAX_LEN)
+        .map_err(amsdu_error)?;
+    let length = body
+        .length()
+        .map_err(|length| amsdu_error(crate::encoding::AmsduError::TooLong(length)))?;
+    Ok(crate::data::IEEE80211_QOS_DATA_HEADER_LEN
+        + if protected { CCMP_HEADER_LEN } else { 0 }
+        + length)
+}
+
+fn amsdu_error(error: crate::encoding::AmsduError) -> ApDataFrameError {
+    match error {
+        crate::encoding::AmsduError::Empty => ApDataFrameError::NoAmsduFrames,
+        crate::encoding::AmsduError::ShortEthernet => ApDataFrameError::EthernetFrameTooShort,
+        crate::encoding::AmsduError::TooLong(length) => ApDataFrameError::AmsduTooLong {
+            length,
             maximum: AP_AMSDU_BASELINE_MAX_LEN,
-        });
+        },
     }
-    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
-        .checked_add(if protected { CCMP_HEADER_LEN } else { 0 })
-        .and_then(|length| length.checked_add(amsdu_length))
-        .ok_or(ApDataFrameError::AmsduTooLong {
-            length: usize::MAX,
-            maximum: AP_AMSDU_BASELINE_MAX_LEN,
-        })
 }
 
 impl ApAmsduFrame<'_> {
@@ -357,9 +319,8 @@ impl ApAmsduFrame<'_> {
         if self.peer[0] & 1 != 0 || self.peer == [0; 6] {
             return Err(ApDataFrameError::InvalidPeer);
         }
-        if self.user_priority > 7 {
-            return Err(ApDataFrameError::InvalidUserPriority);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(ApDataFrameError::InvalidUserPriority)?;
         let Some(first) = self.ethernet_frames.first().copied() else {
             return Err(ApDataFrameError::NoAmsduFrames);
         };
@@ -371,24 +332,22 @@ impl ApAmsduFrame<'_> {
                 return Err(ApDataFrameError::InvalidPeer);
             }
         }
-        let required = ap_amsdu_frame_length(self.ethernet_frames, self.ccmp_header.is_some())?;
-        if output.len() < required {
-            return Err(ApDataFrameError::OutputTooSmall { required });
-        }
+        let body =
+            crate::encoding::AmsduBody::checked(self.ethernet_frames, AP_AMSDU_BASELINE_MAX_LEN)
+                .map_err(amsdu_error)?;
 
-        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
-            .try_into()
-            .expect("A-MSDU Ethernet length validated above");
+        let Some(&first_header) = first.first_chunk::<ETHERNET_HEADER_LEN>() else {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        };
         let mut plan = plan_data_encapsulation(
             DataInterfaceRole::AccessPoint,
             self.access_point,
             self.access_point,
             first_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         if plan.header[4..10] != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
@@ -400,36 +359,16 @@ impl ApAmsduFrame<'_> {
         }
         plan.header[24] |= 0x80;
 
-        let frame = &mut output[..required];
-        frame[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]
-            .copy_from_slice(&plan.header[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]);
-        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN;
-        if let Some(ccmp_header) = self.ccmp_header {
-            frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&ccmp_header);
-            offset += CCMP_HEADER_LEN;
-        }
-        for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
-            let payload = &ethernet[ETHERNET_HEADER_LEN..];
-            let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
-            frame[offset..offset + 12].copy_from_slice(&ethernet[..12]);
-            frame[offset + 12..offset + 14].copy_from_slice(&(msdu_length as u16).to_be_bytes());
-            offset += AMSDU_SUBFRAME_HEADER_LEN;
-            frame[offset..offset + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-            frame[offset + 6..offset + 8].copy_from_slice(&ethernet[12..14]);
-            offset += LLC_SNAP_HEADER_LEN;
-            frame[offset..offset + payload.len()].copy_from_slice(payload);
-            offset += payload.len();
-            if index + 1 != self.ethernet_frames.len() {
-                let subframe_length =
-                    AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
-                let padding = (4 - (subframe_length & 3)) & 3;
-                frame[offset..offset + padding].fill(0);
-                offset += padding;
-            }
-        }
-        debug_assert_eq!(offset, required);
-        Ok(required)
+        let mut header = plan.header;
+        header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        crate::encoding::FrameParts([
+            header.as_slice(),
+            self.ccmp_header
+                .as_ref()
+                .map_or(&[], |header| header.as_slice()),
+        ])
+        .write_amsdu(body, output)
+        .map_err(|required| ApDataFrameError::OutputTooSmall { required })
     }
 }
 
@@ -445,12 +384,10 @@ impl ApProtectedDataFrame<'_> {
         if !self.peer_qos {
             return Err(ApDataFrameError::InvalidUserPriority);
         }
-        if self.user_priority > 7 || ethernet_length < ETHERNET_HEADER_LEN {
-            return Err(if self.user_priority > 7 {
-                ApDataFrameError::InvalidUserPriority
-            } else {
-                ApDataFrameError::EthernetFrameTooShort
-            });
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        if ethernet_length < ETHERNET_HEADER_LEN {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
         }
         let ethernet_end = ethernet_offset.checked_add(ethernet_length).ok_or(
             ApDataFrameError::OutputTooSmall {
@@ -462,31 +399,24 @@ impl ApProtectedDataFrame<'_> {
                 required: ethernet_end,
             });
         }
-        let destination: [u8; 6] = storage[ethernet_offset..ethernet_offset + 6]
-            .try_into()
-            .expect("six-byte Ethernet destination");
+        let Some(&ethernet_header) =
+            storage[ethernet_offset..ethernet_end].first_chunk::<ETHERNET_HEADER_LEN>()
+        else {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        };
+        let [destination @ .., _, _, _, _, _, _, _, _] = ethernet_header;
         if destination != self.peer {
             return Err(ApDataFrameError::InvalidPeer);
         }
-        let source: [u8; 6] = storage[ethernet_offset + 6..ethernet_offset + 12]
-            .try_into()
-            .expect("six-byte Ethernet source");
-        let ether_type =
-            u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
-        let mut ethernet_header = [0_u8; ETHERNET_HEADER_LEN];
-        ethernet_header[..6].copy_from_slice(&destination);
-        ethernet_header[6..12].copy_from_slice(&source);
-        ethernet_header[12..14].copy_from_slice(&ether_type.to_be_bytes());
         let mut plan = plan_data_encapsulation(
             DataInterfaceRole::AccessPoint,
             self.access_point,
             self.access_point,
             ethernet_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        );
         plan.header[1] |= 0x40;
         if self.more_data {
             plan.header[1] |= 0x20;
@@ -587,35 +517,61 @@ pub fn parse_ap_management_request<'a>(
     frame: &'a [u8],
     access_point: [u8; 6],
 ) -> Option<ApManagementRequest<'a>> {
-    if frame.len() < MANAGEMENT_HEADER_LEN {
-        return None;
-    }
-    let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
+    let (header, body) = frame.split_first_chunk::<MANAGEMENT_HEADER_LEN>()?;
+    let [
+        fc0,
+        fc1,
+        _duration0,
+        _duration1,
+        d0,
+        d1,
+        d2,
+        d3,
+        d4,
+        d5,
+        p0,
+        p1,
+        p2,
+        p3,
+        p4,
+        p5,
+        b0,
+        b1,
+        b2,
+        b3,
+        b4,
+        b5,
+        sc0,
+        _sc1,
+    ] = *header;
+    let destination = [d0, d1, d2, d3, d4, d5];
+    let peer = [p0, p1, p2, p3, p4, p5];
+    let bssid = [b0, b1, b2, b3, b4, b5];
+    let frame_control = u16::from_le_bytes([fc0, fc1]);
     if frame_control & 0x000c != 0 {
         return None;
     }
     let subtype = (frame_control >> 4) & 0x0f;
-    let peer: [u8; 6] = frame[10..16].try_into().ok()?;
     if subtype == 4 {
         if frame_control & 0x470f != 0
-            || frame[22] & 0x0f != 0
+            || sc0 & 0x0f != 0
             || peer[0] & 1 != 0
             || peer == [0; 6]
-            || (frame[4..10] != access_point && frame[4..10] != [0xff; 6])
-            || (frame[16..22] != access_point && frame[16..22] != [0xff; 6])
+            || (destination != access_point && destination != [0xff; 6])
+            || (bssid != access_point && bssid != [0xff; 6])
         {
             return None;
         }
         return Some(ApManagementRequest::Probe {
             peer,
-            ssid: probe::ssid(&frame[24..])?,
+            ssid: probe::ssid(body)?,
         });
     }
     if frame_control & 0x030f != 0
         || peer[0] & 1 != 0
         || peer == [0; 6]
-        || frame[4..10] != access_point
-        || frame[16..22] != access_point
+        || destination != access_point
+        || bssid != access_point
     {
         return None;
     }
@@ -625,14 +581,17 @@ pub fn parse_ap_management_request<'a>(
     if protected && !matches!(subtype, 10 | 12 | 13) {
         return None;
     }
-    let body_offset = MANAGEMENT_HEADER_LEN + if protected { CCMP_HEADER_LEN } else { 0 };
-    let management_body = frame.get(body_offset..)?;
+    let management_body = if protected {
+        body.split_first_chunk::<CCMP_HEADER_LEN>()?.1
+    } else {
+        body
+    };
     match subtype {
         11 => {
-            let body = frame.get(24..30)?;
-            let algorithm = u16::from_le_bytes([body[0], body[1]]);
-            let transaction = u16::from_le_bytes([body[2], body[3]]);
-            let status = u16::from_le_bytes([body[4], body[5]]);
+            let (&[a0, a1, t0, t1, s0, s1], body) = management_body.split_first_chunk()?;
+            let algorithm = u16::from_le_bytes([a0, a1]);
+            let transaction = u16::from_le_bytes([t0, t1]);
+            let status = u16::from_le_bytes([s0, s1]);
             match algorithm {
                 OPEN_SYSTEM_AUTHENTICATION_ALGORITHM => (transaction == 1 && status == 0)
                     .then_some(ApManagementRequest::OpenAuthentication { peer }),
@@ -640,15 +599,15 @@ pub fn parse_ap_management_request<'a>(
                     peer,
                     transaction,
                     status,
-                    body: &frame[30..],
+                    body,
                 }),
                 _ => None,
             }
         }
         0 => {
-            let fixed = frame.get(24..28)?;
-            let capabilities = u16::from_le_bytes([fixed[0], fixed[1]]);
-            let information_elements = frame.get(28..)?;
+            let (&[c0, c1, _listen0, _listen1], information_elements) =
+                management_body.split_first_chunk()?;
+            let capabilities = u16::from_le_bytes([c0, c1]);
             let ht_capabilities = ht_peer_capabilities(information_elements);
             Some(ApManagementRequest::Association {
                 peer,
@@ -663,8 +622,8 @@ pub fn parse_ap_management_request<'a>(
             })
         }
         10 | 12 => {
-            let body = management_body.get(..2)?;
-            let reason = u16::from_le_bytes([body[0], body[1]]);
+            let (reason, _) = management_body.split_first_chunk()?;
+            let reason = u16::from_le_bytes(*reason);
             if subtype == 10 {
                 Some(ApManagementRequest::Disassociation { peer, reason })
             } else {
@@ -944,17 +903,20 @@ pub fn write_ht_association_response_frame_for_security(
     security: ApSecurityPolicy,
     protection: ApBssProtection,
 ) -> Result<usize, ApAssociationResponseError> {
-    if output.len() < AP_ASSOCIATION_RESPONSE_LEN {
+    let (frame, _) = output
+        .split_first_chunk_mut::<AP_ASSOCIATION_RESPONSE_LEN>()
+        .ok_or(ApAssociationResponseError::OutputTooSmall {
+            required: AP_ASSOCIATION_RESPONSE_LEN,
+        })?;
+    frame.fill(0);
+    write_management_header(frame, 0x0010, access_point, peer, management_sequence);
+    let Some(body) =
+        frame[MANAGEMENT_HEADER_LEN..].first_chunk_mut::<AP_ASSOCIATION_RESPONSE_BODY_LEN>()
+    else {
         return Err(ApAssociationResponseError::OutputTooSmall {
             required: AP_ASSOCIATION_RESPONSE_LEN,
         });
-    }
-    let frame = &mut output[..AP_ASSOCIATION_RESPONSE_LEN];
-    frame.fill(0);
-    write_management_header(frame, 0x0010, access_point, peer, management_sequence);
-    let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
-        .try_into()
-        .expect("checked association response body length");
+    };
     let body_len = write_ht_association_response(
         profile,
         body,

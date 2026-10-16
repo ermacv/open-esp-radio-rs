@@ -6,9 +6,9 @@
 //! clear-channel assessment the next operation publishes. The port itself
 //! is the owner shape of [`crate::owner`].
 
-pub use oer_ieee802154_port::{CancelError, ClockError};
-pub use oer_ieee802154_port::{LifecycleCommand, LifecycleError, LifecycleEvent};
+pub use oer_radio_port::{CancelError, ClockError};
 pub use oer_radio_port::{ClockInfo, EventsLost, Poisoned, PortResult};
+pub use oer_radio_port::{LifecycleCommand, LifecycleError, LifecycleEvent};
 
 use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{

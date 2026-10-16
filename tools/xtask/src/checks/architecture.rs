@@ -112,133 +112,11 @@ pub fn run(ctx: &Checkout) -> Result<()> {
             }
         }
     }
-    for profile in chips.profiles() {
-        let Some(integration) = &profile.gate.integration else {
-            continue;
-        };
-        check_composition(ctx, profile, integration)?;
-        // The test job runs the workspace tests with default features; the
-        // composition's tests also hold without its default network.
-        process::run(
-            oer_toolchain::cargo_in(&ctx.root)
-                .args(["test", "--quiet", "--locked", "--manifest-path"])
-                .arg(ctx.root.join(&integration.manifest))
-                .arg("--no-default-features"),
-        )?;
-    }
     eprintln!(
         "driver architecture audit passed ({} production packages)",
         packages.len()
     );
     Ok(())
-}
-
-/// Hold a chip's Wi-Fi composition and its HIL runtime to their diagnostics
-/// selection: no telemetry without its overlay, diagnostics (and the PHY's
-/// registration diagnostics) exactly under driver observation.
-fn check_composition(
-    ctx: &Checkout,
-    profile: &oer_repo::chips::profile::Profile,
-    integration: &oer_repo::chips::profile::Integration,
-) -> Result<()> {
-    let manifest = ctx.root.join(&integration.manifest);
-    let target = &profile.rust_target;
-    for features in [
-        vec!["--no-default-features".into()],
-        vec![
-            "--no-default-features".into(),
-            "--features".into(),
-            "diagnostics".into(),
-        ],
-    ] {
-        let graph = cargo::metadata(ctx, &manifest, &features, Some(target), true)?;
-        forbid_features(&graph, &["cooperative-scheduler-telemetry"])?;
-    }
-    let runtime = profile.hil_agent_manifest(&ctx.root);
-    for (overlay, expected) in [(None, false), (Some("driver-observation"), true)] {
-        let graph = hil_wifi_graph(ctx, profile, overlay)?;
-        forbid_features(
-            &graph,
-            &[
-                "cooperative-scheduler-telemetry",
-                "network-scheduler-observation",
-                "task-poll-telemetry",
-                "mac-irq-diagnostics",
-            ],
-        )?;
-        if package_feature(&graph, &integration.package, "diagnostics")? != expected {
-            return Err(format!(
-                "incorrect integration diagnostics selection for HIL overlay {overlay:?}"
-            )
-            .into());
-        }
-        if package_feature(&graph, &integration.phy, "registration-diagnostics")? != expected {
-            return Err(format!(
-                "incorrect PHY registration diagnostics selection for HIL overlay {overlay:?}"
-            )
-            .into());
-        }
-        package_for_manifest(&graph.metadata, &runtime)?;
-    }
-    for (overlay, feature, expected) in [
-        ("task-residence-telemetry", "task-poll-telemetry", false),
-        ("core0-rx-cycle-telemetry", "task-poll-telemetry", true),
-        ("mac-irq-telemetry", "mac-irq-diagnostics", true),
-    ] {
-        if package_feature(
-            &hil_wifi_graph(ctx, profile, Some(overlay))?,
-            &integration.package,
-            feature,
-        )? != expected
-        {
-            return Err(format!("incorrect {feature} selection for HIL {overlay}").into());
-        }
-    }
-    Ok(())
-}
-
-fn hil_wifi_graph(
-    ctx: &Checkout,
-    profile: &oer_repo::chips::profile::Profile,
-    overlay: Option<&str>,
-) -> Result<crate::graph::Graph> {
-    let manifest = profile.hil_agent_manifest(&ctx.root);
-    let relative = manifest
-        .strip_prefix(&ctx.root)?
-        .to_string_lossy()
-        .into_owned();
-    let model = model(ctx)?;
-    let package = model
-        .owner(&relative)
-        .ok_or("the HIL runtime manifest has no package")?;
-    let profiles = &model.classification(package)?.supported_feature_profiles;
-    let base = hil_wifi_profile(profiles)?;
-    let features = overlay.map_or_else(|| base.to_owned(), |overlay| format!("{base},{overlay}"));
-    cargo::metadata(
-        ctx,
-        &manifest,
-        &[
-            "--no-default-features".into(),
-            "--features".into(),
-            features,
-        ],
-        Some(&profile.rust_target),
-        true,
-    )
-}
-
-// Wi-Fi overlays apply only to the shared Wi-Fi runtime, not the separately
-// compiled Bluetooth applications declared by the same firmware package.
-fn hil_wifi_profile(profiles: &[String]) -> Result<&str> {
-    let mut matching = profiles.iter().filter(|profile| {
-        profile
-            .split(',')
-            .any(|feature| feature == "open-radio-hil")
-    });
-    match (matching.next(), matching.next()) {
-        (Some(profile), None) => Ok(profile),
-        _ => Err("HIL runtime must declare exactly one open-radio-hil feature profile".into()),
-    }
 }
 
 /// Reject production Wi-Fi packages in a resolved Bluetooth consumer. Name
@@ -318,8 +196,6 @@ fn shared_words(ctx: &Checkout, profile: &oer_repo::chips::profile::Profile) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::hil_wifi_profile;
-
     /// A Bluetooth application package depending on `dependency`.
     fn bluetooth_graph(
         dependency: &str,
@@ -361,20 +237,5 @@ mod tests {
         let (_repository, manifest, graph) = bluetooth_graph("oer-ieee80211-sta");
         let error = super::reject_wifi_in_bluetooth(&graph, &manifest, &closed).unwrap_err();
         assert!(error.to_string().contains("oer-ieee80211-sta"), "{error}");
-    }
-
-    #[test]
-    fn wifi_overlays_select_the_explicit_profile_independently_of_order() {
-        let profiles = vec![
-            "bluetooth-secure-gatt".into(),
-            "open-radio-hil,owned-network".into(),
-            "bluetooth-gatt".into(),
-        ];
-        assert_eq!(hil_wifi_profile(&profiles).unwrap(), profiles[1]);
-        assert!(hil_wifi_profile(&profiles[..1]).is_err());
-        assert!(hil_wifi_profile(&["not-open-radio-hil".into()]).is_err());
-        let mut ambiguous = profiles;
-        ambiguous.push("open-radio-hil,another-profile".into());
-        assert!(hil_wifi_profile(&ambiguous).is_err());
     }
 }

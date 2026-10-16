@@ -4,6 +4,24 @@
 
 use crate::{MacInterruptMask, MacInterruptSetup, WifiRadioRegisters};
 
+/// The RTC calibration field after the vendor OS-interface conversion.
+/// It carries only a register value, not evidence that a clock was measured.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacRtcCalibration(u32);
+
+impl MacRtcCalibration {
+    pub const ZERO: Self = Self(0);
+
+    /// Preserve the exact truncation performed by `hal_timer_update_by_rtc`.
+    pub const fn from_osi_value(value: u32) -> Self {
+        Self(value & 0x0003_ffff)
+    }
+
+    pub const fn value(self) -> u32 {
+        self.0
+    }
+}
+
 impl WifiRadioRegisters {
     /// Apply the complete direct tail through `hal_timer_update_by_rtc`.
     ///
@@ -11,18 +29,13 @@ impl WifiRadioRegisters {
     /// offsets `0xcc..0x12a`, the complete hardware-beacon reload leaf, and
     /// complete `libpp.a[hal_tsf.o]::hal_timer_update_by_rtc`.
     ///
-    /// Returns false without touching hardware when `slow_clock_calibration`
-    /// does not fit the exact eighteen-bit field consumed by the blob.
+    /// The typed calibration fits the complete vendor field before MMIO begins.
     pub fn initialize_mac_hal_tail(
         &mut self,
         interrupts: &mut MacInterruptSetup,
         event_mask: MacInterruptMask,
-        slow_clock_calibration: u32,
-    ) -> bool {
-        if slow_clock_calibration > 0x0003_ffff {
-            return false;
-        }
-
+        slow_clock_calibration: MacRtcCalibration,
+    ) {
         crate::wifi::mac::interrupt::publish_mac_interrupt_mask(&interrupts.peripheral, event_mask);
 
         // This is deliberately a repeated edge: mac_txrx_init already set the
@@ -48,7 +61,6 @@ impl WifiRadioRegisters {
         rtc.control()
             .modify(|_, w| w.lp_clock_sync_enable().set_bit());
         rtc.slow_clock_calibration()
-            .modify(|_, w| w.value().set(slow_clock_calibration));
-        true
+            .modify(|_, w| w.value().set(slow_clock_calibration.value()));
     }
 }

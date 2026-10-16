@@ -7,11 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_link::{Result, SerialCapture, Target};
-use oer_hil_protocol::{
-    network::{Direction, Transport},
-    wifi::WifiNetworkInterface,
-};
+use oer_hil_link::{Result, SerialCapture};
+use oer_hil_protocol::network::{Direction, Transport, WifiNetworkInterface};
 
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -19,18 +16,6 @@ const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 /// The target's address once its UDP receive service is proven.
 #[derive(Clone, Copy, Debug)]
 pub struct UdpRxReady {
-    pub address: Ipv4Addr,
-}
-
-/// The target's address once its UDP transmit service is declared.
-#[derive(Clone, Copy, Debug)]
-pub struct UdpTxReady {
-    pub address: Ipv4Addr,
-}
-
-/// The target's address once its TCP service is declared.
-#[derive(Clone, Copy, Debug)]
-pub struct TcpReady {
     pub address: Ipv4Addr,
 }
 
@@ -77,13 +62,6 @@ pub(crate) fn wait_for_services(
     loop {
         let cursor = capture.event_cursor();
         capture.check_link()?;
-        // A faulted station never becomes ready: report its reason instead
-        // of a readiness timeout.
-        if interface == WifiNetworkInterface::Station
-            && let Some(fault) = capture.observed_station_fault()
-        {
-            return Err(format!("station faulted before network readiness: {fault:?}").into());
-        }
         if let Some(address) = capture.observed_protocol_ipv4(interface)
             && services.iter().all(|&(transport, direction, port)| {
                 observed_service(capture, interface, transport, direction, port)
@@ -119,81 +97,12 @@ pub fn prepare_udp_reverse_flow(
     Ok(())
 }
 
-/// Wait for a runtime-configured TCP receive service and its current IPv4
-/// address. Unlike UDP, readiness does not inject a probe connection: the
-/// target begins listening only after the session `Start` transition, and the
-/// measured host connection is the sole stream owned by that session.
-pub fn await_tcp_ready(
-    capture: &SerialCapture,
-    target: Target<'_>,
-    address_hint: Ipv4Addr,
-    port: u16,
-    direction: Direction,
-    timeout: Duration,
-) -> Result<TcpReady> {
-    let capabilities = capture.prepare_station(target, timeout)?;
-    let direction_supported = match direction {
-        Direction::Rx => capabilities.has::<oer_hil_protocol::network::Rx>(),
-        Direction::Tx => capabilities.has::<oer_hil_protocol::network::Tx>(),
-        Direction::Bidirectional => capabilities.has::<oer_hil_protocol::network::Bidirectional>(),
-    };
-    if !capabilities.has::<oer_hil_protocol::network::Tcp>() || !direction_supported {
-        return Err(format!("firmware does not advertise TCP {direction:?} capability").into());
-    }
-    if !capabilities.has::<oer_hil_protocol::network::RuntimeConfiguration>() {
-        return Err("TCP RX requires runtime sessions".into());
-    }
-    let address = wait_for_services(
-        capture,
-        WifiNetworkInterface::Station,
-        &[(Transport::Tcp, direction, port)],
-        timeout,
-    )
-    .map_err(|error| {
-        oer_hil_link::error::context(format!("TCP readiness for {address_hint}:{port}"), error)
-    })?;
-    Ok(TcpReady { address })
-}
-
-/// Provisions the station and returns only the typed `NetworkReady` address.
-pub fn await_network_ready(
-    capture: &SerialCapture,
-    target: Target<'_>,
-    timeout: Duration,
-) -> Result<Ipv4Addr> {
-    capture.prepare_station(target, timeout)?;
-    wait_for_services(capture, WifiNetworkInterface::Station, &[], timeout)
-}
-/// Wait until the target owns its IPv4 address and UDP RX service.
-///
-/// The qualification image requires a typed service-ready edge emitted only
-/// after the target consumes a negative warm-up datagram. `Arm`/`Start` then
-/// provide measured synchronization.
-pub fn await_udp_rx_ready(
-    capture: &SerialCapture,
-    target: Target<'_>,
-    address_hint: Ipv4Addr,
-    port: u16,
-    timeout: Duration,
-) -> Result<UdpRxReady> {
-    let capabilities = capture.prepare_station(target, timeout)?;
-    if !capabilities.has::<oer_hil_protocol::network::Udp>()
-        || !capabilities.has::<oer_hil_protocol::network::Rx>()
-    {
-        return Err("firmware does not advertise UDP RX capability".into());
-    }
-    if !capabilities.has::<oer_hil_protocol::network::RuntimeConfiguration>() {
-        return Err("qualification firmware requires runtime sessions".into());
-    }
-    probe_udp_rx_ready(capture, address_hint, port, timeout)
-}
-
 /// Prove the already-running UDP RX service from its current network peer.
 ///
-/// Unlike [`await_udp_rx_ready`], this does not prepare or assume the station
-/// role. AP qualification calls it only after the controlled client has joined,
-/// so the unmeasured datagram also establishes the AP-side neighbor/data path
-/// before sequence zero is admitted to a measured session.
+/// It does not prepare or assume the station role. Call it only after the
+/// controlled client has joined, so the unmeasured datagram also establishes
+/// the AP-side neighbor/data path before sequence zero is admitted to a
+/// measured session.
 pub fn probe_udp_rx_ready(
     capture: &SerialCapture,
     address_hint: Ipv4Addr,
@@ -301,31 +210,4 @@ pub fn probe_udp_rx_ready_via(
         timeout.as_secs(),
     )
     .into())
-}
-
-pub fn await_udp_tx_ready(
-    capture: &SerialCapture,
-    target: Target<'_>,
-    address_hint: Ipv4Addr,
-    timeout: Duration,
-) -> Result<UdpTxReady> {
-    let capabilities = capture.prepare_station(target, timeout)?;
-    if !capabilities.has::<oer_hil_protocol::network::Udp>()
-        || !capabilities.has::<oer_hil_protocol::network::Tx>()
-    {
-        return Err("firmware does not advertise UDP TX capability".into());
-    }
-    if !capabilities.has::<oer_hil_protocol::network::RuntimeConfiguration>() {
-        return Err("qualification firmware requires runtime sessions".into());
-    }
-    let address = wait_for_services(
-        capture,
-        WifiNetworkInterface::Station,
-        &[(Transport::Udp, Direction::Tx, 4_324)],
-        timeout,
-    )
-    .map_err(|error| {
-        oer_hil_link::error::context(format!("UDP TX readiness for {address_hint}"), error)
-    })?;
-    Ok(UdpTxReady { address })
 }

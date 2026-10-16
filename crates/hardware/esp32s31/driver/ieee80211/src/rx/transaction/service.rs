@@ -342,7 +342,8 @@ where
 
         let (frame, descriptor_replenished) = if overload_drop {
             unit.retain_for_deferred_recycle();
-            let descriptor_replenished = unit_observation.head_index == recycle_start_before_take;
+            let descriptor_replenished =
+                unit_observation.head_index == recycle_start_before_take.get();
             deferred_recycle_pending |= !descriptor_replenished;
             discarded_units = discarded_units.saturating_add(1);
             overload_discarded = overload_discarded.saturating_add(1);
@@ -359,7 +360,8 @@ where
             (None, descriptor_replenished)
         } else if let Some(error) = recoverable_discard {
             unit.retain_for_deferred_recycle();
-            let descriptor_replenished = unit_observation.head_index == recycle_start_before_take;
+            let descriptor_replenished =
+                unit_observation.head_index == recycle_start_before_take.get();
             deferred_recycle_pending |= !descriptor_replenished;
             discarded_units = discarded_units.saturating_add(1);
             if hooks.observing() {
@@ -432,8 +434,8 @@ where
                 if O::LOG_ERRORS {
                     hooks.log_recycle_refused(
                         unit_descriptor_count,
-                        ring.recycle_start(),
-                        ring.accepted_tail(),
+                        ring.recycle_start().get(),
+                        ring.accepted_tail().get(),
                         ring.observed_mask().count_ones(),
                         frozen_cursor.last_descriptor_low(),
                         frozen_cursor.next_descriptor_low(),

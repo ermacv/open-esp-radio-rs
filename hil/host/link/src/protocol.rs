@@ -13,8 +13,6 @@ pub struct Observation {
     boot_id: u64,
     capabilities: DeviceImageKeys,
     operation: OperationStatus,
-    /// None means the current target state cannot safely snapshot the stacks.
-    stack: Option<StackUsage>,
     link: LinkHealth,
 }
 
@@ -26,13 +24,11 @@ impl SerialCapture {
             .ok_or("discovery omitted the target boot identity")?;
         let oer_hil_protocol::network::Status(operation) =
             self.request(0, oer_hil_protocol::network::GetStatus, timeout)?;
-        let stack = self.inspect_stack_usage(timeout)?;
         let link = self.query_link_health(timeout)?;
         Ok(Observation {
             boot_id,
             capabilities,
             operation,
-            stack,
             link,
         })
     }
@@ -127,14 +123,6 @@ impl SerialCapture {
         Ok(DeviceImageKeys::assemble(hello, &pages)?)
     }
 
-    fn inspect_stack_usage(&self, timeout: Duration) -> Result<Option<StackUsage>> {
-        match self.call(0, oer_hil_protocol::system::GetStacks, timeout)? {
-            Ok(oer_hil_protocol::system::Stacks(stack)) => Ok(Some(stack)),
-            Err(oer_hil_protocol::base::RejectReason::InvalidState) => Ok(None),
-            Err(reason) => Err(format!("device rejected stack observation: {reason:?}").into()),
-        }
-    }
-
     /// The current image's capabilities, from its boot's Hello.
     pub fn request_image_keys(&self, timeout: Duration) -> Result<DeviceImageKeys> {
         let Some(hello) =
@@ -144,202 +132,6 @@ impl SerialCapture {
         };
         let announced = hello.decode::<Hello>().ok_or("undecodable hello")?;
         self.image_keys_of(hello.boot_id, announced, timeout)
-    }
-
-    /// Establishes the typed link and provisions this boot from host-owned
-    /// local configuration. The passphrase is never echoed by the target or
-    /// appended to the UART capture.
-    fn prepare_protocol(
-        &self,
-        target: Target<'_>,
-    ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
-        let capabilities = self.request_image_keys(PROTOCOL_READY_TIMEOUT)?;
-        let artifact_path = target.dut.startup_artifact();
-        if artifact_path.is_some() && !capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
-        {
-            return Err("firmware does not support a host-owned startup artifact".into());
-        }
-        if !capabilities.has::<oer_hil_protocol::network::DataPlanePlacement>() {
-            return Err("firmware does not support explicit data-plane placement".into());
-        }
-        let artifact_event_start = self.event_cursor();
-        if capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
-            && let Some(path) = artifact_path
-            && let Some(bytes) = crate::startup_artifact::load_if_present(path)?
-        {
-            self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
-            target.dut.journal(DutEvent::StartupArtifactUploaded {
-                path: path.display().to_string(),
-                sha256: oer_durable::sha256_bytes(&bytes),
-            });
-        }
-        if capabilities.has::<oer_hil_protocol::wifi::RuntimeInitialization>() {
-            self.initialize(target, PROTOCOL_READY_TIMEOUT)?;
-        }
-        let startup_artifact_status = if capabilities
-            .has::<oer_hil_protocol::phy::StartupArtifact>()
-            && let Some(path) = artifact_path
-        {
-            let status = self.wait_for_startup_artifact_status_after(
-                artifact_event_start,
-                STARTUP_ARTIFACT_TIMEOUT,
-            )?;
-            let bytes = self
-                .wait_for_startup_artifact_after(artifact_event_start, STARTUP_ARTIFACT_TIMEOUT)?;
-            if usize::from(status.total_length) != bytes.len() {
-                return Err(format!(
-                    "startup artifact status length {} does not match {} returned bytes",
-                    status.total_length,
-                    bytes.len()
-                )
-                .into());
-            }
-            oer_durable::atomic_write(path, &bytes).map_err(|error| {
-                format!(
-                    "cannot persist startup artifact `{}`: {error}",
-                    path.display()
-                )
-            })?;
-            target.dut.journal(DutEvent::StartupArtifactWritten {
-                path: path.display().to_string(),
-                sha256: oer_durable::sha256_bytes(&bytes),
-                disposition: format!("{:?}", status.disposition),
-            });
-            eprintln!(
-                "startup_artifact={} disposition={:?} bytes={} initialization_elapsed_us={}",
-                path.display(),
-                status.disposition,
-                bytes.len(),
-                status.initialization_elapsed_micros,
-            );
-            Some(status)
-        } else {
-            None
-        };
-        Ok((capabilities, startup_artifact_status))
-    }
-
-    fn wait_for_startup_artifact_status_after(
-        &self,
-        start: usize,
-        timeout: Duration,
-    ) -> Result<StartupArtifactStatus> {
-        let (_, oer_hil_protocol::phy::StartupArtifactReady(status)) = self
-            .wait_for_after(
-                start,
-                timeout,
-                |_, _: &oer_hil_protocol::phy::StartupArtifactReady| true,
-            )?
-            .ok_or("device did not report startup artifact initialization status")?;
-        Ok(status)
-    }
-
-    fn upload_startup_artifact(&self, bytes: &[u8], timeout: Duration) -> Result<()> {
-        for chunk in crate::startup_artifact::chunks(bytes)? {
-            match self.call(
-                0,
-                oer_hil_protocol::phy::UploadStartupArtifact(chunk),
-                timeout,
-            )? {
-                Ok(oer_hil_protocol::base::Accepted) => {}
-                Err(reason) => {
-                    return Err(format!("device rejected HIL startup artifact: {reason:?}").into());
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn wait_for_startup_artifact_after(&self, start: usize, timeout: Duration) -> Result<Vec<u8>> {
-        let deadline = crate::transport::events::deadline_after(timeout);
-        let mut cursor = start;
-        let mut assembler = crate::startup_artifact::Assembler::new();
-        loop {
-            let chunk = self
-                .wait_for_startup_artifact_chunk(&mut cursor, deadline)?
-                .ok_or("device did not return its startup artifact")?;
-            if let Some(bytes) = assembler.push(&chunk)? {
-                return Ok(bytes);
-            }
-        }
-    }
-
-    fn wait_for_startup_artifact_chunk(
-        &self,
-        cursor: &mut usize,
-        deadline: Instant,
-    ) -> Result<Option<StartupArtifactChunk>> {
-        Ok(self
-            .wait_for_cursor(
-                cursor,
-                deadline.saturating_duration_since(Instant::now()),
-                |_, _: &oer_hil_protocol::phy::StartupArtifactPart| true,
-            )?
-            .map(|(_, oer_hil_protocol::phy::StartupArtifactPart(chunk))| chunk))
-    }
-
-    fn initialize(&self, target: Target<'_>, timeout: Duration) -> Result<()> {
-        let first_event = self.event_cursor();
-        let (reply, outcome) = self.call_answered(
-            0,
-            oer_hil_protocol::wifi::Initialize(
-                target.settings.initialization(target.station.ipv4()),
-            ),
-            timeout,
-        )?;
-        if let Err(reason) = outcome {
-            return Err(format!("device rejected HIL initialization: {reason:?}").into());
-        }
-        let request_id = reply.request_id;
-        self.wait_for_after(
-            first_event,
-            timeout,
-            |message, _: &oer_hil_protocol::wifi::Initialized| message.request_id == request_id,
-        )?
-        .ok_or_else(|| "device did not complete role-neutral initialization".into())
-        .map(|_| ())
-    }
-
-    /// Establish the typed link and run role-neutral initialization,
-    /// exchanging the configured startup artifact, without starting a role.
-    pub fn prepare_startup(
-        &self,
-        target: Target<'_>,
-    ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
-        self.prepare_protocol(target)
-    }
-
-    /// Initialize and submit a real station start without assuming that an AP
-    /// exists. The caller must observe its lifecycle and terminal outcome.
-    pub fn begin_station_attempt(
-        &self,
-        target: Target<'_>,
-    ) -> Result<(DeviceImageKeys, CommandHandle)> {
-        let (capabilities, _) = self.prepare_protocol(target)?;
-        let handle = self.start_station(target)?;
-        Ok((capabilities, handle))
-    }
-
-    pub fn prepare_station(
-        &self,
-        target: Target<'_>,
-        timeout: Duration,
-    ) -> Result<DeviceImageKeys> {
-        self.prepare_station_with_startup_artifact_status(target, timeout)
-            .map(|(capabilities, _)| capabilities)
-    }
-
-    pub fn prepare_station_with_startup_artifact_status(
-        &self,
-        target: Target<'_>,
-        timeout: Duration,
-    ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
-        let (capabilities, startup_artifact_status) = self.prepare_protocol(target)?;
-        let lifecycle_cursor = self.station_lifecycle_cursor();
-        let handle = self.start_station(target)?;
-        self.wait_command::<oer_hil_protocol::wifi::RoleTransitioned>(handle, timeout)?;
-        self.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
-        Ok((capabilities, startup_artifact_status))
     }
 
     /// Sends `body` to the current boot and returns its response, or the
@@ -510,23 +302,14 @@ impl SerialCapture {
     }
 
     /// The `M` that completes the command of `handle`; the command's typed
-    /// failure (`network::Failed`, `wifi::RoleFailed`) is an error.
+    /// failure (`network::Failed`) is an error.
     pub fn wait_command<M: Message>(&self, handle: CommandHandle, timeout: Duration) -> Result<M> {
         let message = self
             .wait_for_message_after(handle.first_event, timeout, |message| {
                 handle.correlates(message)
-                    && (message.is::<M>()
-                        || message.is::<oer_hil_protocol::wifi::RoleFailed>()
-                        || message.is::<oer_hil_protocol::network::Failed>())
+                    && (message.is::<M>() || message.is::<oer_hil_protocol::network::Failed>())
             })?
             .ok_or_else(|| format!("device did not complete {} with {}", handle.path, M::PATH))?;
-        if let Some(oer_hil_protocol::wifi::RoleFailed(reason)) = message.decode() {
-            return Err(format!(
-                "{} operation {} failed: {reason:?}",
-                handle.path, handle.request_id
-            )
-            .into());
-        }
         if let Some(oer_hil_protocol::network::Failed(reason)) = message.decode() {
             return Err(format!(
                 "target operation {} ({}) failed: {reason:?}",
@@ -735,146 +518,6 @@ impl SerialCapture {
         console_shows_boot(bytes.get(mark..).unwrap_or_default())
     }
 
-    /// Submit a real station start; its role transition completes it.
-    fn start_station(&self, target: Target<'_>) -> Result<CommandHandle> {
-        self.command(
-            oer_hil_protocol::wifi::StartStation(oer_hil_protocol::wifi::StationStart {
-                credentials: target.station.credentials()?,
-                power_save: target.settings.station_power_save,
-            }),
-            PROTOCOL_READY_TIMEOUT,
-        )
-    }
-
-    pub fn wait_for_connected_station(&self, timeout: Duration) -> Result<u32> {
-        self.wait_for_connected_station_after(0, timeout)
-    }
-
-    /// Wait for a connected edge published after a caller-owned event cursor.
-    ///
-    /// Reusing the first connected event of the current boot is incorrect for
-    /// role roundtrips: the next AP epoch would then start while the preceding
-    /// station restart was still scanning. Callers that initiate a new station
-    /// epoch must snapshot [`Self::station_lifecycle_cursor`] before the start
-    /// command and use this method.
-    pub fn wait_for_connected_station_after(
-        &self,
-        first_event: usize,
-        timeout: Duration,
-    ) -> Result<u32> {
-        Ok(self
-            .wait_for_connected_station_link_after(first_event, timeout)?
-            .generation)
-    }
-
-    pub fn wait_for_connected_station_link_after(
-        &self,
-        first_event: usize,
-        timeout: Duration,
-    ) -> Result<StationConnectionObservation> {
-        let deadline = Instant::now() + timeout;
-        let mut cursor = first_event;
-        loop {
-            let event = self
-                .wait_station_lifecycle_event_optional(
-                    &mut cursor,
-                    deadline.saturating_duration_since(Instant::now()),
-                )?
-                .ok_or("device did not publish connected station readiness")?;
-            match event {
-                StationLifecycleEvent::Connected {
-                    generation,
-                    association_bandwidth_mhz,
-                    security,
-                } => {
-                    return Ok(StationConnectionObservation {
-                        generation,
-                        association_bandwidth_mhz,
-                        security,
-                        event_cursor_after: cursor,
-                    });
-                }
-                StationLifecycleEvent::AttemptFailed { .. } => {}
-                other => {
-                    return Err(format!(
-                        "station published {other:?} before the new connected frontier"
-                    )
-                    .into());
-                }
-            }
-        }
-    }
-
-    /// A lifecycle stage needs a newly published network endpoint; the last
-    /// boot-scoped address is not proof that its successor has configured IP.
-    pub fn wait_for_network_ready_after(
-        &self,
-        first_event: usize,
-        interface: WifiNetworkInterface,
-        timeout: Duration,
-    ) -> Result<Ipv4Addr> {
-        let boot_id = self
-            .latest_boot_id()
-            .ok_or("device omitted the current boot identity")?;
-        let (_, oer_hil_protocol::network::Ready(info)) = self
-            .wait_for_after(
-                first_event,
-                timeout,
-                |message, oer_hil_protocol::network::Ready(info)| {
-                    message.boot_id == boot_id
-                        && message.session_id == 0
-                        && message.request_id == 0
-                        && info.network_interface == interface
-                },
-            )?
-            .ok_or("new station stage did not publish a fresh network endpoint")?;
-        Ok(Ipv4Addr::from(info.address))
-    }
-
-    /// Cursor for reliable unsolicited station lifecycle events.
-    pub fn station_lifecycle_cursor(&self) -> usize {
-        self.event_cursor()
-    }
-
-    /// Wait for the next station lifecycle event and advance past it.
-    pub fn wait_station_lifecycle_event(
-        &self,
-        cursor: &mut usize,
-        timeout: Duration,
-    ) -> Result<StationLifecycleEvent> {
-        self.wait_station_lifecycle_event_optional(cursor, timeout)?
-            .ok_or_else(|| "device did not publish the next station lifecycle event".into())
-    }
-
-    pub fn wait_station_lifecycle_event_optional(
-        &self,
-        cursor: &mut usize,
-        timeout: Duration,
-    ) -> Result<Option<StationLifecycleEvent>> {
-        let boot_id = self
-            .latest_boot_id()
-            .ok_or("device did not publish a current HIL boot identity")?;
-        Ok(self
-            .wait_for_cursor(
-                cursor,
-                timeout,
-                |message, _: &oer_hil_protocol::wifi::StationLifecycle| {
-                    message.boot_id == boot_id && message.session_id == 0 && message.request_id == 0
-                },
-            )?
-            .map(|(_, oer_hil_protocol::wifi::StationLifecycle(event))| event))
-    }
-
-    /// The current boot's station fault; see [`station_fault_in`].
-    pub fn observed_station_fault(&self) -> Option<StationLifecycleEvent> {
-        let state = self
-            .protocol
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        station_fault_in(&state.messages)
-    }
-
     pub fn latest_boot_id(&self) -> Option<u64> {
         let state = self
             .protocol
@@ -1013,22 +656,6 @@ impl SerialCapture {
             state = next;
         }
     }
-}
-
-/// The current boot's station fault, if the station role faulted: its
-/// terminal lifecycle edge, after which no readiness can follow.
-pub fn station_fault_in(messages: &[Received]) -> Option<StationLifecycleEvent> {
-    let boot_id = latest_boot_id_in(messages)?;
-    messages
-        .iter()
-        .rev()
-        .filter(|message| message.boot_id == boot_id)
-        .find_map(|message| match message.decode() {
-            Some(oer_hil_protocol::wifi::StationLifecycle(
-                event @ StationLifecycleEvent::Faulted { .. },
-            )) if message.session_id == 0 && message.request_id == 0 => Some(event),
-            _ => None,
-        })
 }
 
 /// The boot of the newest Hello among `messages`: the boot they belong to now.

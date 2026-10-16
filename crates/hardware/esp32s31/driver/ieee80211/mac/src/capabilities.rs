@@ -27,6 +27,17 @@ use crate::{
 ///   owns PN publication and selects a hardware key;
 /// - hardware BA tables/completion registers match sequence spaces and capture
 ///   bitmaps, while `rx_ampdu` and `tx_runtime` own reorder/retention policy.
+///
+/// The station exposes one group-key slot until [#747] establishes additional
+/// receive-side key lookup. One slot cannot receive both old and new GTK IDs
+/// after replacement. The hardware helper
+/// [`crate::crypto::replace_sta_group_ccmp_with_rollback`] restores the old
+/// entry if a replacement write fails; it does not own replay state. The
+/// portable phase's replacement terminal defines that state transition.
+/// These capabilities describe hardware capacity, not an S31 backend of
+/// that phase contract, which does not exist yet.
+///
+/// [#747]: https://github.com/ermacv/open-esp-radio-rs/issues/747
 pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
     interfaces: MacInterfaceCapabilities {
         // These are implemented owner graphs, not merely address-match slots
@@ -68,6 +79,8 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // These are the slots intentionally exposed by the open STA driver,
         // not the size of the underlying hardware key table.
         station_pairwise_ccmp_slots: 1,
+        // One station group slot until #747 proves receive-side lookup for
+        // another entry. This count alone makes no rekey-ordering guarantee.
         station_group_ccmp_slots: 1,
         access_point_pairwise_ccmp_slots: 15,
         access_point_group_ccmp_slots: 1,

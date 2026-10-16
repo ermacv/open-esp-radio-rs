@@ -33,6 +33,7 @@ oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-bluetooth-hci-transport = { path = "../../../../services/bluetooth/hci/transport" }
 oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
 oer-bluetooth-runtime = { path = "../../../../runtime/bluetooth" }
+oer-radio-port = { path = "../../../../radio/port" }
 oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 embassy-futures = "0.1.2"
 critical-section = { version = "1.2.0", features = ["std"] }

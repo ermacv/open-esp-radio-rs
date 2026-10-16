@@ -45,8 +45,7 @@ status. An attachment begins at the current
 event sequence; a reset-driven qualification capture still requires the boot
 `Hello` at sequence zero. Both modes reject later sequence gaps and reboot.
 
-`network::GetStatus`, `system::GetStacks` and `base::GetLinkHealth` do not initialize the runtime
-or consume retained results. Stack queries can return `InvalidState` while
-initialization is pending or session ownership prevents a safe snapshot. A
-status observation preserves this unavailability and cumulative link counters
+`network::GetStatus` and `base::GetLinkHealth` do not initialize the runtime
+or consume retained results. A status observation preserves cumulative link
+counters
 instead of applying a new workload's acceptance criteria to previous activity.

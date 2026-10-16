@@ -1,5 +1,7 @@
 //! Link-security selection shared by station and access-point protocol code.
 
+pub mod spp;
+
 /// Data protection of one infrastructure link: what the data path, the
 /// hardware key slots and replay admission follow.
 ///
@@ -8,7 +10,6 @@
 /// exactly; there is no downgrade or mixed WPA/Open fallback. How the keys
 /// were established (PSK or SAE) is not part of the link protection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-security-open-bss
 pub enum LinkProtection {
     /// IEEE 802.11 Open System with plaintext data and no RSN element.
     Open,
@@ -109,11 +110,75 @@ pub enum GroupManagementCipher {
     BipCmac128,
 }
 
+/// Whether this association authenticates the QoS A-MSDU-present bit in CCMP.
+/// The decision is fixed once for an association. Its PTK and GTK
+/// refer to that association; keys cannot choose an independent mode.
+/// Receiving a verified MIC alone does not establish negotiated SPP.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Spp {
+    Negotiated,
+    NotNegotiated,
+}
+
+/// SPP A-MSDU capability advertised in an RSN element.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SppCapability {
+    NotCapable,
+    Capable,
+    Required,
+}
+
+/// An RSN element or capability pair cannot establish a consistent SPP mode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SppError {
+    RequiredWithoutCapability,
+    LocalRequiresSupport,
+    PeerRequiresSupport,
+    /// An interface-wide AP cannot advertise optional SPP and admit mixed modes.
+    InterfaceRequiresUniformMode,
+}
+
+impl SppCapability {
+    pub const fn from_rsn(capabilities: u16) -> Result<Self, SppError> {
+        match (
+            capabilities & rsn::RSN_CAPABILITY_SPP_AMSDU_CAPABLE != 0,
+            capabilities & rsn::RSN_CAPABILITY_SPP_AMSDU_REQUIRED != 0,
+        ) {
+            (false, false) => Ok(Self::NotCapable),
+            (true, false) => Ok(Self::Capable),
+            (true, true) => Ok(Self::Required),
+            (false, true) => Err(SppError::RequiredWithoutCapability),
+        }
+    }
+
+    pub const fn rsn_bits(self) -> u16 {
+        match self {
+            Self::NotCapable => 0,
+            Self::Capable => rsn::RSN_CAPABILITY_SPP_AMSDU_CAPABLE,
+            Self::Required => {
+                rsn::RSN_CAPABILITY_SPP_AMSDU_CAPABLE | rsn::RSN_CAPABILITY_SPP_AMSDU_REQUIRED
+            }
+        }
+    }
+
+    /// Both sides must be capable. A requirement never silently downgrades.
+    pub const fn negotiate(self, peer: Self) -> Result<Spp, SppError> {
+        match (self, peer) {
+            (Self::Required, Self::NotCapable) => Err(SppError::LocalRequiresSupport),
+            (Self::NotCapable, Self::Required) => Err(SppError::PeerRequiresSupport),
+            (Self::NotCapable, _) | (_, Self::NotCapable) => Ok(Spp::NotNegotiated),
+            _ => Ok(Spp::Negotiated),
+        }
+    }
+}
+
 /// What an RSN association negotiated: its authentication, its management
 /// frame protection and the PMKSA it resumes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RsnAssociation {
     pub akm: AssociationAkm,
+    /// Authentication of the QoS A-MSDU-present bit for every data key.
+    pub spp: Spp,
     /// The group management cipher, present exactly when the association
     /// protects its management frames.
     pub management: Option<GroupManagementCipher>,
@@ -190,6 +255,15 @@ pub const AP_WPA3_PERSONAL_RSN_ELEMENT: [u8; 28] = [
 pub const AP_SAE_H2E_RSNX_ELEMENT: [u8; 3] = [244, 1, 1 << 5];
 
 impl ApSecurityPolicy {
+    /// The current AP RSN profiles do not advertise SPP. A required peer is
+    /// refused; a merely capable peer negotiates ordinary CCMP.
+    ///
+    /// The backend's [`spp::SppScope`] determines whether a future AP profile
+    /// can admit different SPP modes on different associations.
+    pub const fn spp_capability(self) -> SppCapability {
+        SppCapability::NotCapable
+    }
+
     /// The data protection of the BSS.
     pub const fn link_protection(self) -> LinkProtection {
         match self {

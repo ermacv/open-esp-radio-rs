@@ -6,19 +6,15 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 pub enum Dependency {
     EspHal,
-    Embassy,
-    Xarxa,
 }
 
 impl Dependency {
-    pub const ALL: [Self; 3] = [Self::EspHal, Self::Embassy, Self::Xarxa];
+    pub const ALL: [Self; 1] = [Self::EspHal];
 
     /// The name the variant syntax and the source snapshot use.
     pub const fn id(self) -> &'static str {
         match self {
             Self::EspHal => "esp-hal",
-            Self::Embassy => "embassy",
-            Self::Xarxa => "xarxa",
         }
     }
 
@@ -26,8 +22,6 @@ impl Dependency {
     pub const fn root_env(self) -> &'static str {
         match self {
             Self::EspHal => "ESP_HAL_ROOT",
-            Self::Embassy => "EMBASSY_ROOT",
-            Self::Xarxa => "OPEN_RADIO_XARXA_ROOT",
         }
     }
 }
@@ -39,7 +33,7 @@ impl std::str::FromStr for Dependency {
         Self::ALL
             .into_iter()
             .find(|dependency| dependency.id() == value)
-            .ok_or_else(|| format!("`{value}` is not esp-hal, embassy or xarxa"))
+            .ok_or_else(|| format!("`{value}` is not esp-hal"))
     }
 }
 

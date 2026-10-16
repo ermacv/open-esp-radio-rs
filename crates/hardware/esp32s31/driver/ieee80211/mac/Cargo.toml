@@ -8,6 +8,8 @@ repository.workspace = true
 description = "Allocation-free source-owned ESP32-S31 Wi-Fi MAC primitives"
 
 [features]
+# Synthetic Wi-Fi observations and DMA bindings for explicit test builds.
+test-support = ["oer-esp32s31-hal/test-support", "oer-esp32s31-ieee80211-dma/test-support"]
 default = []
 large-rx-pool-48 = []
 rx-ba-window-8 = []
@@ -16,8 +18,11 @@ validation-raw-dma = ["oer-esp32s31-ieee80211-dma/validation-raw-dma"]
 validation-probes = ["oer-esp32s31-hal/validation-probes"]
 # Record the RX slot trace points into the image's installed trace.
 trace = ["oer-trace/record"]
+# Count actual RX interrupt publications for the selected diagnostic consumers.
+irq-counters = []
 
 [dependencies]
+atomic-waker = "1.1.2"
 bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
 oer-time = { path = "../../../../../time" }
 oer-memory = { path = "../../../../../memory" }
@@ -37,6 +42,14 @@ zeroize = { version = "1.9.0", default-features = false }
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }
 
+[dev-dependencies]
+oer-esp32s31-hal = { path = "../../../hal", features = ["test-support"] }
+oer-esp32s31-ieee80211-dma = { path = "../dma", features = ["test-support"] }
+
+[[test]]
+name = "mac"
+required-features = ["test-support"]
+
 [lints]
 workspace = true
 
@@ -49,3 +62,4 @@ targets = []
 layer = "hardware"
 platform = "chip"
 chip = "esp32s31"
+test-feature-sets = ["test-support"]

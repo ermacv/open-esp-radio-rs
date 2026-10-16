@@ -1,5 +1,5 @@
-//! Hardware-independent CCMP header, transmit packet numbers and receive
-//! replay ownership.
+//! Hardware-independent CCMP key material, headers, transmit packet numbers
+//! and receive replay ownership.
 //!
 //! Packet numbers are allocated above the lower-MAC port unless a backend
 //! reports `HardwareServices::PACKET_NUMBERS`; key-slot mapping and hardware
@@ -9,8 +9,18 @@
 //! frontier. A caller must prepare replay only after its per-TID BlockAck
 //! reorder release, then commit only after cryptographic authentication and
 //! peer admission.
+//!
+//! [`Ccmp128Key`] is the shared zeroizing temporal-key owner. RSN constructs
+//! it from a borrowed PTK or GTK and moves it into lower-MAC installation;
+//! software CCMP and hardware programming borrow the same owner's bytes.
 
 use core::num::NonZeroU8;
+
+mod key;
+mod replay;
+
+pub use key::Ccmp128Key;
+pub use replay::{CcmpRxProtection, CcmpRxReplayEpoch, CcmpRxReplayError};
 
 pub const CCMP_HEADER_LEN: usize = 8;
 pub const CCMP_PACKET_NUMBER_MAX: u64 = (1_u64 << 48) - 1;
@@ -86,6 +96,82 @@ impl CcmpKeyId {
 
     pub const fn header_bits(self) -> u8 {
         self.0 << 6
+    }
+}
+
+/// The two-bit wire identifier of a GTK, 0 through 3.
+///
+/// IEEE 802.11-2020, 12.7.2 (EAPOL-Key frames), defines the GTK KDE's
+/// two-bit KeyID. A GTK with ID zero does not name the pairwise key:
+/// receive selection distinguishes pairwise and group frame addressing.
+/// Hardware slot restrictions belong to the backend, separately from this
+/// wire value.
+///
+/// ```
+/// # use oer_ieee80211_mac::ccmp::GroupKeyId;
+/// assert_eq!(GroupKeyId::new(0).map(GroupKeyId::get), Some(0));
+/// assert_eq!(GroupKeyId::new(1).map(GroupKeyId::get), Some(1));
+/// assert_eq!(GroupKeyId::new(3).map(GroupKeyId::get), Some(3));
+/// assert!(GroupKeyId::new(4).is_none());
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GroupKeyId(GroupIndex);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GroupIndex {
+    Zero,
+    One,
+    Two,
+    Three,
+}
+
+impl GroupKeyId {
+    /// `key_id`, when it fits the GTK KDE's two-bit field.
+    pub const fn new(key_id: u8) -> Option<Self> {
+        match key_id {
+            0 => Some(Self(GroupIndex::Zero)),
+            1 => Some(Self(GroupIndex::One)),
+            2 => Some(Self(GroupIndex::Two)),
+            3 => Some(Self(GroupIndex::Three)),
+            _ => None,
+        }
+    }
+
+    /// The identifier.
+    pub const fn get(self) -> u8 {
+        match self.0 {
+            GroupIndex::Zero => 0,
+            GroupIndex::One => 1,
+            GroupIndex::Two => 2,
+            GroupIndex::Three => 3,
+        }
+    }
+
+    /// The identifier, as a CCMP header names it.
+    pub const fn key_id(self) -> CcmpKeyId {
+        CcmpKeyId(self.get())
+    }
+
+    /// Select the record for this wire ID, independently of hardware slots.
+    pub const fn select<T>(self, entries: &[T; 4]) -> &T {
+        let [zero, one, two, three] = entries;
+        match self.0 {
+            GroupIndex::Zero => zero,
+            GroupIndex::One => one,
+            GroupIndex::Two => two,
+            GroupIndex::Three => three,
+        }
+    }
+
+    /// Select the mutable record for this wire ID.
+    pub const fn select_mut<T>(self, entries: &mut [T; 4]) -> &mut T {
+        let [zero, one, two, three] = entries;
+        match self.0 {
+            GroupIndex::Zero => zero,
+            GroupIndex::One => one,
+            GroupIndex::Two => two,
+            GroupIndex::Three => three,
+        }
     }
 }
 
@@ -258,20 +344,31 @@ impl CcmpReplayLane {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CcmpRxReplayCandidate {
+/// A checked packet number holding its exact replay frontier exclusively.
+/// It cannot be copied, transferred to another key/association, or retained
+/// across replacement of the borrowed key state. Dropping it cancels the
+/// check without advancing the frontier.
+#[derive(Debug)]
+#[must_use = "commit before publication, or drop to cancel admission"]
+pub struct CcmpRxReplayCandidate<'a> {
+    frontier: &'a mut CcmpPacketNumber,
     lane: CcmpReplayLane,
     packet_number: CcmpPacketNumber,
-    expected_revision: u32,
 }
 
-impl CcmpRxReplayCandidate {
-    pub const fn lane(self) -> CcmpReplayLane {
+impl CcmpRxReplayCandidate<'_> {
+    /// The admitted non-QoS or TID lane.
+    pub const fn lane(&self) -> CcmpReplayLane {
         self.lane
     }
-
-    pub const fn packet_number(self) -> CcmpPacketNumber {
+    /// The already checked packet number.
+    pub const fn packet_number(&self) -> CcmpPacketNumber {
         self.packet_number
+    }
+    /// Publish once, advancing only the originally borrowed frontier.
+    /// No other check or key replacement can have made this token stale.
+    pub fn commit(self) {
+        *self.frontier = self.packet_number;
     }
 }
 
@@ -284,14 +381,12 @@ impl CcmpRxReplayCandidate {
 #[derive(Debug, Eq, PartialEq)]
 pub struct CcmpRxReplayState {
     highest: [CcmpPacketNumber; CCMP_REPLAY_LANE_COUNT],
-    revisions: [u32; CCMP_REPLAY_LANE_COUNT],
 }
 
 impl CcmpRxReplayState {
     pub const fn new(initial: CcmpPacketNumber) -> Self {
         Self {
             highest: [initial; CCMP_REPLAY_LANE_COUNT],
-            revisions: [0; CCMP_REPLAY_LANE_COUNT],
         }
     }
 
@@ -304,11 +399,14 @@ impl CcmpRxReplayState {
         }
     }
 
+    /// Check one lane and lend its frontier until commit or cancellation.
+    /// The borrow prevents replacement, removal and a second concurrent
+    /// admission; no unbound candidate or lane-revision counter is needed.
     pub fn prepare(
-        &self,
+        &mut self,
         lane: CcmpReplayLane,
         packet_number: CcmpPacketNumber,
-    ) -> Result<CcmpRxReplayCandidate, CcmpReplayError> {
+    ) -> Result<CcmpRxReplayCandidate<'_>, CcmpReplayError> {
         let index = lane.index().ok_or(CcmpReplayError::InvalidTid)?;
         let highest = self.highest[index];
         if packet_number <= highest {
@@ -318,53 +416,21 @@ impl CcmpRxReplayState {
             });
         }
         Ok(CcmpRxReplayCandidate {
+            frontier: &mut self.highest[index],
             lane,
             packet_number,
-            expected_revision: self.revisions[index],
         })
     }
 
-    pub fn commit(&mut self, candidate: CcmpRxReplayCandidate) -> Result<(), CcmpReplayError> {
-        let index = candidate.lane.index().ok_or(CcmpReplayError::InvalidTid)?;
-        if self.revisions[index] != candidate.expected_revision
-            || candidate.packet_number <= self.highest[index]
-        {
-            return Err(CcmpReplayError::StaleCandidate);
-        }
-        let revision = self.revisions[index]
-            .checked_add(1)
-            .ok_or(CcmpReplayError::RevisionExhausted)?;
-        self.highest[index] = candidate.packet_number;
-        self.revisions[index] = revision;
-        Ok(())
-    }
-
-    /// Check and advance one lane while the caller holds its unique replay
-    /// owner across both operations.
-    ///
-    /// Split prepare/commit remains required when authentication, reassembly
-    /// or publication can interleave. An already authenticated ordinary MPDU
-    /// has no such edge, so it need not construct and then revalidate a
-    /// revision-bound candidate.
+    /// Check and advance the authenticated packet number under the same
+    /// exclusive replay owner, before publishing the frame to its consumer.
     #[inline(always)]
     pub fn commit_immediate(
         &mut self,
         lane: CcmpReplayLane,
         packet_number: CcmpPacketNumber,
     ) -> Result<(), CcmpReplayError> {
-        let index = lane.index().ok_or(CcmpReplayError::InvalidTid)?;
-        let highest = self.highest[index];
-        if packet_number <= highest {
-            return Err(CcmpReplayError::Replayed {
-                packet_number,
-                highest,
-            });
-        }
-        let revision = self.revisions[index]
-            .checked_add(1)
-            .ok_or(CcmpReplayError::RevisionExhausted)?;
-        self.highest[index] = packet_number;
-        self.revisions[index] = revision;
+        self.prepare(lane, packet_number)?.commit();
         Ok(())
     }
 
@@ -389,8 +455,6 @@ pub enum CcmpReplayError {
         packet_number: CcmpPacketNumber,
         highest: CcmpPacketNumber,
     },
-    StaleCandidate,
-    RevisionExhausted,
 }
 
 pub const fn ccmp_header(low: u32, high: u32, key_id_bits: u8) -> [u8; CCMP_HEADER_LEN] {

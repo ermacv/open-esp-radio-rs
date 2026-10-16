@@ -1,8 +1,7 @@
 //! The separate host-tool workspaces — Blobray and vendor verification —
 //! and their build outputs, as every caller that builds or runs them from
 //! another workspace reaches them: the vendor scenarios and probes, the
-//! register inventory, the image pipeline's final radio target audit and the
-//! conformance check.
+//! register inventory and the conformance check.
 
 use std::{
     path::{Path, PathBuf},

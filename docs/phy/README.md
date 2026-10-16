@@ -41,11 +41,9 @@ The [qualification evaluator](../../qualification/README.md) independently
 consumes release-eligible vendor evidence and applicable sealed HIL observations,
 including explicitly reviewed transfers. It checks
 source freshness, declared capability requirements and dependencies; Blobray
-comparison alone cannot establish readiness. The current
-[Wi-Fi target](../../qualification/targets/esp32s31/wifi-sta.toml) includes cold
-registration, RF/baseband initialization and channel selection, with explicit
-remaining evidence gaps. Shared PHY consumer/lifecycle limits also appear in
-the Bluetooth and IEEE 802.15.4 qualification programs.
+comparison alone cannot establish readiness. No Wi-Fi program exists; shared
+PHY consumer/lifecycle limits appear in the Bluetooth and IEEE 802.15.4
+qualification programs.
 
 Reviewed source identities and immutable evidence retain their original
 meaning. Update the exact source contract and produce new evidence when a

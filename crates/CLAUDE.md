@@ -8,7 +8,7 @@ Production libraries, one directory per layer; the
 | `protocols/` | Sans-IO protocol state machines and the ports their drivers implement |
 | `services/` | Executor-free drivers that wait on ports and feed the state machines |
 | `hardware/` | Chip and family PAC, HAL, PHY and radio drivers |
-| `roles/` | Executor-free chip role compositions (Wi-Fi STA/AP, LE Controller) |
+| `roles/` | Executor-free chip role compositions (LE Controller, IEEE 802.15.4) |
 | `runtime/` | Executor-independent async radio execution over the `oer-time` ports |
 | `adapters/`, `composition/` | Executor, `embassy-time` and board bindings; final compositions |
 | `oer/` | The public facade; no internal package depends on it |
@@ -40,5 +40,5 @@ tests use the virtual clocks of `oer-time-virtual`.
 
 - `cargo test -p <package> <test>`; `cargo xtask check changed` before committing.
 - `cargo xtask check architecture` after a change to dependencies, features, layers or unsafe policy.
-- `cargo hil images check --class performance --type-check` to type-check an image class.
+- `cargo hil images check --class <class> --type-check` to type-check an image class.
 - `cargo xtask doc` after an API change.

@@ -45,9 +45,6 @@ async = "not-applicable"
 vendor-anchors = [
   "docs/vendor/esp32s31/ieee802154-lifecycle.md",
 ]
-hil-requirements = [
-  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
-]
 async-not-applicable = "finite-synchronous-foundation-transition"
 gaps = [
   { axis = "vendor", id = "composed-clock-reset-production-trace-not-executable" },
@@ -76,9 +73,6 @@ depends-on = [
 vendor-anchors = [
   "docs/vendor/esp32s31/ieee802154-dataplane.md",
 ]
-hil-requirements = [
-  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
-]
 async-not-applicable = "finite-synchronous-policy-transition"
 gaps = [
   { axis = "vendor", id = "static-policy-composed-trace-not-executable" },
@@ -105,9 +99,6 @@ depends-on = [
   "static-mac-policy",
 ]
 vendor-not-applicable = "masked-foundation-polled-ed-cca-has-no-esp-idf-counterpart"
-hil-requirements = [
-  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
-]
 gaps = [
   { axis = "hil", id = "cca-busy-operation-cell-missing" },
   { axis = "async", id = "public-operation-runs-the-finite-poll-budget-synchronously" },
@@ -135,9 +126,6 @@ depends-on = [
 ]
 vendor-anchors = [
   "docs/vendor/esp32s31/ieee802154-lifecycle.md",
-]
-hil-requirements = [
-  { scenario = "ieee802154-channel-energy", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "implementation", id = "shared-pll-rf-retune-and-tracking-lifetime-composition-missing" },
@@ -171,10 +159,6 @@ depends-on = [
 vendor-anchors = [
   "docs/vendor/esp32s31/ieee802154-control.md",
 ]
-hil-requirements = [
-  { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
-  { scenario = "ieee802154-route-probe", minimum-repetitions = 1 },
-]
 gaps = [
   { axis = "async", id = "bounded-async-evidence-missing" },
 ]
@@ -202,12 +186,6 @@ depends-on = [
 ]
 vendor-anchors = [
   "docs/vendor/esp32s31/ieee802154-dataplane.md",
-]
-hil-requirements = [
-  { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
-  { scenario = "ieee802154-peer-exchange", minimum-repetitions = 1 },
-  { scenario = "ieee802154-background-maintenance-vendor", minimum-repetitions = 1 },
-  { scenario = "ieee802154-live-rssi", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "async", id = "bounded-async-evidence-missing" },
@@ -653,7 +631,7 @@ section = "ieee802154-product-stacks"
 title = "Thread"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. OpenThread is built with CSL, and the radio serves its scheduled windows, delayed frames and CSL IEs. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread minimal or synchronized sleepy end device, and the `oer` facade's `openthread` feature exposes the adapter. The HIL cell `ieee802154-thread-exchange` attaches a minimal end device to a network ESP-IDF's OpenThread leads and exchanges UDP both ways, and has passed on air; this matrix does not claim a production Thread integration."
+scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. OpenThread is built with CSL, and the radio serves its scheduled windows, delayed frames and CSL IEs. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread minimal or synchronized sleepy end device, and the `oer` facade's `openthread` feature exposes the adapter. The former HIL cell `ieee802154-thread-exchange` (tag `legacy-wifi-2026-10-16`) attached a minimal end device to a network ESP-IDF's OpenThread leads and exchanged UDP both ways on air; no HIL scenario runs it now; this matrix does not claim a production Thread integration."
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"

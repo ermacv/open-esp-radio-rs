@@ -37,10 +37,15 @@ fn wpa2_rsn(record: &ScanRecord) -> SelectedRsn {
 }
 
 fn access_point_with_rsn(akms: &[[u8; 4]], capabilities: u16) -> ScanRecord {
-    let mut record = ScanRecord::EMPTY;
+    let mut record = ScanRecord::new(
+        crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()).unwrap(),
+        6,
+        -40,
+    );
     record.ssid[..4].copy_from_slice(b"test");
     record.ssid_len = 4;
-    record.bssid = BSSID;
+    record.bssid =
+        crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap()).unwrap();
     record.channel = 6;
     record.privacy = true;
     record.rsn = true;
@@ -82,8 +87,11 @@ fn append_rsn_tail(record: &mut ScanRecord, tail: &[u8]) {
 fn encodes_open_authentication_request() {
     let mut output = [0xa5; 32];
     let length = OpenAuthenticationRequest {
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
     }
     .encode(&mut output)
@@ -104,8 +112,11 @@ fn encodes_sta_action_frame_around_owned_body() {
     let mut output = [0xa5; 40];
     let length = StaManagementFrame {
         subtype: StaManagementSubtype::Action,
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         body: &body,
     }
@@ -128,8 +139,11 @@ fn encodes_protected_action_frame_with_its_ccmp_header() {
     let mut output = [0xa5; 40];
     let length = StaProtectedManagementFrame {
         subtype: StaManagementSubtype::Action,
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         ccmp_header,
         body: &body,
@@ -153,8 +167,11 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
     let mut output = [0xa5; 40];
     let length = StaManagementFrame {
         subtype: StaManagementSubtype::Deauthentication,
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x10),
         body: &reason,
     }
@@ -162,7 +179,12 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
     .unwrap();
     assert_eq!(length, 26);
     assert_eq!(
-        parse_sta_disconnect(&output[..length], LOCAL, BSSID),
+        parse_sta_disconnect(
+            &output[..length],
+            crate::address::OwnAddress::new(crate::address::IndividualAddress::new(LOCAL).unwrap()),
+            crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+                .unwrap(),
+        ),
         None,
         "the station's own Deauthentication is not addressed to it"
     );
@@ -173,8 +195,11 @@ fn a_deauthentication_carries_its_reason_plain_or_protected() {
     let ccmp_header = [5, 0, 0, 0x20, 0, 0, 0, 0];
     let length = StaProtectedManagementFrame {
         subtype: StaManagementSubtype::Deauthentication,
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x11),
         ccmp_header,
         body: &reason,
@@ -192,8 +217,11 @@ fn sae_authentication_frames_round_trip() {
     let body = [0x13, 0x00, 0xaa, 0xbb];
     let mut output = [0xa5; 40];
     let length = SaeAuthenticationFrame {
-        source: LOCAL,
-        bssid: BSSID,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         sequence_number: seq(0x123),
         transaction: SAE_COMMIT_TRANSACTION,
         status_code: 126,
@@ -240,40 +268,85 @@ fn parses_only_matching_open_authentication_response() {
 }
 
 #[test]
-fn parses_only_disconnects_from_selected_access_point() {
-    let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
-    frame[0..2].copy_from_slice(&DEAUTHENTICATION_FRAME_CONTROL.to_le_bytes());
-    frame[4..10].copy_from_slice(&LOCAL);
-    frame[10..16].copy_from_slice(&BSSID);
-    frame[16..22].copy_from_slice(&BSSID);
-    frame[24..26].copy_from_slice(&1_u16.to_le_bytes());
-    assert_eq!(
-        parse_sta_disconnect(&frame, LOCAL, BSSID),
-        Some(StaDisconnect {
-            kind: StaDisconnectKind::Deauthentication,
-            reason_code: 1,
-        })
-    );
+fn disconnect_parser_checks_receiver_bss_geometry_and_protection() {
+    use crate::address::{Bssid, IndividualAddress, OwnAddress};
+    let local = OwnAddress::new(IndividualAddress::new(LOCAL).unwrap());
+    let bssid = Bssid::new(IndividualAddress::new(BSSID).unwrap()).unwrap();
+    for (control, kind) in [
+        (
+            DEAUTHENTICATION_FRAME_CONTROL,
+            StaDisconnectKind::Deauthentication,
+        ),
+        (
+            DISASSOCIATION_FRAME_CONTROL,
+            StaDisconnectKind::Disassociation,
+        ),
+    ] {
+        let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + 2];
+        frame[..2].copy_from_slice(&control.to_le_bytes());
+        frame[4..10].copy_from_slice(&LOCAL);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..26].copy_from_slice(&7_u16.to_le_bytes());
+        let expected = Some(StaDisconnect {
+            kind,
+            reason_code: 7,
+        });
+        assert_eq!(parse_sta_disconnect(&frame, local, bssid), expected);
+        let mut broadcast = frame;
+        broadcast[4..10].fill(0xff);
+        assert_eq!(parse_sta_disconnect(&broadcast, local, bssid), expected);
+        for (offset, value) in [(4, 4), (4, 1), (10, 4), (16, 4), (22, 1)] {
+            let mut foreign = frame;
+            foreign[offset] = value;
+            assert_eq!(parse_sta_disconnect(&foreign, local, bssid), None);
+        }
+        for bits in [1, 4, 8, 0x100, 0x200, 0x400, 0x4000] {
+            let mut invalid = frame;
+            invalid[..2].copy_from_slice(&(control | bits).to_le_bytes());
+            assert_eq!(parse_sta_disconnect(&invalid, local, bssid), None);
+        }
+        for length in 0..frame.len() {
+            assert_eq!(parse_sta_disconnect(&frame[..length], local, bssid), None);
+        }
+    }
+}
 
-    frame[0..2].copy_from_slice(&DISASSOCIATION_FRAME_CONTROL.to_le_bytes());
-    frame[24..26].copy_from_slice(&8_u16.to_le_bytes());
-    assert_eq!(
-        parse_sta_disconnect(&frame, LOCAL, BSSID),
-        Some(StaDisconnect {
-            kind: StaDisconnectKind::Disassociation,
-            reason_code: 8,
-        })
+#[test]
+fn spp_negotiation_follows_both_rsn_capabilities() {
+    use crate::security::{AssociationSecurity, Spp, SppCapability, SppError};
+    for (advertised, expected) in [
+        (SppCapability::NotCapable, Spp::NotNegotiated),
+        (SppCapability::Capable, Spp::Negotiated),
+        (SppCapability::Required, Spp::Negotiated),
+    ] {
+        let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], advertised.rsn_bits());
+        let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal).unwrap();
+        let AssociationSecurity::Rsn(association) = selected.security() else {
+            panic!("personal association");
+        };
+        assert_eq!(association.spp, expected);
+        assert_eq!(
+            u16::from_le_bytes(selected.as_bytes()[20..22].try_into().unwrap()),
+            SppCapability::Capable.rsn_bits()
+        );
+    }
+    let malformed = access_point_with_rsn(
+        &[[0, 0x0f, 0xac, 2]],
+        crate::security::rsn::RSN_CAPABILITY_SPP_AMSDU_REQUIRED,
     );
-
-    assert_eq!(parse_sta_disconnect(&frame, [0; 6], BSSID), None);
-    assert_eq!(parse_sta_disconnect(&frame, LOCAL, [0; 6]), None);
     assert_eq!(
-        parse_sta_disconnect(&frame[..MANAGEMENT_HEADER_LEN + 1], LOCAL, BSSID),
-        None
+        select_association_rsn(&malformed, StaSecurityPolicy::Wpa2Personal),
+        Err(StaSecurityError::Spp(SppError::RequiredWithoutCapability))
     );
-
-    frame[0..2].copy_from_slice(&OPEN_AUTHENTICATION_FRAME_CONTROL.to_le_bytes());
-    assert_eq!(parse_sta_disconnect(&frame, LOCAL, BSSID), None);
+    assert_eq!(
+        SppCapability::NotCapable.negotiate(SppCapability::Required),
+        Err(SppError::PeerRequiresSupport)
+    );
+    assert_eq!(
+        SppCapability::Required.negotiate(SppCapability::NotCapable),
+        Err(SppError::LocalRequiresSupport)
+    );
 }
 
 #[test]
@@ -304,7 +377,7 @@ fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
 fn a_resumed_sae_association_lists_its_pmkid_before_the_rsnxe() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8]], 0xc0);
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal).unwrap();
-    let resumed = selected.with_pmkid(Pmkid([0x5a; 16]));
+    let resumed = selected.with_pmkid(Pmkid([0x5a; 16])).unwrap();
     let bytes = resumed.as_bytes();
     assert_eq!(bytes.len(), SELECTED_SECURITY_IES_CAPACITY);
     assert_eq!(&bytes[..2], &[48, 38]);
@@ -447,7 +520,9 @@ fn association_request_contains_selected_rsn() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
     let mut output = [0; 96];
     let length = AssociationRequest {
-        source: LOCAL,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
         access_point: &record,
         sequence_number: seq(2),
         listen_interval: 1,
@@ -474,7 +549,9 @@ fn ht20_request_fails_closed_when_the_ap_did_not_advertise_ht() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
     assert_eq!(
         AssociationRequest {
-            source: LOCAL,
+            source: crate::address::OwnAddress::new(
+                crate::address::IndividualAddress::new(LOCAL).unwrap()
+            ),
             access_point: &record,
             sequence_number: seq(2),
             listen_interval: 1,
@@ -497,7 +574,9 @@ fn association_encoder_uses_the_explicit_local_profile() {
     capabilities.wmm = [221, 7, 0, 0x50, 0xf2, 2, 0, 1, 0];
     let mut output = [0; 160];
     let length = AssociationRequest {
-        source: LOCAL,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(LOCAL).unwrap(),
+        ),
         access_point: &record,
         sequence_number: seq(2),
         listen_interval: 1,
@@ -526,8 +605,13 @@ fn he_ul_mu_power_rejects_a_rate_above_the_reference() {
 fn sta_data_frame_encodes_to_ds_llc_snap() {
     let mut output = [0; 64];
     let len = StaDataFrame {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(
+            crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         ether_type: 0x888e,
@@ -548,8 +632,13 @@ fn sta_data_frame_encodes_to_ds_llc_snap() {
 fn protected_data_frame_selects_the_recovered_legacy_or_qos_layout() {
     let mut output = [0; 64];
     let frame = StaProtectedDataFrame {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(
+            crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         user_priority: 7,
@@ -582,8 +671,13 @@ fn protected_data_frame_selects_the_recovered_legacy_or_qos_layout() {
 #[test]
 fn protected_data_frame_fully_overwrites_a_reused_dma_slot() {
     let frame = StaProtectedDataFrame {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(
+            crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         user_priority: 7,
@@ -616,8 +710,13 @@ fn protected_ethernet_frame_reuses_payload_at_its_final_dma_offset() {
     };
     let mut expected = [0_u8; 64];
     let expected_len = StaProtectedDataFrame {
-        source: ethernet[6..12].try_into().unwrap(),
-        bssid: metadata.bssid,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(ethernet[6..12].try_into().unwrap()).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(
+            crate::address::IndividualAddress::new(metadata.bssid).unwrap(),
+        )
+        .unwrap(),
         destination: ethernet[..6].try_into().unwrap(),
         sequence_number: metadata.sequence_number,
         user_priority: metadata.user_priority,
@@ -685,8 +784,13 @@ fn protected_ethernet_frame_reports_missing_headroom_before_mutation() {
 fn protected_he_control_keeps_ccmp_immediately_after_qos() {
     let mut output = [0xa5; 64];
     let len = StaProtectedDataFrame {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new([2, 3, 4, 5, 6, 7]).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(
+            crate::address::IndividualAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]).unwrap(),
+        )
+        .unwrap(),
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         sequence_number: seq(0x123),
         user_priority: 0,
@@ -769,44 +873,50 @@ fn protected_amsdu_pair_encodes_in_first_ethernet_allocation() {
     let second = [
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 8, 9, 10, 11, 12, 13, 0x88, 0xb5, 4, 5, 6,
     ];
-    let ethernet_frames: [&[u8]; 2] = [&first, &second];
-    let metadata = StaProtectedEthernetFrame {
-        bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-        sequence_number: seq(0x123),
-        user_priority: 7,
-        peer_qos: true,
-        ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
-    };
-    let mut expected = [0_u8; 96];
-    let expected_length = StaProtectedAmsduFrame {
-        source: [2, 3, 4, 5, 6, 7],
-        bssid: metadata.bssid,
-        sequence_number: metadata.sequence_number,
-        user_priority: metadata.user_priority,
-        ccmp_header: metadata.ccmp_header,
-        ethernet_frames: &ethernet_frames,
+    for first_length in ETHERNET_HEADER_LEN..=first.len() {
+        for second_length in ETHERNET_HEADER_LEN..=second.len() {
+            let first = &first[..first_length];
+            let second = &second[..second_length];
+            let ethernet_frames: [&[u8]; 2] = [first, second];
+            let metadata = StaProtectedEthernetFrame {
+                bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+                sequence_number: seq(0x123),
+                user_priority: 7,
+                peer_qos: true,
+                ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            };
+            let mut expected = [0_u8; 96];
+            let expected_length = StaProtectedAmsduFrame {
+                source: [2, 3, 4, 5, 6, 7],
+                bssid: metadata.bssid,
+                sequence_number: metadata.sequence_number,
+                user_priority: metadata.user_priority,
+                ccmp_header: metadata.ccmp_header,
+                ethernet_frames: &ethernet_frames,
+            }
+            .encode(&mut expected)
+            .unwrap();
+
+            const ETHERNET_OFFSET: usize = STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+            let mut storage = [0xa5_u8; 128];
+            storage[ETHERNET_OFFSET..ETHERNET_OFFSET + first.len()].copy_from_slice(first);
+            let encoded = metadata
+                .encode_amsdu_pair_in_place(&mut storage, ETHERNET_OFFSET, first.len(), second)
+                .unwrap();
+
+            assert_eq!(encoded.offset, 0);
+            assert_eq!(encoded.length, expected_length);
+            assert_eq!(
+                &storage[..encoded.length],
+                &expected[..expected_length],
+                "in-place and owned encoders must emit identical MPDUs"
+            );
+            assert!(
+                storage[encoded.length..].iter().all(|byte| *byte == 0xa5),
+                "capacity beyond the encoded MPDU remains untouched"
+            );
+        }
     }
-    .encode(&mut expected)
-    .unwrap();
-
-    const ETHERNET_OFFSET: usize = STA_PROTECTED_QOS_ETHERNET_HEADROOM;
-    let mut storage = [0xa5_u8; 128];
-    storage[ETHERNET_OFFSET..ETHERNET_OFFSET + first.len()].copy_from_slice(&first);
-    let encoded = metadata
-        .encode_amsdu_pair_in_place(&mut storage, ETHERNET_OFFSET, first.len(), &second)
-        .unwrap();
-
-    assert_eq!(encoded.offset, 0);
-    assert_eq!(encoded.length, expected_length);
-    assert_eq!(
-        &storage[..encoded.length],
-        &expected[..expected_length],
-        "in-place and owned encoders must emit identical MPDUs"
-    );
-    assert!(
-        storage[encoded.length..].iter().all(|byte| *byte == 0xa5),
-        "capacity beyond the encoded MPDU remains untouched"
-    );
 }
 
 #[test]
@@ -941,10 +1051,16 @@ fn association_response_retains_complete_wmm_parameters() {
 #[test]
 fn open_ap_needs_no_security_ie() {
     let record = ScanRecord {
-        bssid: BSSID,
+        bssid: crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+            .unwrap(),
         supported_rates: [0x82; 8],
         supported_rates_len: 1,
-        ..ScanRecord::EMPTY
+        ..ScanRecord::new(
+            crate::address::Bssid::new(crate::address::IndividualAddress::new(BSSID).unwrap())
+                .unwrap(),
+            6,
+            -40,
+        )
     };
     assert!(
         select_association_rsn(&record, StaSecurityPolicy::Open)

@@ -138,7 +138,7 @@ pub struct Variant {
 }
 
 /// A local checkout that replaces a pinned dependency, as the
-/// `ESP_HAL_ROOT`, `EMBASSY_ROOT` and `OPEN_RADIO_XARXA_ROOT` roots do.
+/// `ESP_HAL_ROOT` root does.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DependencyOverride {
@@ -174,8 +174,8 @@ mod tests {
             variant: Variant {
                 commit: String::from("abc"),
                 overrides: vec![DependencyOverride {
-                    dependency: Dependency::Xarxa,
-                    path: PathBuf::from("/src/xarxa"),
+                    dependency: Dependency::EspHal,
+                    path: PathBuf::from("/src/esp-hal"),
                     commit: String::from("ea9385e"),
                     dirty: false,
                 }],
@@ -191,7 +191,7 @@ mod tests {
         };
         let json = serde_json::to_string(&experiment).unwrap();
         assert!(json.contains(r#""arm":"b""#), "{json}");
-        assert!(json.contains(r#""dependency":"xarxa""#), "{json}");
+        assert!(json.contains(r#""dependency":"esp-hal""#), "{json}");
         assert!(json.contains(r#""phase":"measurement""#), "{json}");
         assert_eq!(
             serde_json::from_str::<Experiment>(&json).unwrap(),

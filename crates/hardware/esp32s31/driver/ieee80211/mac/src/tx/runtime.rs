@@ -5,6 +5,7 @@
 //! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
 //! those remain separate hardware/executor boundaries.
 
+use oer_ieee80211_lower_mac::TxStatus;
 use oer_ieee80211_mac::extensions::wmm::WmmParameterSet;
 use oer_ieee80211_mac::qos::{
     WmmAccessCategory, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
@@ -24,10 +25,7 @@ use crate::{
     rate::schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx::ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     tx::protection::{BssProtection, RtsLengthThreshold, WifiTxProtectionPolicy},
-    tx::{
-        HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue,
-        TxCompletionDisposition, TxPhyRate,
-    },
+    tx::{HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue, TxPhyRate},
 };
 
 const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
@@ -173,7 +171,6 @@ impl WifiTxRuntimePolicy {
     }
 
     /// Install the six-bit HE BSS color decoded from the peer's BSS Color IE.
-    // CAPABILITY: wifi-802-11ax-he-bss-coloring
     pub fn install_he_bss_color(&mut self, bss_color: u8) {
         self.he_bss_color = bss_color & 0x3f;
     }
@@ -351,10 +348,9 @@ pub struct P2pRetryRateSchedule(RateScheduleRef);
 impl P2pRetryRateSchedule {
     pub const fn new(schedule: RateScheduleRef) -> Option<Self> {
         if matches!(
-            schedule.kind,
+            schedule.kind(),
             RateScheduleKind::P2pDot11G | RateScheduleKind::P2pDot11N
-        ) && (schedule.index as usize) < schedule.kind.record_count()
-        {
+        ) {
             Some(Self(schedule))
         } else {
             None
@@ -399,6 +395,13 @@ pub enum OrdinaryRetryDecision {
     Retry {
         set_retry_bit: bool,
     },
+}
+
+/// A collision never transmitted the MPDU and cannot request its Retry bit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrdinaryCollisionDecision {
+    Complete,
+    Retry,
 }
 
 /// Vendor short/long classification used by the separate retry counters:
@@ -560,9 +563,9 @@ impl OrdinaryMpduRetryState {
     pub fn observe_completion(
         &mut self,
         policy: &mut WifiTxRuntimePolicy,
-        disposition: TxCompletionDisposition,
+        status: TxStatus,
     ) -> OrdinaryRetryDecision {
-        let step = self.retry.observe(disposition.tx_status());
+        let step = self.retry.observe(status);
         match (step.contention, step.decision) {
             (_, RetryDecision::Complete(RetryOutcome::Delivered)) => {
                 policy.record_success(self.queue);
@@ -579,8 +582,14 @@ impl OrdinaryMpduRetryState {
     }
 
     /// Apply one detached ordinary-queue collision.
-    pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        self.observe_completion(policy, TxCompletionDisposition::Collision)
+    pub fn observe_collision(
+        &mut self,
+        policy: &mut WifiTxRuntimePolicy,
+    ) -> OrdinaryCollisionDecision {
+        match self.observe_completion(policy, TxStatus::Collision) {
+            OrdinaryRetryDecision::Complete => OrdinaryCollisionDecision::Complete,
+            OrdinaryRetryDecision::Retry { .. } => OrdinaryCollisionDecision::Retry,
+        }
     }
 
     /// End ownership after a non-retryable executor or hardware error.
@@ -836,7 +845,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.validate_stamp(now)?;
         let result = if completion.tx.completes_vendor_trigger_flow() {
             AmpduAttemptResult::TriggerFlowEnd
-        } else if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
+        } else if completion.tx.tx_status() == TxStatus::CtsTimeout {
             AmpduAttemptResult::ProtectionFailure
         } else if !completion.block_ack_received {
             AmpduAttemptResult::NoResponse

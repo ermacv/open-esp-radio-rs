@@ -1,13 +1,8 @@
 #![no_main]
 #![no_std]
 #![recursion_limit = "256"]
-#[cfg(feature = "owned-network")]
-extern crate embassy_net_owned as embassy_net;
-#[cfg(all(feature = "open-radio-hil", not(feature = "owned-network")))]
-compile_error!("owned Xarxa is the only network integration: enable the owned-network feature");
 #[cfg(not(any(
     feature = "boot-smoke",
-    feature = "open-radio-hil",
     feature = "bluetooth-hil",
     feature = "bluetooth-gatt",
     feature = "bluetooth-secure-gatt",
@@ -15,7 +10,7 @@ compile_error!("owned Xarxa is the only network integration: enable the owned-ne
     feature = "system-panic-reset"
 )))]
 compile_error!(
-    "select boot-smoke, open-radio-hil, bluetooth-hil, bluetooth-gatt, bluetooth-secure-gatt, system-watchdog or system-panic-reset"
+    "select boot-smoke, bluetooth-hil, bluetooth-gatt, bluetooth-secure-gatt, system-watchdog or system-panic-reset"
 );
 #[cfg(any(
     all(feature = "bluetooth-hil", feature = "bluetooth-gatt"),
@@ -27,11 +22,7 @@ compile_error!(
 );
 #[cfg(all(
     feature = "system-watchdog",
-    any(
-        feature = "boot-smoke",
-        feature = "open-radio-hil",
-        feature = "bluetooth-radio"
-    )
+    any(feature = "boot-smoke", feature = "bluetooth-radio")
 ))]
 compile_error!("system-watchdog requires an exclusive radio-free image");
 #[cfg(all(
@@ -40,51 +31,19 @@ compile_error!("system-watchdog requires an exclusive radio-free image");
         feature = "panic-hook",
         feature = "boot-smoke",
         feature = "system-watchdog",
-        feature = "open-radio-hil",
         feature = "bluetooth-radio"
     )
 ))]
 compile_error!(
     "system-panic-reset requires an exclusive radio-free image with the product panic entry"
 );
-#[cfg(all(
-    feature = "bluetooth-radio",
-    any(feature = "boot-smoke", feature = "open-radio-hil")
-))]
+#[cfg(all(feature = "bluetooth-radio", feature = "boot-smoke"))]
 compile_error!("Bluetooth requires exclusive radio composition");
-#[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]
-compile_error!("boot-smoke and open-radio-hil are mutually exclusive scenarios");
-#[cfg(any(
-    all(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-ed-event-probe"
-    ),
-    all(
-        feature = "ieee802154-event-status-probe",
-        feature = "ieee802154-radio"
-    ),
-    all(feature = "ieee802154-ed-event-probe", feature = "ieee802154-radio"),
-    all(
-        feature = "ieee802154-route-probe",
-        any(
-            feature = "ieee802154-event-status-probe",
-            feature = "ieee802154-ed-event-probe",
-            feature = "ieee802154-radio"
-        )
-    )
-))]
-compile_error!("IEEE 802.15.4 diagnostic images are mutually exclusive");
 
-#[cfg(feature = "open-radio-hil")]
-use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
 use core::{arch::asm, ffi::CStr, ptr};
 
-#[cfg(feature = "open-radio-hil")]
-use embassy_executor::SendSpawner;
 #[cfg(feature = "boot-smoke")]
 use embassy_time::{Duration, Timer};
-#[cfg(feature = "open-radio-hil")]
-use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::{OneShotTimer, timg::TimerGroup};
 use oer_espressif_executor_embassy::Executor;
 use static_cell::StaticCell;
@@ -94,101 +53,42 @@ oer_espressif_staged_runtime::interrupt_table! {
     wake: ExecutorWake = FROM_CPU_INTR0 => oer_espressif_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
     alarm: TimeAlarm = TG0_T0_LEVEL => oer_espressif_executor_embassy::timer_interrupt, Priority1, ProCpu;
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    /// The Wi-Fi MAC's interrupt.
-    wifi_mac: WifiMac = MODEM_WIFI_MAC => oer_esp32s31_ieee80211_system::mac_interrupt, Priority1, ProCpu;
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    /// The Wi-Fi power interrupt.
-    wifi_power: WifiPower = MODEM_WIFI_PWR => oer_esp32s31_ieee80211_system::power_interrupt, Priority1, ProCpu;
-    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    #[cfg(feature = "bluetooth-radio")]
     /// The Bluetooth Controller's primary interrupt.
     bluetooth_primary: BluetoothPrimary = MODEM_BT_MAC => oer_esp32s31_radio_esp_hal::bluetooth_primary_interrupt_handler, Priority3, ProCpu;
-    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    #[cfg(feature = "bluetooth-radio")]
     /// The modem low-power timer, the Controller's deadline source.
     bluetooth_timer: BluetoothTimer = MODEM_LP_TIMER => oer_esp32s31_radio_esp_hal::bluetooth_modem_lp_timer_interrupt_handler, Priority3, ProCpu;
-    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    #[cfg(feature = "bluetooth-radio")]
     /// The Bluetooth Controller's NRT interrupt.
     bluetooth_nrt: BluetoothNrt = MODEM_BT_MAC_INT1 => oer_esp32s31_radio_esp_hal::bluetooth_nrt_default_interrupt_handler, Priority3, ProCpu;
-    #[cfg(feature = "ieee802154-radio")]
-    /// The IEEE 802.15.4 MAC's interrupt.
-    ieee802154: Ieee802154Mac = MODEM_ZB_MAC => oer_esp32s31_ieee802154_system::ieee802154_interrupt, Priority1, ProCpu;
-    #[cfg(feature = "ieee802154-route-probe")]
-    /// The IEEE 802.15.4 MAC's interrupt, to the route probe.
-    ieee802154_probe: Ieee802154Probe = MODEM_ZB_MAC => product_hil::route_probe_interrupt, Priority1, ProCpu;
-    #[cfg(any(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
-    /// AXI GDMA channel 0's inbound interrupt.
-    dma_input: DmaInput = AXI_PDMA_IN_CH0 => oer_esp32s31_soc_esp_hal::axi_gdma_mem2mem_interrupt, Priority1, ProCpu;
-    #[cfg(any(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
-    /// AXI GDMA channel 0's outbound interrupt.
-    dma_output: DmaOutput = AXI_PDMA_OUT_CH0 => oer_esp32s31_soc_esp_hal::axi_gdma_mem2mem_interrupt, Priority1, ProCpu;
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    /// The hang watchdog's period (SYSTIMER alarm 0).
-    hang_check: HangWatchdogCheck = SYSTIMER_TARGET0 => hang_watchdog::check, Priority8, ProCpu;
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    /// Core 1's sample, for the hang watchdog's and the PC profiler's
-    /// requests.
-    core1_sample: Core1Sample = FROM_CPU_INTR2 => software_interrupt::sample_core1, Priority8, AppCpu;
-    #[cfg(feature = "pc-profile")]
-    /// The PC profiler's period (SYSTIMER alarm 1).
-    profile_sample: ProfileSample = SYSTIMER_TARGET1 => pc_profile::sample_core0, Priority8, ProCpu;
-    #[cfg(feature = "interrupt-latency-probe")]
-    /// The interrupt-latency probe (#643) on the IEEE 802.15.4 doorbell's
-    /// line (#668), at the radio MAC interrupts' level on their core.
-    interrupt_latency: InterruptLatencyProbe = FROM_CPU_INTR3 => system::interrupt_latency::handler, Priority1, ProCpu;
-    #[cfg(feature = "open-radio-hil")]
-    /// Wakes the core-1 Embassy executor.
-    app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_espressif_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
     #[cfg(any(
         feature = "system-watchdog",
         feature = "system-panic-reset",
-        feature = "open-radio-hil",
         feature = "bluetooth-radio"
     ))]
     /// The USB Serial/JTAG console, to esp-hal's async driver.
     console_usb: ConsoleUsb = USB_DEVICE => esp_hal::usb::usb_serial_jtag::handle_async_interrupt, Priority1, ProCpu;
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    /// System timer alarm 2, the interrupt-table probe's source.
-    source_gate: SourceGateToken = SYSTIMER_TARGET2 => source_gate::on_alarm, Priority1, ProCpu;
 }
 
-#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+#[cfg(feature = "bluetooth-radio")]
 mod bluetooth;
-#[cfg(all(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
-compile_error!("the joint Wi-Fi/Bluetooth image runs Bluetooth as a shared-radio client");
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
-#[cfg(feature = "open-radio-hil")]
-mod console;
 mod exception;
 mod fatal;
-#[cfg(feature = "gdma-mem2mem-probe")]
-mod gdma_mem2mem_probe;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod hang_watchdog;
 #[cfg(any(
     feature = "system-watchdog",
     feature = "system-panic-reset",
-    feature = "open-radio-hil",
     feature = "bluetooth-radio"
 ))]
 mod image_features;
-#[cfg(feature = "open-radio-hil")]
-mod limits;
-#[cfg(feature = "memory-benchmark")]
-mod memory_benchmark;
-#[cfg(feature = "pc-profile")]
-mod pc_profile;
-#[cfg(feature = "open-radio-hil")]
-mod phy_fault;
 mod software_interrupt;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod source_gate;
-#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
+#[cfg(feature = "bluetooth-radio")]
 mod stack_evidence;
 #[cfg(any(
     feature = "system-watchdog",
     feature = "system-panic-reset",
-    feature = "open-radio-hil",
     feature = "bluetooth-radio"
 ))]
 mod system;
@@ -197,55 +97,21 @@ mod trace;
 #[cfg(any(
     feature = "system-watchdog",
     feature = "system-panic-reset",
-    feature = "open-radio-hil",
     feature = "bluetooth-radio"
 ))]
 mod transport;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod watchdog;
-#[cfg(all(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
-compile_error!(
-    "memory-benchmark and the startup GDMA probe require exclusive DMA channel ownership"
-);
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod phy_calibration_artifact;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod phy_calibration_projection;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod phy_tracking;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-mod product_hil;
+#[cfg(feature = "bluetooth-radio")]
 use oer_espressif_staged_runtime::stacks as psram_task_stack;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
-#[cfg(any(
-    feature = "open-radio-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt"
-))]
+#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
 const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
-#[cfg(any(
-    feature = "open-radio-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt"
-))]
+#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
 const STACK_PAINT_MARGIN_BYTES: u32 = 256;
-#[cfg(any(
-    feature = "open-radio-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt"
-))]
+#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
-#[cfg(feature = "open-radio-hil")]
-// CPU1 runs the Embassy network executor in split images. Its nested async call
-// graph needs more than 10 KiB under sustained A-MPDU traffic. All images keep
-// the same 16-KiB owner stack so runtime-selected placement cannot change the
-// executable resource graph or weaken the independently checked 4-KiB reserve.
-pub(crate) const APP_CORE_TASK_STACK_BYTES: usize = 16 * 1024;
-#[cfg(feature = "open-radio-hil")]
-const APP_CORE_BOOTSTRAP_STACK_BYTES: usize = 8 * 1024;
 
 const PROFILE_CODE_START: u32 = 0x5001_0000;
 const PROFILE_CODE_END: u32 = 0x5100_0000;
@@ -254,63 +120,6 @@ const PROFILE_DATA_END: u32 = 0x5100_0000;
 const PROFILE_NAME: &core::ffi::CStr = c"psram-code-psram-data-psram-stack";
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
-#[cfg(feature = "open-radio-hil")]
-static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
-/// Core 1's interrupt tokens, which core 0 leaves for it before starting it.
-#[cfg(feature = "open-radio-hil")]
-struct AppCoreInterrupts {
-    wake: AppExecutorWake,
-    #[cfg(not(feature = "memory-benchmark"))]
-    core1_sample: Core1Sample,
-}
-
-#[cfg(feature = "open-radio-hil")]
-static APP_INTERRUPTS: critical_section::Mutex<core::cell::RefCell<Option<AppCoreInterrupts>>> =
-    critical_section::Mutex::new(core::cell::RefCell::new(None));
-
-/// Leave core 1 its interrupt tokens. A function of its own, so that
-/// `runtime_main`'s closures keep the names the stack coverage reviews.
-#[cfg(feature = "open-radio-hil")]
-fn leave_app_core_interrupts(interrupts: AppCoreInterrupts) {
-    critical_section::with(|cs| APP_INTERRUPTS.borrow_ref_mut(cs).replace(interrupts));
-}
-// The hardware entropy source is a process-lifetime owner. Keeping it in a
-// named static prevents task cancellation or panic cleanup from trying to
-// disable the source while a nested radio future still owns `Trng`.
-#[cfg(all(feature = "open-radio-hil", not(feature = "wifi-ble-coex")))]
-static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
-// The joint image's Bluetooth client owns the same source through its entropy
-// service; the Wi-Fi readers borrow it for the process lifetime.
-#[cfg(feature = "wifi-ble-coex")]
-static BLUETOOTH_ENTROPY: StaticCell<oer_esp32s31_bluetooth_system::BluetoothEntropy<'static>> =
-    StaticCell::new();
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-static L1_CACHE_PERFORMANCE: StaticCell<oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters> =
-    StaticCell::new();
-#[cfg(feature = "open-radio-hil")]
-static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
-#[cfg(feature = "open-radio-hil")]
-static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_mut());
-#[cfg(feature = "open-radio-hil")]
-static APP_STACK_PAINT_END: AtomicU32 = AtomicU32::new(0);
-oer_memory::zeroed_static! {
-    #[cfg(feature = "open-radio-hil")]
-    static mut APP_CORE_STACK: AppCoreStack =
-        zeroed in ".critical.bss.open_radio_app_core_bootstrap_stack";
-}
-
-/// esp-hal's application-core stack in a zeroed region.
-#[cfg(feature = "open-radio-hil")]
-#[repr(transparent)]
-struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
-
-#[cfg(feature = "open-radio-hil")]
-#[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal 4fd4ba9b
-// SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
-// `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
-// for any bytes; `Stack::new` leaves it uninitialized.
-unsafe impl bytemuck::Zeroable for AppCoreStack {}
 static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
 static mut BSS_PROBE: u32 = 0;
 
@@ -370,21 +179,10 @@ fn oer_platform_panic_hook(details: &oer_espressif_staged_runtime::panic::PanicD
     // The trace keeps what happened before the panic.
     #[cfg(trace_journal)]
     oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);
-    #[cfg(any(
-        feature = "system-watchdog",
-        feature = "open-radio-hil",
-        feature = "bluetooth-radio"
-    ))]
+    #[cfg(any(feature = "system-watchdog", feature = "bluetooth-radio"))]
     system::postmortem::record_panic(details);
-    #[cfg(not(any(
-        feature = "system-watchdog",
-        feature = "open-radio-hil",
-        feature = "bluetooth-radio"
-    )))]
+    #[cfg(not(any(feature = "system-watchdog", feature = "bluetooth-radio")))]
     let _ = details;
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    let stage = product_hil::diagnostic_snapshot().0;
-    #[cfg(not(all(feature = "open-radio-hil", not(feature = "memory-benchmark"))))]
     let stage = 0;
     fatal::record_panic(stage);
 }
@@ -403,17 +201,12 @@ extern "C" fn runtime_main() -> ! {
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
     // Before anything records a checkpoint over the previous boot's record.
-    #[cfg(any(
-        feature = "system-watchdog",
-        feature = "open-radio-hil",
-        feature = "bluetooth-radio"
-    ))]
+    #[cfg(any(feature = "system-watchdog", feature = "bluetooth-radio"))]
     system::postmortem::begin();
     // Before any boot evidence is served: taking it clears the record.
     #[cfg(any(
         feature = "system-watchdog",
         feature = "system-panic-reset",
-        feature = "open-radio-hil",
         feature = "bluetooth-radio"
     ))]
     system::take_platform_panic();
@@ -426,84 +219,10 @@ extern "C" fn runtime_main() -> ! {
     let _psram =
         unsafe { oer_esp32s31_platform_board::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    let l1_cache = L1_CACHE_PERFORMANCE.init(
-        oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters::new(peripherals.CACHE),
-    );
 
     let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
-    #[cfg(feature = "ieee802154-radio")]
-    assert!(
-        oer_esp32s31_ieee802154_system::install_interrupt_route(
-            oer_esp32s31_ieee802154_system::Ieee802154InterruptSource::new(interrupts.ieee802154),
-        )
-        .is_ok(),
-        "the image installs its IEEE 802.15.4 route once"
-    );
-    #[cfg(feature = "ieee802154-route-probe")]
-    assert!(
-        oer_esp32s31_ieee802154_esp_hal::install(
-            oer_esp32s31_ieee802154_esp_hal::EspHalIeee802154Source::new(
-                interrupts.ieee802154_probe,
-            ),
-        )
-        .is_ok(),
-        "the image installs its IEEE 802.15.4 route once"
-    );
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_espressif_executor_embassy::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    {
-        let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-        hang_watchdog::start(systimer.alarm0, interrupts.hang_check);
-        #[cfg(feature = "pc-profile")]
-        pc_profile::init(systimer.alarm1, interrupts.profile_sample);
-        #[cfg(feature = "interrupt-latency-probe")]
-        system::interrupt_latency::enable(interrupts.interrupt_latency);
-        source_gate::install(OneShotTimer::new(systimer.alarm2), interrupts.source_gate);
-    }
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    let watchdog_service = watchdog::init(peripherals.TIMG1);
-
-    #[cfg(feature = "open-radio-hil")]
-    let _app_spawner = {
-        leave_app_core_interrupts(AppCoreInterrupts {
-            wake: interrupts.app_wake,
-            #[cfg(not(feature = "memory-benchmark"))]
-            core1_sample: interrupts.core1_sample,
-        });
-        let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-        let app_interrupt = software_interrupt::executor1(peripherals.FROM_CPU_INTR1);
-        let guard = cpu_control
-            .start_app_core(
-                unsafe { &mut (*ptr::addr_of_mut!(APP_CORE_STACK)).0 },
-                move || {
-                    // The ROM/ESP-HAL second-core entry requires its initial
-                    // stack in SRAM. Consume the captured zero-drop token,
-                    // abandon that bootstrap call chain, and enter the
-                    // non-returning PSRAM task-stack trampoline.
-                    let _ = app_interrupt;
-                    unsafe { psram_task_stack::enter_cpu1_task_context() }
-                },
-            )
-            .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-core-start\r\n"));
-        // The HIL runtime owns both cores until reset. Dropping this guard
-        // would park Core 1 while its Embassy executor still owns tasks.
-        core::mem::forget(guard);
-        system::ipc_call::install(esp_hal::interrupt::ipc::Ipc::new(peripherals.IPC));
-
-        loop {
-            let pointer = APP_SEND_SPAWNER_PTR.load(Ordering::Acquire);
-            if let Some(spawner) = unsafe { pointer.as_ref() } {
-                break *spawner;
-            }
-            #[allow(
-                clippy::disallowed_methods,
-                reason = "CPU0 has not entered its executor; this boot handoff waits for the CPU1 spawner publication"
-            )]
-            core::hint::spin_loop();
-        }
-    };
 
     let executor = EXECUTOR.init(Executor::<0>::new(software_interrupt::executor0(
         peripherals.FROM_CPU_INTR0,
@@ -562,140 +281,6 @@ extern "C" fn runtime_main() -> ! {
         };
         spawner.spawn(task);
     });
-
-    #[cfg(feature = "open-radio-hil")]
-    {
-        transport::init_logger();
-        use esp_hal::rng::Trng;
-        #[cfg(not(feature = "wifi-ble-coex"))]
-        let _trng_source = TRNG_SOURCE.init(esp_hal::rng::TrngSource::new(peripherals.RNG));
-        #[cfg(feature = "wifi-ble-coex")]
-        let bluetooth_entropy =
-            BLUETOOTH_ENTROPY.init(oer_esp32s31_bluetooth_system::BluetoothEntropy::new(
-                oer_esp32s31_soc_esp_hal::entropy::Entropy::new(peripherals.RNG),
-            ));
-        let trng = Trng::try_new()
-            .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
-        check_entropy_source();
-        let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
-        transport::CONSOLE.start(boot_id);
-        #[cfg(not(feature = "memory-benchmark"))]
-        let radio = product_hil::RadioPlatforms {
-            radio: oer_esp32s31_ieee80211_system::EspHalRadioPlatform::new(
-                peripherals.MODEM_SYSCON,
-                peripherals.MODEM_LPCON,
-                peripherals.HP_SYS_CLKRST,
-                peripherals.PMU,
-                peripherals.LP_AON_CLK_RST,
-                peripherals.LP_PERI,
-                peripherals.LP_TSENS,
-                peripherals.I2C_ANA_MST,
-            ),
-            wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform::new(
-                peripherals.WIFI,
-                interrupts.wifi_mac,
-                interrupts.wifi_power,
-            ),
-            #[cfg(feature = "wifi-ble-coex")]
-            bluetooth_entropy,
-            #[cfg(feature = "wifi-ble-coex")]
-            bluetooth_interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes::new(
-                interrupts.bluetooth_primary,
-                interrupts.bluetooth_timer,
-                interrupts.bluetooth_nrt,
-            ),
-        };
-        let usb = transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb);
-        executor.run(interrupts.wake, |spawner| {
-            let Ok(logger) = console::console_task(usb, boot_id) else {
-                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
-            };
-            spawner.spawn(logger);
-            let Ok(protocol) = console::protocol_task() else {
-                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
-            };
-            spawner.spawn(protocol);
-            #[cfg(trace_journal)]
-            if let Ok(hold) = trace::hold_limit_task() {
-                spawner.spawn(hold);
-            }
-            #[cfg(feature = "memory-benchmark")]
-            spawner.spawn(
-                memory_benchmark::task(oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel::new(
-                    peripherals.DMA_AXI_CH0,
-                    interrupts.dma_input,
-                    interrupts.dma_output,
-                ))
-                .unwrap_or_else(|_| {
-                    fail(c"OPEN_RADIO_HIL runtime=FAIL reason=memory-benchmark-allocation\r\n")
-                }),
-            );
-            #[cfg(not(feature = "memory-benchmark"))]
-            {
-                let Ok(hil) = open_radio_hil_task(
-                    spawner,
-                    _app_spawner,
-                    radio,
-                    trng,
-                    l1_cache,
-                    watchdog_service,
-                    #[cfg(feature = "gdma-mem2mem-probe")]
-                    oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel::new(
-                        peripherals.DMA_AXI_CH0,
-                        interrupts.dma_input,
-                        interrupts.dma_output,
-                    ),
-                ) else {
-                    fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
-                };
-                spawner.spawn(hil);
-            }
-        })
-    }
-}
-
-#[cfg(feature = "open-radio-hil")]
-fn run_app_core(
-    app_interrupt: esp_hal::interrupt::software::SoftwareInterrupt<
-        'static,
-        { software_interrupt::Line::Executor1 as u8 },
-    >,
-) -> ! {
-    unsafe {
-        psram_task_stack::install_current_hart_interrupt_stack();
-    }
-    paint_app_core_stack();
-    let interrupts = critical_section::with(|cs| APP_INTERRUPTS.borrow_ref_mut(cs).take())
-        .expect("core 0 leaves core 1 its interrupt tokens");
-    #[cfg(not(feature = "memory-benchmark"))]
-    software_interrupt::enable_core1_sample(interrupts.core1_sample);
-    // SAFETY: Core 1 enters directly from ROM rather than through
-    // `_runtime_start` with MIE clear; its per-hart vector state and stack
-    // ownership are complete, so hand interrupt enable to its executor.
-    unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
-    APP_EXECUTOR
-        .init(Executor::<1>::new(app_interrupt))
-        .run(interrupts.wake, |spawner| {
-            spawner.spawn(stack_evidence::cpu1_sampler().expect("CPU1 stack sampler allocation"));
-            #[cfg(not(feature = "memory-benchmark"))]
-            {
-                let Ok(network) = product_hil::secondary_network_task(spawner) else {
-                    fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
-                };
-                spawner.spawn(network);
-            }
-            let send_spawner = APP_SEND_SPAWNER.init(spawner.make_send());
-            APP_SEND_SPAWNER_PTR.store(send_spawner, Ordering::Release);
-        })
-}
-
-#[cfg(feature = "open-radio-hil")]
-#[unsafe(no_mangle)]
-extern "C" fn runtime_cpu1_psram_main() -> ! {
-    // The original singleton was consumed and forgotten by the bootstrap
-    // closure immediately before the non-returning stack switch.
-    let app_interrupt = software_interrupt::executor1_after_stack_switch();
-    run_app_core(app_interrupt)
 }
 
 #[cfg(feature = "boot-smoke")]
@@ -707,27 +292,6 @@ async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
     loop {
         Timer::after(Duration::from_secs(60)).await;
     }
-}
-
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-#[embassy_executor::task]
-#[allow(
-    large_assignments,
-    reason = "the top-level HIL owner graph is moved once into its static Embassy task arena; runtime stack placement, the linked-image stack gate and runtime painting remain authoritative"
-)]
-async fn open_radio_hil_task(
-    spawner: embassy_executor::Spawner,
-    protocol_spawner: SendSpawner,
-    radio: product_hil::RadioPlatforms,
-    trng: esp_hal::rng::Trng,
-    l1_cache: &'static oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters,
-    watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
-    #[cfg(feature = "gdma-mem2mem-probe")]
-    gdma_channel: oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel<'static>,
-) {
-    #[cfg(feature = "gdma-mem2mem-probe")]
-    gdma_mem2mem_probe::run(gdma_channel).await;
-    product_hil::run(spawner, protocol_spawner, radio, trng, l1_cache, watchdog).await;
 }
 
 fn validate_runtime_layout() {
@@ -814,52 +378,7 @@ fn current_stack_pointer() -> u32 {
     value as u32
 }
 
-#[cfg(feature = "open-radio-hil")]
-fn paint_app_core_stack() {
-    let bottom = psram_task_stack::cpu1_task_stack_bottom();
-    let paint_start = bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
-    let paint_end = current_stack_pointer().saturating_sub(STACK_PAINT_MARGIN_BYTES);
-    let maximum_end = bottom + APP_CORE_TASK_STACK_BYTES as u32;
-    if paint_end <= paint_start || paint_end > maximum_end {
-        fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-stack-layout\r\n");
-    }
-    let mut address = paint_start;
-    while address < paint_end {
-        unsafe { (address as usize as *mut u32).write_volatile(STACK_PAINT_WORD) };
-        address += 4;
-    }
-    APP_STACK_PAINT_END.store(paint_end, Ordering::Release);
-    exception::install_stack_guard(bottom as usize);
-}
-
-#[cfg(feature = "open-radio-hil")]
-pub(crate) async fn stack_usage_snapshot() -> oer_hil_protocol::system::StackUsage {
-    let (cpu1, cpu1_irq) = stack_evidence::cpu1_snapshot().await;
-    oer_hil_protocol::system::StackUsage {
-        cpu0: cpu0_stack_usage_snapshot(),
-        cpu1,
-        cpu0_irq: stack_evidence::current_irq_snapshot(),
-        cpu1_irq,
-    }
-}
-
-#[cfg(feature = "open-radio-hil")]
-pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::system::StackWatermark {
-    let bottom = psram_task_stack::cpu1_task_stack_bottom();
-    measure_stack(
-        bottom,
-        bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES,
-        APP_STACK_PAINT_END.load(Ordering::Acquire),
-        bottom + APP_CORE_TASK_STACK_BYTES as u32,
-        stack_minimum_free_bytes(1),
-    )
-}
-
-#[cfg(any(
-    feature = "open-radio-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt"
-))]
+#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
 pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::system::StackWatermark {
     let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
     let cpu0_top = symbol(ptr::addr_of!(_stack_start));
@@ -875,11 +394,7 @@ pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::system::StackWate
     )
 }
 
-#[cfg(any(
-    feature = "open-radio-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt"
-))]
+#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
 fn measure_stack(
     bottom: u32,
     paint_start: u32,
@@ -908,11 +423,7 @@ fn measure_stack(
     }
 }
 
-#[cfg(any(
-    feature = "open-radio-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt"
-))]
+#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
 fn stack_minimum_free_bytes(cpu: u8) -> u32 {
     let value = match cpu {
         0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),
@@ -925,8 +436,8 @@ fn stack_minimum_free_bytes(cpu: u8) -> u32 {
         .expect("stack headroom policy must be an unsigned byte count")
 }
 
-/// Halt the image unless the TRNG produces health-tested entropy: Wi-Fi and
-/// Thread keys and nonces come from it.
+/// Halt the image unless the TRNG produces health-tested entropy.
+#[cfg(feature = "system-watchdog")]
 pub(crate) fn check_entropy_source() {
     if oer_esp32s31_soc_esp_hal::entropy::source_status().is_healthy() {
         print(c"OPEN_RADIO_HIL entropy=PASS\r\n");

@@ -7,47 +7,8 @@ use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
 
 use crate::{
     capabilities::PhyFormatSet,
-    control::{VifId, VifRoleSet},
-    tx::TxBody,
+    control::{VifRole, VifRoleSet},
 };
-
-/// Memory for the MPDUs of one A-MPDU, lent by the backend.
-///
-/// The caller appends the MPDUs in transmission order, each without FCS;
-/// the backend adds delimiters and padding. It is released when the
-/// attempt's completion is reported, as a [`TxBuffer`](crate::TxBuffer) is;
-/// the bodies it holds stay with the backend until the attempt's completion
-/// event carries them back by subframe
-/// ([`LowerMacEvents::into_completed`](crate::LowerMacEvents::into_completed)). A buffer released
-/// unsubmitted drops its bodies.
-pub trait AmpduBuffer {
-    /// The owner of an MPDU's body.
-    type Body: TxBody;
-
-    /// Append one MPDU of `len` bytes that ends with `body`, which the
-    /// buffer takes, and return its octets before the body for writing; the
-    /// body back when the buffer cannot hold another MPDU of that length or
-    /// the body is longer than the MPDU.
-    fn push_mpdu(
-        &mut self,
-        len: usize,
-        body: Option<Self::Body>,
-    ) -> Result<&mut [u8], Option<Self::Body>>;
-
-    /// The MPDUs appended so far.
-    fn subframes(&self) -> usize;
-}
-
-/// The payload of one A-MPDU attempt, answered by a BlockAck.
-#[derive(Debug, Eq, PartialEq)]
-pub struct AmpduPayload<A> {
-    pub subframes: A,
-    /// The traffic identifier all subframes share.
-    pub tid: u8,
-    /// The recipient's Minimum MPDU Start Spacing, the IEEE encoding 0-7 of
-    /// its HT Capabilities A-MPDU Parameters.
-    pub min_mpdu_start_spacing: u8,
-}
 
 /// The limits of A-MPDU attempts.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -55,7 +16,7 @@ pub struct AmpduCapabilities {
     /// Subframes of one A-MPDU attempt.
     pub max_subframes: u16,
     /// The PPDU formats an A-MPDU attempt is sent in; an attempt at a rate
-    /// of another format is refused as `Unsupported`.
+    /// of another format has no checked aggregate rate.
     pub formats: PhyFormatSet,
     /// The longest A-MPDU in octets, delimiters and padding included, that
     /// the backend sends at every rate of `formats`. The recipient's own
@@ -66,34 +27,38 @@ pub struct AmpduCapabilities {
     pub max_length: u32,
 }
 
-/// One A-MPDU attempt.
-pub type AmpduAttempt<A> = crate::TxAttempt<AmpduPayload<A>>;
-
 /// A value of one interface's TSF. Two interfaces count different TSFs (a
 /// station follows its access point's, an access point keeps its own), so
 /// arithmetic between values of different interfaces is an error.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct VifTsf {
-    pub vif: VifId,
+    /// The interface whose TSF this value belongs to.
+    pub vif: VifRole,
+    /// The reading in that interface's TSF epoch.
     pub at: TsfInstant,
 }
 
 /// Two TSF values of different interfaces were combined.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TsfVifMismatch {
-    pub left: VifId,
-    pub right: VifId,
+    /// The interface of the left-hand operand.
+    pub left: VifRole,
+    /// The interface of the right-hand operand.
+    pub right: VifRole,
 }
 
 /// Failure of arithmetic between interface-scoped TSF values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TsfArithmeticError {
+    /// The operands refer to different interfaces.
     VifMismatch(TsfVifMismatch),
+    /// The purported earlier value lies after the later one.
     ReversedTime,
 }
 
 impl VifTsf {
-    pub const fn new(vif: VifId, at: TsfInstant) -> Self {
+    /// Associate a TSF reading with its interface.
+    pub const fn new(vif: VifRole, at: TsfInstant) -> Self {
         Self { vif, at }
     }
 
@@ -111,7 +76,7 @@ impl VifTsf {
         self,
         earlier: Self,
     ) -> Result<TsfDuration, TsfArithmeticError> {
-        if self.vif.0 != earlier.vif.0 {
+        if self.vif as u8 != earlier.vif as u8 {
             return Err(TsfArithmeticError::VifMismatch(TsfVifMismatch {
                 left: self.vif,
                 right: earlier.vif,
@@ -122,18 +87,6 @@ impl VifTsf {
             None => Err(TsfArithmeticError::ReversedTime),
         }
     }
-}
-
-/// When the backend reports target beacon transmission times.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TbttSchedule {
-    /// A target beacon transmission time of the schedule, in the TSF of the
-    /// interface the schedule is for.
-    pub next: VifTsf,
-    /// The beacon interval ([`time_units`](oer_ieee80211_mac::tsf::time_units) of the beacon's interval field).
-    pub beacon_interval: TsfDuration,
-    /// How long before each TBTT its event is reported.
-    pub lead: TsfDuration,
 }
 
 /// One target beacon transmission time of an interface's schedule.
@@ -162,6 +115,7 @@ pub const TSF_DRIFT_PPM: u32 = 200;
 /// of the radio clock itself (its stamp's generation).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TsfSample {
+    /// The interface's TSF reading beside `local`.
     pub tsf: VifTsf,
     /// The port's radio clock beside it.
     pub local: crate::Ieee80211Stamp,
@@ -214,7 +168,9 @@ pub enum TsfSetKind {
 /// A TSF set could not establish a representable timing relation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TsfTimingError {
+    /// An elapsed span could not order its current and earlier samples.
     ReversedTime,
+    /// Drift plus sample uncertainty exceeds the TSF duration range.
     ToleranceOverflow,
 }
 
@@ -246,8 +202,10 @@ impl TsfRelation {
     /// without breaking the relation.
     pub fn tolerance(&self, elapsed: TsfDuration) -> Result<TsfDuration, TsfTimingError> {
         // The product of a u64 span and the fixed ppm coefficient fits u128.
-        let drift =
-            (u128::from(elapsed.as_micros()) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
+        let drift = u128::from(elapsed.as_micros())
+            .checked_mul(u128::from(TSF_DRIFT_PPM))
+            .ok_or(TsfTimingError::ToleranceOverflow)?
+            .div_ceil(1_000_000);
         let drift = u64::try_from(drift).map_err(|_| TsfTimingError::ToleranceOverflow)?;
         TsfDuration::from_micros(drift)
             .checked_add(self.sample_uncertainty)
@@ -345,7 +303,7 @@ impl TsfSample {
         >,
         TsfVifMismatch,
     > {
-        if tsf.vif.0 != self.tsf.vif.0 {
+        if tsf.vif as u8 != self.tsf.vif as u8 {
             return Err(TsfVifMismatch {
                 left: tsf.vif,
                 right: self.tsf.vif,

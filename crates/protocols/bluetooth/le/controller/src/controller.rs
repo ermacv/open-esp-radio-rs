@@ -883,7 +883,7 @@ impl<'r, K: LeCapabilities, const OUTPUT: usize, const CONNECTIONS: usize>
                 let previous = self.advertising;
                 self.advertising.configure(command);
                 match self.advertising_request() {
-                    Ok(request) => match self.advertiser.update::<K>(request) {
+                    Ok(request) => match self.advertiser.update(request) {
                         Ok(()) => self.pending = Some(Pending::Advertising(opcode)),
                         Err(error) => {
                             self.advertising = previous;
@@ -1417,11 +1417,6 @@ fn unplaced_work<'a, K: LeCapabilities>(
     unplaced: Unplaced,
     role: R,
 ) -> Result<Option<RadioWork<'a, K>>, EpochExhausted> {
-    debug_assert_ne!(
-        unplaced,
-        Unplaced::Unsupported,
-        "a planned value is supported"
-    );
     match unplaced {
         Unplaced::OutsideEpoch => Err(EpochExhausted::at(role, O::Event, C::Reservation)),
         Unplaced::Unsupported | Unplaced::BeyondHorizon => Ok(None),

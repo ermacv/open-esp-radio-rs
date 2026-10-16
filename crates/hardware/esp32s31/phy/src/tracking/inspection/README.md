@@ -67,8 +67,8 @@ Cold initialization and reset/wakeup replay are separate lifecycle operations.
 | Class TX recalibration | Selected TX reference delta, reevaluated after common work | Frequency/forced gain/TX-RX changes, measurement and restoration |
 
 Fewer writes or a conditional gain calculation do not constitute a measured
-fast RF-safe operation. In the connected Wi-Fi composition, all selected
-hardware children retain the same exclusive access. A child completion or an
+fast RF-safe operation. All selected hardware children retain the same
+exclusive access. A child completion or an
 async Pending return is not a resumable protocol checkpoint. Hardware coex
 timer control does not supply a joint-protocol maintenance grant.
 

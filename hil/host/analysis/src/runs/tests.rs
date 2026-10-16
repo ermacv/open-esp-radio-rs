@@ -36,7 +36,7 @@ pub(crate) fn bundle(runs: &Path, id: &str, started: u64, passed: bool, replay: 
     let failure = failed.then(|| Failure::new(FailureKind::Scenario, "burst missing"));
     let scenario = ScenarioResult::from_repetitions(
         "s".into(),
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         1,
         vec![repetition("s", 1, outcome, failure, vec![rate])],
     );
@@ -56,8 +56,8 @@ pub(crate) fn bundle(runs: &Path, id: &str, started: u64, passed: bool, replay: 
             manifest.repository.commit = "0123456789abcdef".into();
             manifest.firmware.push(
                 serde_json::from_value::<FirmwareArtifact>(serde_json::json!({
-                    "image": "correctness",
-                    "application_path": "firmware/correctness/application.bin",
+                    "image": "bluetooth-gatt",
+                    "application_path": "firmware/bluetooth-gatt/application.bin",
                     "application_size_bytes": 1,
                     "application_sha256": "aabbccddeeff",
                     "runtime_elf_sha256": "01",
@@ -75,7 +75,7 @@ pub(crate) fn bundle(runs: &Path, id: &str, started: u64, passed: bool, replay: 
                 selection: "s".into(),
                 firmware: Some(PlannedFirmware::Replay {
                     source_run_id: source.into(),
-                    image: ImageClass::Correctness,
+                    image: ImageClass::BluetoothGatt,
                     build_id: None,
                     application_sha256: "aabbccddeeff".into(),
                 }),
@@ -139,7 +139,7 @@ fn runs_are_found_explained_and_compared() {
     assert_eq!(runs.iter().filter(|run| filter.matches(run)).count(), 1);
     assert!(
         !Filter {
-            image: Some("performance".into()),
+            image: Some("bluetooth-secure-gatt".into()),
             ..Filter::default()
         }
         .matches(&runs[0])
@@ -184,7 +184,7 @@ fn runs_are_found_explained_and_compared() {
         shown.contains(&format!("  directory: {}\n", run.display())),
         "{shown}"
     );
-    assert!(shown.contains("  s [correctness]: failed\n"), "{shown}");
+    assert!(shown.contains("  s [bluetooth-gatt]: failed\n"), "{shown}");
     assert!(
         shown.contains(&format!(
             "    repetition 1: failed {}\n",
@@ -250,7 +250,7 @@ fn runs_compare_judges_repetitions_with_the_one_noise_aware_comparison() {
             RunState::Completed,
             vec![ScenarioResult::from_repetitions(
                 "s".into(),
-                ImageClass::Performance,
+                ImageClass::BluetoothSecureGatt,
                 values.len() as u8,
                 repetitions,
             )],
@@ -451,7 +451,7 @@ fn why_shows_the_failure_that_blocked_a_scenario_before_any_repetition() {
         RunState::Completed,
         vec![ScenarioResult::blocked(
             "coex".into(),
-            ImageClass::WifiBleCoex,
+            ImageClass::BluetoothDtm,
             1,
             Failure::new(
                 FailureKind::ImageBuild,

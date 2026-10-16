@@ -30,7 +30,7 @@ hil/
 │   ├── image-class/   image classes and the keys each serves
 │   ├── source-snapshot/ source snapshots builds and runs are made from
 │   ├── board/         board I/O: ports, the flash writer, starts, resets, OpenOCD, power, consoles
-│   ├── family/        one radio family's scenarios and workload each; Wi-Fi fixtures and evidence
+│   ├── family/        one radio family's scenarios and workload each; the Wi-Fi fixtures
 │   ├── arbiter/       leases, claims, balances, lock files, job tickets, the board journal
 │   ├── fixture/       finite Linux helpers and their contract
 │   ├── fixture-install/ root-executed fixture installation
@@ -122,12 +122,6 @@ and resolves only that board, so an absent board, or one whose chip has no
 profile yet, fails only the runs that take it. With several candidates of the
 chip, `--board ID` names one, until the stand's scheduler assigns boards.
 
-Multi-boot station lifecycle scenarios require the board's
-`startup-artifact`.
-Their first boot may create or replace it; every later boot must report
-`Restored` before the station lifecycle can qualify. This makes cold PHY cache
-replay an asserted transition rather than an informational UART message.
-
 Peer scenarios run against a reference peer board, an ESP32-C5 with an
 ESP-IDF catalog image: the [IEEE 802.15.4 peer](../peers/esp32c5-ieee802154/README.md),
 the [Thread peer](../peers/esp32c5-openthread/README.md) or the
@@ -155,11 +149,12 @@ reports), and records the transcript of every exchange.
 `cargo hil plan <scenario>` prints the selection's plan without opening a lab
 configuration or device: each scenario's procedure digest, image, repetitions,
 requirements and the named checks it supplies. `--proof <check>` filters the selected scenarios by an actually implemented
-named check. Repeated `--proof` arguments require all named checks, and `--tag`
-can restrict the profile. For example:
+named check (for example `bluetooth.trace.connection-steps`). Repeated `--proof`
+arguments require all named checks, and `--tag` can restrict the profile. For
+example:
 
 ```console
-cargo hil plan --tag he20 --proof udp.rx.maximum-silence
+cargo hil plan --proof bluetooth.trace.connection-steps
 ```
 
 The plan lists provided checks and selection reasons; it does not infer success
@@ -173,10 +168,7 @@ repetitions and the complete family table. A plan neither executes hardware
 nor invalidates sealed observations.
 
 `cargo hil run <scenario>` builds and flashes the required image before the
-scenario with the owned Xarxa/Embassy network stack, the only network
-implementation; see the [implementation guide](../../docs/network-implementations.md).
-`cargo hil image build performance` and `cargo hil image build correctness`
-build the class's image bundle through the one image pipeline
+scenario. `cargo hil image build <class>` builds the class's image bundle through the one image pipeline
 ([`oer-image`](../../tools/image/pipeline/README.md)) with the same stack/move,
 placement and packed-image gates, encoding the bootloader, partition table
 and OTA selection at build time, without flashing or loading private stand
@@ -191,7 +183,7 @@ For an explicit source snapshot, use:
 
 ```console
 cargo hil image snapshot --source-include crates/path/to/new.rs
-cargo hil image build performance --source-snapshot ~/.cache/open-esp-radio/build/source-snapshots/schema-2/<snapshot-id>
+cargo hil image build boot-smoke --source-snapshot ~/.cache/open-esp-radio/build/source-snapshots/schema-2/<snapshot-id>
 ```
 
 `image build` takes several classes; from one source snapshot they share one
@@ -211,8 +203,7 @@ arguments that add them all, ready to paste, before content is archived. The man
 file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run with any
 option is not noted as pending evidence; `cargo qualification hil-evidence
 --hil-target <chip> --run ID` records it. Directory selections and ignored files are not accepted.
-For the configured local overrides, qualify each new file with `esp-hal:`,
-`embassy:` or `xarxa:`. Agent instructions (`AGENTS.md` at any depth and
+For the configured local override, qualify each new file with `esp-hal:`. Agent instructions (`AGENTS.md` at any depth and
 every `.agents/` directory) are excluded from tracked and untracked inputs
 in every source checkout: they configure coding agents, not firmware or HIL.
 Qualification applies the same exclusion when checking source currency.
@@ -288,9 +279,9 @@ replace this identity. The qualification evaluator uses
 [`observer-inputs.json`](../schema/observer-inputs.json) to select relevant
 observer inputs; it does not require equality of the entire runner binary.
 Its schema-4 registry identifies a workload as `<family>/<kind>` (for example
-`wifi/station-udp`), classifies its timing sensitivity, and scopes its inputs by
-the `common` group plus the scenario family's group (`wifi`, `bluetooth`,
-`system` or `ieee802154`), whose direct dependencies are the runner family
+`system/boot-smoke`), classifies its timing sensitivity, and scopes its inputs by
+the `common` group plus the scenario family's group (`bluetooth` or `system`),
+whose direct dependencies are the runner family
 packages. A workload's source inputs are the runner package, every path package
 in that projected dependency closure and the listed non-Cargo `data` files;
 source paths are never enumerated.

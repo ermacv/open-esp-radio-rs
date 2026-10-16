@@ -54,9 +54,8 @@ pub fn gatt(capture: &SerialCapture) -> Result<oer_hil_protocol::bluetooth::Blue
     Ok(evidence)
 }
 
-/// The GATT application's observation without an image-specific stack
-/// policy; the joint Wi-Fi/Bluetooth image reports its stacks through the
-/// Wi-Fi evidence instead.
+/// The GATT application's observation without the stack policy of
+/// [`gatt`].
 pub fn gatt_observation(
     capture: &SerialCapture,
 ) -> Result<oer_hil_protocol::bluetooth::BluetoothGattEvidence> {

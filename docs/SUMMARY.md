@@ -4,8 +4,6 @@
 
 # Understand the architecture
 
-- [From binary evidence to a Wi-Fi station](binary-to-station.md)
-- [Follow a channel change from evidence to STA](channel-walkthrough.md)
 - [Repository ownership](architecture.md)
 - [Radio protocol terminology](protocol-naming.md)
 - [HIL terminology and roles](hil-terminology.md)
@@ -17,11 +15,8 @@
 - [Manage issues and dependencies](issues.md)
 - [Documentation policy](documentation.md)
 
-# Station, network and PHY
+# PHY
 
-- [Build and investigate an ESP32-S31 station](station-hardware.md)
-- [Network implementation](network-implementations.md)
-- [Wi-Fi network integration](wifi-egress.md)
 - [PHY compiled comparison](phy/README.md)
 
 # Hardware

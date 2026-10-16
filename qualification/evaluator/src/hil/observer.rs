@@ -575,16 +575,10 @@ mod tests {
         let catalog = ScenarioCatalog::load(&root, Path::new("hil/scenarios")).unwrap();
         let family = |kind: &str| {
             let names = build_inputs::dependencies(&registry, kind).unwrap();
-            [
-                "oer-hil-family-ieee80211",
-                "oer-hil-family-bluetooth",
-                "oer-hil-family-system",
-                "oer-hil-family-ieee802154",
-                "oer-hil-family-phy-esp32s31",
-            ]
-            .into_iter()
-            .filter(|package| names.contains(*package))
-            .collect::<Vec<_>>()
+            ["oer-hil-family-bluetooth", "oer-hil-family-system"]
+                .into_iter()
+                .filter(|package| names.contains(*package))
+                .collect::<Vec<_>>()
         };
         let mut used = std::collections::BTreeSet::new();
         for document in catalog.definitions.values() {
@@ -592,19 +586,11 @@ mod tests {
             used.insert(workload.clone());
             let kind = workload.as_str();
             let packages = family(kind);
-            if kind == build_inputs::COEXISTENCE_WORKLOAD {
-                assert_eq!(
-                    packages,
-                    ["oer-hil-family-ieee80211", "oer-hil-family-bluetooth"],
-                    "the joint workload selects both radio families"
-                );
-            } else {
-                assert_eq!(
-                    packages.len(),
-                    1,
-                    "{kind} selects exactly one family: {packages:?}"
-                );
-            }
+            assert_eq!(
+                packages.len(),
+                1,
+                "{kind} selects exactly one family: {packages:?}"
+            );
             assert!(
                 build_inputs::dependencies(&registry, kind)
                     .unwrap()
@@ -619,13 +605,8 @@ mod tests {
                 "{workload} is no catalog scenario's workload"
             );
         }
-        assert_eq!(family("wifi/station-udp"), ["oer-hil-family-ieee80211"]);
         assert_eq!(family("bluetooth/dtm"), ["oer-hil-family-bluetooth"]);
         assert_eq!(family("system/boot-smoke"), ["oer-hil-family-system"]);
-        assert_eq!(
-            family("phy/vendor-calibration"),
-            ["oer-hil-family-phy-esp32s31"]
-        );
         assert!(!data_inputs(&root).unwrap().is_empty());
     }
 
@@ -634,11 +615,11 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let projection = json!({"manifests": {
             "hil/host/runner/Cargo.toml": {},
-            "hil/host/family/ieee80211/Cargo.toml": {},
+            "hil/host/family/bluetooth/Cargo.toml": {},
         }});
         let prefixes = source_inputs(&root, &projection).unwrap();
-        let wifi = Path::new("hil/host/family/ieee80211/src/workload/traffic/rx_traffic.rs");
-        assert!(selected(wifi, &prefixes));
+        let bluetooth = Path::new("hil/host/family/bluetooth/src/workload/bluetooth.rs");
+        assert!(selected(bluetooth, &prefixes));
         assert!(selected(
             Path::new("hil/host/runner/src/execution.rs"),
             &prefixes
@@ -648,11 +629,11 @@ mod tests {
             &prefixes
         ));
         assert!(!selected(
-            Path::new("hil/host/family/bluetooth/src/workload/bluetooth/gatt.rs"),
+            Path::new("hil/host/family/system/src/workload.rs"),
             &prefixes
         ));
         assert!(!selected(
-            Path::new("hil/host/family/ieee80211/src/workload/traffic/bidirectional/tests.rs"),
+            Path::new("hil/host/family/bluetooth/src/link/tests.rs"),
             &prefixes
         ));
         assert!(!selected(Path::new("Cargo.lock"), &prefixes));

@@ -3,8 +3,8 @@
 //! [`SerialCapture::request`], readiness and reboots) and the line console
 //! of a reference peer board ([`peer`]).
 //!
-//! The link reaches the board only through the [`Dut`] and [`StationNetwork`]
-//! ports the laboratory implements; it depends on no laboratory, board,
+//! The link reaches the board only through the [`Dut`] port the laboratory
+//! implements; it depends on no laboratory, board,
 //! scenario, run-bundle or image code. Families build their operations on
 //! the generic exchange, a repetition's measurements observe a capture
 //! through [`CaptureObserver`], and network traffic sessions live in
@@ -26,22 +26,20 @@ use std::{
 
 use oer_hil_protocol::{
     DecodeCounters, Envelope, FrameDecoder, FrameEncoder, base::LinkHealth,
-    network::OperationStatus, phy::StartupArtifactChunk, phy::StartupArtifactStatus,
-    system::StackUsage, wifi::StationLifecycleEvent, wifi::WifiNetworkInterface,
+    network::OperationStatus, network::WifiNetworkInterface,
 };
 use zeroize::Zeroizing;
 
 mod target;
-pub use target::{ConsoleOpener, Dut, DutEvent, SerialLine, StationNetwork, Target};
+pub use target::{ConsoleOpener, Dut, SerialLine};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 mod received;
 pub use received::{Received, message_info};
 
-/// How long the link waits for a protocol readiness step: a Hello, an
-/// accepted command, an initialization.
+/// How long the link waits for a protocol readiness step: a Hello or an
+/// accepted command.
 pub const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
-const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
 const PROTOCOL_EVENT_CAPACITY: usize = 16_384;
 
 #[derive(Default)]
@@ -328,14 +326,6 @@ impl CommandHandle {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StationConnectionObservation {
-    pub generation: u32,
-    pub association_bandwidth_mhz: Option<u16>,
-    pub security: Option<oer_hil_protocol::wifi::StationLinkSecurity>,
-    pub event_cursor_after: usize,
-}
-
 /// What a capture reports, when it persists, about the messages it decoded:
 /// the repetition's measurement projection implements it.
 pub trait CaptureObserver: Send + Sync {
@@ -377,11 +367,9 @@ pub use capture::test_support;
 pub mod error;
 use error::LinkError;
 mod protocol;
-pub use protocol::{latest_boot_id_in, station_fault_in};
+pub use protocol::latest_boot_id_in;
 #[cfg(test)]
 mod tests;
-
-pub mod startup_artifact;
 
 pub mod peer;
 pub mod transport;

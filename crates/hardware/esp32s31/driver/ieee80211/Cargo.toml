@@ -15,12 +15,14 @@ oer-esp32s31-ieee80211-dma = { path = "dma" }
 oer-esp32s31-ieee80211-mac = { path = "mac" }
 oer-ieee80211-lower-mac = { path = "../../../../protocols/ieee80211/lower-mac" }
 oer-memory = { path = "../../../../memory" }
+oer-radio-port = { path = "../../../../radio/port" }
 oer-ieee80211-mac = { path = "../../../../protocols/ieee80211/mac" }
 oer-ieee80211-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 oer-time = { path = "../../../../time" }
 
 [features]
 default = []
+test-support = ["oer-esp32s31-ieee80211-mac/test-support"]
 task-poll-telemetry = [
     "dep:riscv",
     "oer-esp32s31-ieee80211-mac/task-poll-telemetry",
@@ -31,6 +33,11 @@ riscv = { version = "0.15", optional = true }
 
 [dev-dependencies]
 oer-time-virtual = { path = "../../../../adapters/virtual/time" }
+
+# Host unit tests use the allocating MAC model. RV32 API doctests exercise
+# the production API without introducing an allocator into their binaries.
+[target.'cfg(not(target_arch = "riscv32"))'.dev-dependencies]
+oer-esp32s31-ieee80211-mac = { path = "mac", features = ["test-support"] }
 
 [lints]
 workspace = true

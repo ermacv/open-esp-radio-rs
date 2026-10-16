@@ -46,10 +46,12 @@ pub(crate) const TEST_ADVERTISEMENT: crate::ap::profile::Advertisement = {
                     txop_limit_units_32_us: 47,
                 },
             ],
-        ),
+        )
+        .unwrap(),
         // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
         0x0421,
     )
+    .unwrap()
 };
 
 #[test]
@@ -85,7 +87,7 @@ fn wmm_parameters_round_trip_each_access_category_and_admission_bit() {
             txop_limit_units_32_us: 41,
         },
     ];
-    let parameters = WmmParameters::new(11, true, categories);
+    let parameters = WmmParameters::new(11, true, categories).unwrap();
     let element = parameters.element();
     let decoded = parse_wmm_parameter_element(&element).unwrap();
     assert_eq!(decoded.parameter_set_count, 11);
@@ -120,7 +122,8 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         TEST_ADVERTISEMENT.ht,
         TEST_ADVERTISEMENT.wmm,
         1,
-    );
+    )
+    .unwrap();
     let protection = crate::protection::ApBssProtection {
         non_erp_present: true,
         erp: crate::protection::ErpProtection::new(true, false),

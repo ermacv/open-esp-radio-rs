@@ -1,6 +1,6 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
-use oer_ieee802154_port::LifecycleEvent;
+use oer_radio_port::LifecycleEvent;
 
 use super::{Ieee802154Instant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
@@ -204,4 +204,10 @@ pub enum RadioFault {
     StorageExhausted,
     /// Backend state can no longer be reconciled safely.
     StateLost,
+    /// A terminal does not account for the operation admitted by the port.
+    /// Delivery stops and owners remain quarantined; this says nothing
+    /// about whether the hardware can subsequently be stopped.
+    AccountingViolation,
+    /// The disable sink returned a terminal instead of accepting it.
+    TerminalRejected,
 }

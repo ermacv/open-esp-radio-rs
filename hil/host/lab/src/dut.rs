@@ -5,10 +5,9 @@
 use std::{path::Path, time::Duration};
 
 use oer_devices::port::{Lines, Port, Settings};
-use oer_hil_link::{ConsoleOpener, Dut, DutEvent, SerialLine, StationNetwork, peer::SerialLink};
-use oer_hil_protocol::wifi::{NetworkCredentials, NetworkIpv4Configuration};
+use oer_hil_link::{ConsoleOpener, Dut, SerialLine, peer::SerialLink};
 
-use super::config::{LabConfig, StationConfig};
+use super::config::LabConfig;
 
 impl Dut for LabConfig {
     fn console(&self) -> &Path {
@@ -23,33 +22,6 @@ impl Dut for LabConfig {
             oer_devices::reset::reset_usb_serial_jtag(&mut serial)?;
             Ok(Box::new(serial) as Box<dyn SerialLine>)
         })
-    }
-
-    fn startup_artifact(&self) -> Option<&Path> {
-        self.dut.startup_artifact.as_deref()
-    }
-
-    fn journal(&self, event: DutEvent) {
-        let kind = match event {
-            DutEvent::StartupArtifactUploaded { path, sha256 } => {
-                oer_stand_journal::BoardEventKind::StartupArtifactUploaded { path, sha256 }
-            }
-            DutEvent::StartupArtifactWritten {
-                path,
-                sha256,
-                disposition,
-            } => oer_stand_journal::BoardEventKind::StartupArtifactWritten {
-                path,
-                sha256,
-                disposition,
-            },
-        };
-        // A journal failure is reported and never fails the run.
-        if let Err(error) = oer_stand_arbiter::Arbiter::open()
-            .and_then(|arbiter| arbiter.journal().record(Some(self.dut.mac.clone()), kind))
-        {
-            eprintln!("hil-arbiter: cannot record board change: {error}");
-        }
     }
 }
 
@@ -81,14 +53,4 @@ pub fn peer_console(path: &Path) -> crate::Result<SerialLink> {
     port.clear_input()
         .map_err(|error| failed("clear input", error))?;
     Ok(SerialLink::new(path, Box::new(port)))
-}
-
-impl StationNetwork for StationConfig {
-    fn ipv4(&self) -> NetworkIpv4Configuration {
-        StationConfig::ipv4(self)
-    }
-
-    fn credentials(&self) -> oer_hil_link::Result<NetworkCredentials> {
-        self.protocol_credentials()
-    }
 }

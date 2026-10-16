@@ -12,11 +12,9 @@ description = "Wi-Fi HIL fixtures: laptop hostapd and wpa_supplicant, the OpenWr
 oer-hil-run-bundle-format = { path = "../../run-bundle/format" }
 oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-durable = { path = "../../../../tools/durable" }
-oer-hil-family-ieee80211-evidence = { path = "../ieee80211-evidence" }
 oer-hil-fixture = { path = "../../fixture" }
 oer-hil-lab = { path = "../../lab" }
 oer-hil-net-traffic = { path = "../../net-traffic" }
-oer-hil-protocol = { path = "../../../protocol" }
 oer-hil-scenario = { path = "../../scenario" }
 oer-stand-ssh = { path = "../../../../stand/ssh" }
 oer-hil-workload = { path = "../../workload" }
@@ -30,7 +28,6 @@ tempfile = "3"
 zeroize = "1.8.1"
 
 [dev-dependencies]
-oer-hil-family-ieee80211-evidence = { path = "../ieee80211-evidence", features = ["test-support"] }
 oer-hil-workload = { path = "../../workload", features = ["test-support"] }
 
 [lints]

@@ -99,12 +99,21 @@ pub struct MonitorCapturePool<const CAPACITY: usize, const SLOTS: usize> {
 
 impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLOTS> {
     pub const fn new() -> Self {
-        assert!(CAPACITY != 0, "monitor capture slots must not be empty");
-        assert!(SLOTS != 0, "monitor capture pool must contain a slot");
-        assert!(
-            SLOTS <= u8::MAX as usize + 1,
-            "monitor capture pool exceeds the lease index domain"
-        );
+        const {
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn checked<const CAPACITY: usize, const SLOTS: usize>() {
+                if CAPACITY == 0 {
+                    panic!("monitor capture slots must not be empty");
+                }
+                if SLOTS == 0 {
+                    panic!("monitor capture pool must contain a slot");
+                }
+                if SLOTS > u8::MAX as usize + 1 {
+                    panic!("monitor capture pool exceeds the lease index domain");
+                }
+            }
+            checked::<CAPACITY, SLOTS>();
+        };
         Self {
             storage: RxHandoffPool::new(),
         }
@@ -112,7 +121,16 @@ impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLO
 
     /// Payload bytes reserved by this pool, excluding ownership bookkeeping.
     pub const fn payload_storage_bytes() -> usize {
-        CAPACITY * SLOTS
+        const {
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn checked<const CAPACITY: usize, const SLOTS: usize>() -> usize {
+                match CAPACITY.checked_mul(SLOTS) {
+                    Some(bytes) => bytes,
+                    None => panic!("capture payload storage fits the target address space"),
+                }
+            }
+            checked::<CAPACITY, SLOTS>()
+        }
     }
 
     pub const fn slot_capacity() -> usize {
@@ -148,7 +166,9 @@ impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLO
             .ok_or(MonitorDropReason::Full)?;
         radio
             .frame_prefix_mut(captured_length)
-            .copy_from_slice(&frame.bytes[..captured_length]);
+            .iter_mut()
+            .zip(frame.bytes)
+            .for_each(|(to, from)| *to = *from);
         Ok(MonitorCaptureFrame {
             lease: radio.into_network(captured_length),
             metadata: MonitorCaptureMetadata {
@@ -191,11 +211,18 @@ impl<'pool, M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const 
     MonitorCaptureResources<'pool, M, Rate, DEPTH, CAPACITY, SLOTS>
 {
     pub const fn new(pool: &'pool MonitorCapturePool<CAPACITY, SLOTS>) -> Self {
-        assert!(DEPTH != 0, "monitor capture queue must not be empty");
-        assert!(
-            DEPTH <= SLOTS,
-            "monitor capture queue cannot outgrow its ownership pool"
-        );
+        const {
+            #[cfg_attr(not(test), expect(clippy::panic, reason = "evaluated at build"))]
+            const fn checked<const DEPTH: usize, const SLOTS: usize>() {
+                if DEPTH == 0 {
+                    panic!("monitor capture queue must not be empty");
+                }
+                if DEPTH > SLOTS {
+                    panic!("monitor capture queue cannot outgrow its ownership pool");
+                }
+            }
+            checked::<DEPTH, SLOTS>();
+        };
         Self {
             pool,
             frames: Channel::new(),

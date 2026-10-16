@@ -206,14 +206,13 @@ impl Advertiser {
 
     /// Replace the running set's PDU. The set is removed and configured
     /// again; the completion follows once the backend took the new one.
-    pub(crate) fn update<K: LeCapabilities>(
+    pub(crate) fn update(
         &mut self,
         request: LeLegacyAdvertisingEnableRequest,
     ) -> Result<(), HciError> {
         self.load(request)?;
-        // New data keeps the running set's type, which `K` served when the
+        // New data keeps the running set's type, validated when the
         // set was enabled.
-        debug_assert!(self.configuration().supported(&K::CAPS));
         self.restart = true;
         self.disable();
         Ok(())

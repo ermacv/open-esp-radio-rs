@@ -332,8 +332,8 @@ pub enum TriggerRuAllocation {
     },
     /// The blob labels every encoding at or above 69 as `484 OFDM`.
     ///
-    /// This is retained for diagnostics but is outside the ESP32-S31
-    /// 20-MHz-only non-AP transmit profile.
+    /// This is retained for diagnostics but lies outside the HE20-specific
+    /// narrow-RU representation. Transmit bandwidth support belongs to the backend.
     WiderThan242,
 }
 
@@ -864,7 +864,6 @@ pub fn parse_trigger_response_scheduling_control(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-802-11ax-he-uplink-power-headroom
 pub struct UplinkPowerHeadroomControl {
     pub control_id: u8,
     pub uplink_power_headroom: u8,

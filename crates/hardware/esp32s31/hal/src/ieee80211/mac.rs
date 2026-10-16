@@ -212,8 +212,8 @@ impl<'registers> WifiMacColdHal<'registers> {
     pub fn initialize_hal_tail(
         &mut self,
         event_mask: crate::types::MacInterruptMask,
-        slow_clock_calibration: u32,
-    ) -> bool {
+        slow_clock_calibration: crate::types::MacRtcCalibration,
+    ) {
         let (mac, _, interrupts) = self.registers.parts();
         mac.initialize_mac_hal_tail(interrupts, event_mask, slow_clock_calibration)
     }
@@ -255,7 +255,7 @@ impl<'registers> WifiMacColdHal<'registers> {
         self.mac().initialize_mac_txrx_prefix();
     }
 
-    pub fn initialize_txrx_callbacks(&mut self, delay_slot: u8) -> bool {
+    pub fn initialize_txrx_callbacks(&mut self, delay_slot: crate::types::MacDelaySlot) {
         self.mac().initialize_mac_txrx_callbacks(delay_slot)
     }
 
@@ -460,6 +460,16 @@ impl<'registers> WifiMacHal<'registers> {
     /// the PAC owner to diagnostics or runtime integration code.
     pub fn receive_dma_snapshot(&self) -> MacRxDmaSnapshot {
         self.pac().mac_rx_dma_snapshot()
+    }
+
+    /// Apply the interface's association mode before its first key installation.
+    pub fn configure_ccmp_association(
+        &mut self,
+        interface: crate::types::MacInterface,
+        mode: crate::types::MacSppMode,
+    ) {
+        self.pac_mut()
+            .configure_mac_ccmp_association(interface, mode);
     }
 
     /// Install one reviewed semantic station CCMP key. Slot selection and key
@@ -735,7 +745,6 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().order_device_accesses();
     }
 
-    // CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-hardware-tsf
     pub fn station_tsf(&mut self) -> u64 {
         self.pac_mut().station_tsf()
     }

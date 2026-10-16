@@ -1,6 +1,6 @@
 //! The IEEE 802.15.4 radio port on the shared owner shape of
-//! `oer-radio-port` ([`Owner`](oer_ieee802154_port::Owner),
-//! [`PortBody`](oer_ieee802154_port::PortBody)).
+//! `oer-radio-port` ([`Owner`](oer_radio_port::Owner),
+//! [`PortBody`](oer_radio_port::PortBody)).
 //!
 //! Every refusal of the former command port that a caller's own state
 //! explains is a type here ([ownership and refusals]); what the world
@@ -25,7 +25,11 @@
 //! [`EventsLost`](oer_radio_port::EventsLost) (only received frames), a
 //! clock that could not be read, an operation's status on the air, and a
 //! cancel that finds the work already ended
-//! ([`CancelError::NotRunning`](oer_ieee802154_port::CancelError::NotRunning)).
+//! ([`CancelError::NotRunning`](oer_radio_port::CancelError::NotRunning)).
+//! The event stream alone ends with [`oer_radio_port::EventEnd`]: `Drained`
+//! accounts every admitted terminal, while `Quarantined` leaves unread
+//! ownership in `PortEnd` and requires fail-stop without further draining.
+//! Its variant and cause remain final across phase loans.
 //!
 //! # Interfaces
 //!
@@ -52,7 +56,7 @@
 //! Every token carries the install's brand `'id`. The operation permit
 //! stays in the backend's held part of the install ([`OperationPermits`]):
 //! a client awaits it with its interface's seat in the operation's line
-//! ([`WorkPermits::new`] mints one per interface client, which the body's
+//! ([`Permits`](oer_radio_port::Permits) issues one per interface client to [`WorkPermits::new`], which the body's
 //! resources hand out and the caller keeps across takes) as a guard that
 //! gives it back when dropped before a submission; a submission moves it in, and the backend gives it back when
 //! it takes the operation's terminal, before it hands the event out. No
@@ -66,7 +70,7 @@
 //! ```compile_fail,E0451
 //! # use oer_ieee802154::owner::{OperationPermit, WorkPermit};
 //! fn forge<'q, 'id>() -> OperationPermit<'q, 'id> {
-//!     WorkPermit { permit: None, permits: todo!() }
+//!     WorkPermit { held: todo!() }
 //! }
 //! ```
 //!
@@ -74,8 +78,8 @@
 //!
 //! ```
 //! # use oer_ieee802154::owner::OperationPermit;
-//! fn held(permit: &OperationPermit<'_, '_>) -> bool {
-//!     permit.is_held()
+//! fn held<'q, 'id>(permit: &'q OperationPermit<'q, 'id>) -> &'q OperationPermit<'q, 'id> {
+//!     permit
 //! }
 //! ```
 //!
@@ -142,7 +146,7 @@
 //! An interface the capabilities do not state has no resources:
 //!
 //! ```compile_fail,E0080
-//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfaceResources};
+//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfacePool, InterfaceResources};
 //! # use oer_ieee802154::{Ieee802154Capabilities, RadioCapabilities};
 //! # use oer_radio_port::Mint;
 //! # struct One;
@@ -157,16 +161,16 @@
 //! #         enhanced_ack_header_ies: 0,
 //! #     };
 //! # }
-//! fn second<'id>(mint: &mut Mint<'id>) -> InterfaceResources<'id, 1, 4> {
-//!     InterfaceResources::mint::<One>(mint)
+//! fn second<'id>(mint: Mint<'id, InterfacePool<One, 1, 4>>) -> InterfaceResources<'id, 1, 4> {
+//!     mint.into_pools()
 //! }
-//! # fn main() { let _: fn(&mut Mint<'static>) -> InterfaceResources<'static, 1, 4> = second; }
+//! # fn main() { let _: fn(Mint<'static, InterfacePool<One, 1, 4>>) -> InterfaceResources<'static, 1, 4> = second; }
 //! ```
 //!
 //! Its compiling twin mints the resources of the interface it has:
 //!
 //! ```
-//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfaceResources};
+//! # use oer_ieee802154::owner::{Ieee802154Caps, InterfacePool, InterfaceResources};
 //! # use oer_ieee802154::{Ieee802154Capabilities, RadioCapabilities};
 //! # use oer_radio_port::Mint;
 //! # struct One;
@@ -181,10 +185,10 @@
 //! #         enhanced_ack_header_ies: 0,
 //! #     };
 //! # }
-//! fn first<'id>(mint: &mut Mint<'id>) -> InterfaceResources<'id, 0, 4> {
-//!     InterfaceResources::mint::<One>(mint)
+//! fn first<'id>(mint: Mint<'id, InterfacePool<One, 0, 4>>) -> InterfaceResources<'id, 0, 4> {
+//!     mint.into_pools()
 //! }
-//! # fn main() { let _: fn(&mut Mint<'static>) -> InterfaceResources<'static, 0, 4> = first; }
+//! # fn main() { let _: fn(Mint<'static, InterfacePool<One, 0, 4>>) -> InterfaceResources<'static, 0, 4> = first; }
 //! ```
 //!
 //! A pending-table slot of one interface does not fit another's table:
@@ -209,8 +213,10 @@
 
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
-use oer_ieee802154_port::{PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Work};
-use oer_radio_port::{Line, Mint, Permit, PermitPool, Poisoned, Seat, Slot};
+use oer_radio_port::{
+    Child, Line, Permit, PermitPool, PermitSupply, Poisoned, PoolPath, Root, Seat, Slot,
+};
+use oer_radio_port::{PortBackend, PortPhase, RadioPortClient, RadioWork, Work};
 
 use crate::{
     AppliedSecurity, CcaMode, Channel, CslReceiver, EnhancedAckGeneration, FrameCounterUpdate,
@@ -278,15 +284,16 @@ impl<K: Ieee802154Caps, F: Feature> Has<K, F> {
 
     /// The witness, checked when the image is built.
     ///
-    /// # Panics
-    ///
-    /// At compile time in a constant, and at run time otherwise, when `K`
-    /// does not state `F`.
+    /// The inline constant rejects an unsupported feature during code
+    /// generation, even when called outside a constant expression.
     pub const fn from_const() -> Self {
-        match Self::new() {
-            Some(has) => has,
-            None => panic!("the backend does not state this feature"),
+        const {
+            assert!(
+                K::CAPS.operations.contains(F::REQUIRED),
+                "the backend does not state this feature"
+            );
         }
+        Self { brand: PhantomData }
     }
 }
 
@@ -559,21 +566,30 @@ pub enum ExtendedPending<const I: u8> {}
 
 /// The port-lifetime resources of interface `I`: its configuration slot
 /// and `P` pending-table slots of each address size. A radio without the
-/// frame-pending table has none.
-pub struct InterfaceResources<'id, const I: u8, const P: usize> {
+/// frame-pending table has none. `Path` identifies this interface component;
+/// its three child paths distinguish configuration, short and extended slots.
+pub struct InterfaceResources<'id, const I: u8, const P: usize, Path: PoolPath = Root> {
     /// The slot [`Ieee802154Setup::configure`] takes.
-    pub interface: Slot<'id, InterfaceKind<I>>,
+    pub interface: Slot<'id, InterfaceKind<I>, Child<Path, 0>>,
     /// The slots of short source addresses.
-    pub short: [Slot<'id, ShortPending<I>>; P],
+    pub short: [Slot<'id, ShortPending<I>, Child<Path, 1>>; P],
     /// The slots of extended source addresses.
-    pub extended: [Slot<'id, ExtendedPending<I>>; P],
+    pub extended: [Slot<'id, ExtendedPending<I>, Child<Path, 2>>; P],
 }
 
-impl<'id, const I: u8, const P: usize> InterfaceResources<'id, I, P> {
-    /// Mint interface `I`'s resources for a backend of capabilities `K`:
-    /// another interface than `K` states, or pending slots without the
-    /// frame-pending table, does not compile.
-    pub fn mint<K: Ieee802154Caps>(mint: &mut Mint<'id>) -> Self {
+/// The complete pool layout of interface `I` for capabilities `K`.
+/// Another interface than `K` advertises, or pending slots without source
+/// matching, is rejected at compile time when the layout is issued.
+pub struct InterfacePool<K, const I: u8, const P: usize>(PhantomData<fn() -> K>);
+
+impl<K: Ieee802154Caps, const I: u8, const P: usize> oer_radio_port::PoolSet
+    for InterfacePool<K, I, P>
+{
+    type Pools<'id, Path: PoolPath> = InterfaceResources<'id, I, P, Path>;
+
+    fn build<'id, Path: PoolPath>(
+        builder: oer_radio_port::PoolBuilder<'id, Path>,
+    ) -> Self::Pools<'id, Path> {
         const {
             assert!(
                 I < K::CAPS.interfaces,
@@ -584,11 +600,15 @@ impl<'id, const I: u8, const P: usize> InterfaceResources<'id, I, P> {
                 "pending slots need the frame-pending table"
             );
         };
-        let [interface] = mint.slots::<InterfaceKind<I>, 1>();
-        Self {
+        let ([interface], short, extended) = builder.into_pools::<(
+            oer_radio_port::Slots<InterfaceKind<I>, 1>,
+            oer_radio_port::Slots<ShortPending<I>, P>,
+            oer_radio_port::Slots<ExtendedPending<I>, P>,
+        )>();
+        InterfaceResources {
             interface,
-            short: mint.slots(),
-            extended: mint.slots(),
+            short,
+            extended,
         }
     }
 }
@@ -598,41 +618,67 @@ pub enum Operation {}
 
 /// What gives a taken permit of kind `K` back: the [`WorkPermits`] it came
 /// from.
-trait Release<'id, K> {
-    fn release(&self, permit: Permit<'id, K>);
+trait Release<'id, K, Path: PoolPath> {
+    fn release(&self, permit: Permit<'id, K, Path>);
 }
 
 /// A permit of kind `K` that admitted work holds until its terminal, which
 /// only [`WorkPermits::guard`] makes. Dropped before a submission, it goes
 /// back to its pool; a submission moves it into the backend.
-pub struct WorkPermit<'q, 'id, K> {
-    permit: Option<Permit<'id, K>>,
-    permits: &'q dyn Release<'id, K>,
+#[must_use = "submit the permit, or drop it to return its capacity"]
+#[allow(
+    clippy::type_complexity,
+    reason = "the affine permit and its return function are held by the same guard"
+)]
+pub struct WorkPermit<'q, 'id, K, Path: PoolPath = Root> {
+    held: scopeguard::ScopeGuard<HeldPermit<'q, 'id, K, Path>, fn(HeldPermit<'q, 'id, K, Path>)>,
+}
+
+struct HeldPermit<'q, 'id, K, Path: PoolPath> {
+    permit: Permit<'id, K, Path>,
+    permits: &'q dyn Release<'id, K, Path>,
+}
+
+fn release_held<K, Path: PoolPath>(held: HeldPermit<'_, '_, K, Path>) {
+    held.permits.release(held.permit);
 }
 
 /// The radio's one operation permit.
-pub type OperationPermit<'q, 'id> = WorkPermit<'q, 'id, Operation>;
+pub type OperationPermit<'q, 'id, Path = Root> = WorkPermit<'q, 'id, Operation, Path>;
 
-impl<K> WorkPermit<'_, '_, K> {
-    /// Whether the permit is still held, as it is until a submission.
-    pub const fn is_held(&self) -> bool {
-        self.permit.is_some()
+/// The terminal whose matching permit has been returned to its pool.
+#[must_use = "hand the completed operation's terminal to its consumer"]
+pub struct Completed {
+    interface: Interface,
+    id: RequestId,
+}
+
+impl Completed {
+    /// The interface whose operation ended.
+    pub const fn interface(&self) -> Interface {
+        self.interface
+    }
+    /// The completed operation's correlation identity.
+    pub const fn id(&self) -> RequestId {
+        self.id
     }
 }
 
-impl<K> Drop for WorkPermit<'_, '_, K> {
-    fn drop(&mut self) {
-        if let Some(permit) = self.permit.take() {
-            self.permits.release(permit);
-        }
-    }
+/// A terminal did not name the held operation. Its permit stays retained;
+/// the backend must publish poisoning instead of fabricating a completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompletionMismatch {
+    /// The terminal received from the driver.
+    pub received: RequestId,
+    /// The operation still held, if any.
+    pub held: Option<(Interface, RequestId)>,
 }
 
 /// The work in flight: whose it is and its permit.
-struct InFlight<'id, K> {
+struct InFlight<'id, K, Path: PoolPath> {
     interface: Interface,
     id: RequestId,
-    permit: Permit<'id, K>,
+    permit: Permit<'id, K, Path>,
 }
 
 /// The one permit of kind `K` of an install, which a backend keeps in its
@@ -642,28 +688,31 @@ struct InFlight<'id, K> {
 /// interface's seat in the pool's line, never refused; a submission moves
 /// it in, and the backend gives it back when it takes the work's terminal,
 /// before it hands the event out.
-pub struct WorkPermits<'id, K, P> {
+pub struct WorkPermits<'id, K, P, Path: PoolPath = Root> {
     pool: P,
-    in_flight: RefCell<Option<InFlight<'id, K>>>,
+    in_flight: RefCell<Option<InFlight<'id, K, Path>>>,
 }
 
 /// The operation permit of one install.
-pub type OperationPermits<'id, P> = WorkPermits<'id, Operation, P>;
+pub type OperationPermits<'id, P, Path = Root> = WorkPermits<'id, Operation, P, Path>;
 
-impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
-    /// The permits of the install `mint` serves: its one permit of kind
-    /// `K`, handed to `pool` with the line of the kind's `S` seats, and the
+impl<'id, K, Path: PoolPath, P: PermitPool<'id, K, Path>> WorkPermits<'id, K, P, Path> {
+    /// Consume the installation's declared permit component: its one permit
+    /// of kind `K`, handed to `pool` with the line of its `S` seats, and the
     /// seats, one per interface client, which the body's resources hand
     /// out.
     pub fn new<const S: usize>(
-        mint: &mut Mint<'id>,
-        pool: impl FnOnce(Permit<'id, K>, Line<'id, K, S>) -> P,
-    ) -> (Self, [Seat<'id, K>; S]) {
-        let [permit] = mint.permits::<K, 1>();
-        let (line, seats) = mint.seats::<K, S>();
+        tokens: oer_radio_port::PermitTokens<'id, K, 1, S, Path>,
+        pool: impl FnOnce(PermitSupply<'id, K, 1, Path>, Line<'id, K, S, Path>) -> P,
+    ) -> (Self, [Seat<'id, K, Path>; S]) {
+        let oer_radio_port::PermitTokens {
+            supply,
+            line,
+            seats,
+        } = tokens;
         (
             Self {
-                pool: pool(permit, line),
+                pool: pool(supply, line),
                 in_flight: RefCell::new(None),
             },
             seats,
@@ -677,20 +726,23 @@ impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
 
     /// Guard `permit`, which [`Self::pool`] served: dropped before a
     /// submission, the guard gives it back. The pool holds the install's one
-    /// permit of kind `K`, so every permit of this kind is that one.
-    pub fn guard(&self, permit: Permit<'id, K>) -> WorkPermit<'_, 'id, K> {
+    /// permit of kind `K` at `Path`, so every permit of this path is that one.
+    pub fn guard(&self, permit: Permit<'id, K, Path>) -> WorkPermit<'_, 'id, K, Path> {
         WorkPermit {
-            permit: Some(permit),
-            permits: self,
+            held: scopeguard::guard(
+                HeldPermit {
+                    permit,
+                    permits: self,
+                },
+                release_held,
+            ),
         }
     }
 
     /// Keep the permit of the admitted work `id` of `interface` until its
     /// terminal; a backend's submission calls it.
-    pub fn admit(&self, interface: Interface, id: RequestId, mut permit: WorkPermit<'_, 'id, K>) {
-        let Some(permit) = permit.permit.take() else {
-            unreachable!("a permit holds its token until a submission or its drop");
-        };
+    pub fn admit(&self, interface: Interface, id: RequestId, permit: WorkPermit<'_, 'id, K, Path>) {
+        let HeldPermit { permit, .. } = scopeguard::ScopeGuard::into_inner(permit.held);
         // The pool holds one permit, so the entry is free while it was out.
         *self.in_flight.borrow_mut() = Some(InFlight {
             interface,
@@ -699,20 +751,22 @@ impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
         });
     }
 
-    /// Give back the permit of the work `id` of `interface`, whose terminal
-    /// the backend took; it calls it before it hands the event out. Whether
-    /// that work was in flight.
-    pub fn complete(&self, interface: Interface, id: RequestId) -> bool {
-        let ended = self
-            .in_flight
-            .borrow_mut()
-            .take_if(|held| held.interface == interface && held.id == id);
-        match ended {
+    /// Return the permit of the terminal `id` and its affine completion.
+    /// A mismatch leaves the admitted operation and its capacity intact.
+    pub fn complete(&self, id: RequestId) -> Result<Completed, CompletionMismatch> {
+        let mut in_flight = self.in_flight.borrow_mut();
+        match in_flight.take_if(|held| held.id == id) {
             Some(held) => {
                 self.pool.release(held.permit);
-                true
+                Ok(Completed {
+                    interface: held.interface,
+                    id: held.id,
+                })
             }
-            None => false,
+            None => Err(CompletionMismatch {
+                received: id,
+                held: in_flight.as_ref().map(|held| (held.interface, held.id)),
+            }),
         }
     }
 
@@ -725,8 +779,10 @@ impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
     }
 }
 
-impl<'id, K, P: PermitPool<'id, K>> Release<'id, K> for WorkPermits<'id, K, P> {
-    fn release(&self, permit: Permit<'id, K>) {
+impl<'id, K, Path: PoolPath, P: PermitPool<'id, K, Path>> Release<'id, K, Path>
+    for WorkPermits<'id, K, P, Path>
+{
+    fn release(&self, permit: Permit<'id, K, Path>) {
         self.pool.release(permit);
     }
 }
@@ -792,13 +848,18 @@ pub trait RadioSettings {
 /// The disabled-only settings of an IEEE 802.15.4 port: the radio-wide
 /// settings and the configuration of its interfaces.
 pub trait Ieee802154Setup<'id>: RadioSettings {
+    /// Pool component containing interface I's resources.
+    type InterfacePath<const I: u8>: PoolPath;
     /// A configured interface `I`; it holds the interface's slot.
     type Configured<const I: u8>: ConfiguredInterface<'id, I>;
 
     /// Configure interface `I`: its client exists in every phase from now
     /// on. Nothing refuses it: the slot proves the interface exists and is
     /// not configured.
-    fn configure<const I: u8>(&mut self, slot: Slot<'id, InterfaceKind<I>>) -> Self::Configured<I>;
+    fn configure<const I: u8>(
+        &mut self,
+        slot: Slot<'id, InterfaceKind<I>, Child<Self::InterfacePath<I>, 0>>,
+    ) -> Self::Configured<I>;
 
     /// Remove interface `I`, giving its slot back. Its pending entries stay
     /// installed with their tokens, and apply again when it is configured
@@ -806,7 +867,7 @@ pub trait Ieee802154Setup<'id>: RadioSettings {
     fn remove<const I: u8>(
         &mut self,
         interface: Self::Configured<I>,
-    ) -> Slot<'id, InterfaceKind<I>>;
+    ) -> Slot<'id, InterfaceKind<I>, Child<Self::InterfacePath<I>, 0>>;
 }
 
 /// A configured interface `I` of the install `'id`, which the disabled
@@ -842,6 +903,10 @@ pub trait Ieee802154Client<'id, const I: u8>:
 {
     /// The backend's capabilities marker.
     type Caps: Ieee802154Caps;
+    /// Pool component containing this interface's resources.
+    type InterfacePath: PoolPath;
+    /// Pool component containing the radio's operation permit and waiter line.
+    type OperationPath: PoolPath;
     /// An installed short-address pending entry; removing it gives its
     /// slot back.
     type ShortEntry;
@@ -878,22 +943,28 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// Mark `address` as having pending data, in `slot`.
     fn add_pending_short(
         &self,
-        slot: Slot<'id, ShortPending<I>>,
+        slot: Slot<'id, ShortPending<I>, Child<Self::InterfacePath, 1>>,
         address: [u8; 2],
     ) -> Self::ShortEntry;
 
     /// Mark `address` as having pending data, in `slot`.
     fn add_pending_extended(
         &self,
-        slot: Slot<'id, ExtendedPending<I>>,
+        slot: Slot<'id, ExtendedPending<I>, Child<Self::InterfacePath, 2>>,
         address: [u8; 8],
     ) -> Self::ExtendedEntry;
 
     /// Clear `entry`, giving its slot back.
-    fn remove_pending_short(&self, entry: Self::ShortEntry) -> Slot<'id, ShortPending<I>>;
+    fn remove_pending_short(
+        &self,
+        entry: Self::ShortEntry,
+    ) -> Slot<'id, ShortPending<I>, Child<Self::InterfacePath, 1>>;
 
     /// Clear `entry`, giving its slot back.
-    fn remove_pending_extended(&self, entry: Self::ExtendedEntry) -> Slot<'id, ExtendedPending<I>>;
+    fn remove_pending_extended(
+        &self,
+        entry: Self::ExtendedEntry,
+    ) -> Slot<'id, ExtendedPending<I>, Child<Self::InterfacePath, 2>>;
 
     /// Ask to receive on `channel`: the request replaces the interface's
     /// previous wish at once (a window included), so it no longer receives
@@ -927,8 +998,8 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// refused. The seat is lent only while the take waits.
     fn operation<'c, 's>(
         &'c self,
-        seat: &'s mut Seat<'id, Operation>,
-    ) -> impl Future<Output = OperationPermit<'c, 'id>> + 's
+        seat: &'s mut Seat<'id, Operation, Self::OperationPath>,
+    ) -> impl Future<Output = OperationPermit<'c, 'id, Self::OperationPath>> + 's
     where
         'id: 'c,
         'c: 's;
@@ -941,7 +1012,7 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// A poisoned backend.
     fn transmit<'c>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Self::OperationPath>,
         transmission: SupportedTransmit<'_, Self::Caps>,
     ) -> Result<Work<'c, Self>, Poisoned<Self::Fault>>
     where
@@ -955,7 +1026,7 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// A poisoned backend.
     fn energy_scan<'c>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Self::OperationPath>,
         scan: SupportedEnergyScan<Self::Caps>,
     ) -> Result<Work<'c, Self>, Poisoned<Self::Fault>>
     where
@@ -969,7 +1040,7 @@ pub trait Ieee802154Client<'id, const I: u8>:
     /// A poisoned backend.
     fn clear_channel_assessment<'c>(
         &'c self,
-        permit: OperationPermit<'c, 'id>,
+        permit: OperationPermit<'c, 'id, Self::OperationPath>,
         cca: SupportedCca<Self::Caps>,
     ) -> Result<Work<'c, Self>, Poisoned<Self::Fault>>
     where
@@ -1057,7 +1128,7 @@ impl PhaseEvent<'_> {
 /// frames and the terminals of admitted work, read through the portable
 /// view. A terminal's operation permit is back in its pool before the
 /// event is handed out.
-pub trait Ieee802154Events: RadioPortEvents {
+pub trait Ieee802154Events: PortPhase {
     /// The portable view of an owned event.
     fn view(event: &Self::Event) -> PhaseEvent<'_>;
 }

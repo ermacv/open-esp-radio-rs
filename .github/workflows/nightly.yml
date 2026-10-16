@@ -4,7 +4,7 @@ name: Nightly
 # nightly tier (`cargo xtask check tier --list`, tools/xtask/src/registry.rs).
 # Each job prepares its runner and runs its checks up to the nightly tier:
 # - classes: every HIL image class, built and audited as the runner builds
-#   it (CI builds the two final images on every push), so a stack frame or
+#   it (CI builds the boot smoke image on every push), so a stack frame or
 #   placement regression in a diagnostic class is found before it blocks a
 #   run;
 # - examples: every example built and audited (CI type-checks

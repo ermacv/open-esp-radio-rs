@@ -19,9 +19,8 @@ use oer_ieee80211_rsn::{
         RsnKeyInstallRequestError, RsnTxSequence,
     },
     supplicant::{
-        RsnConnectedSupplicant, RsnStaDeadlineEvent, RsnStaKeyInstallRequest,
-        RsnStaResponseDeadline, RsnStaResponseWait, RsnStaSupplicant, RsnStaSupplicantAction,
-        RsnStaSupplicantError,
+        RsnConnectedSupplicant, RsnStaDeadlineEvent, RsnStaKeyInstallRequest, RsnStaReady,
+        RsnStaResponseDeadline, RsnStaResponseWait, RsnStaSupplicant, RsnStaSupplicantError,
     },
 };
 
@@ -65,7 +64,7 @@ impl RsnPendingKeyInstall {
             ..
         } = self;
         match supplicant.complete_key_install::<EAPOL_CAPACITY>(request, installed)? {
-            RsnStaSupplicantAction::Transmit(message4) => Ok(RsnCompletedKeyInstall {
+            RsnStaReady::Transmit(message4) => Ok(RsnCompletedKeyInstall {
                 message4,
                 connected: supplicant.into_connected()?,
             }),
@@ -304,7 +303,7 @@ where
                     match process_frame(&mut supplicant, frame, config.pmk, &mut self.key_unwrap)
                         .await
                     {
-                        Ok(RsnStaSupplicantAction::Transmit(message2))
+                        Ok(RsnStaReady::Transmit(message2))
                             if message2.key_frame().replay_counter() == replay_counter =>
                         {
                             if let Err(error) = self.backend.restart_receive().await {
@@ -318,7 +317,7 @@ where
                             message2_transmissions = message2_transmissions.saturating_add(1);
                             break 'message1;
                         }
-                        Ok(RsnStaSupplicantAction::None) => {}
+                        Ok(RsnStaReady::None) => {}
                         Err(error) if error.is_peer_input_rejection() => {}
                         Err(error) => {
                             self.stop_receive().await?;
@@ -368,23 +367,21 @@ where
                     .await
                     {
                         Ok(action) => action,
-                        Err(error) if error.is_peer_input_rejection() => {
-                            RsnStaSupplicantAction::None
-                        }
+                        Err(error) if error.is_peer_input_rejection() => RsnStaReady::None,
                         Err(error) => {
                             self.stop_receive().await?;
                             return Err(RsnHandshakeError::Process(error));
                         }
                     };
                     match action {
-                        RsnStaSupplicantAction::Transmit(message2) => {
+                        RsnStaReady::Transmit(message2) => {
                             if let Err(error) = self.transmit_message2(&message2, sequence).await {
                                 self.stop_receive().await?;
                                 return Err(error);
                             }
                             message2_transmissions = message2_transmissions.saturating_add(1);
                         }
-                        RsnStaSupplicantAction::InstallKeys(request) => {
+                        RsnStaReady::InstallKeys(request) => {
                             self.stop_receive().await?;
                             return Ok(RsnPendingKeyInstall {
                                 supplicant,
@@ -393,9 +390,8 @@ where
                                 message2_transmissions,
                             });
                         }
-                        RsnStaSupplicantAction::None => {}
-                        RsnStaSupplicantAction::UnwrapKeyData(_)
-                        | RsnStaSupplicantAction::Deauthenticate => {
+                        RsnStaReady::None => {}
+                        RsnStaReady::RetryInstall(_) | RsnStaReady::Deauthenticate => {
                             self.stop_receive().await?;
                             return Err(RsnHandshakeError::UnexpectedAction);
                         }

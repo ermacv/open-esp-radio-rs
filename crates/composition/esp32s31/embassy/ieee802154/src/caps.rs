@@ -10,7 +10,7 @@ use oer_ieee802154::{
     CcaThresholdCapability, Ieee802154Capabilities, RadioCapabilities, TransmitPowerCapability,
     owner::{Ieee802154Caps, InterfaceResources},
 };
-use oer_radio_port::Mint;
+use oer_radio_port::{Child, PoolPath, Root};
 
 /// The CCA threshold the radio starts with: the PIB default.
 const CCA_RESET_DBM: i8 = -75;
@@ -43,11 +43,8 @@ impl Ieee802154Caps for Esp32s31Ieee802154 {
 }
 
 impl Ieee802154RuntimeCaps for Esp32s31Ieee802154 {
-    type Interfaces<'id> = InterfaceResources<'id, 0, PENDING_TABLE_SIZE>;
-
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
-        InterfaceResources::mint::<Self>(mint)
-    }
+    type Interfaces = oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>;
+    type InterfacePath<const I: u8> = Child<Root, 0>;
 }
 
 /// A multi-PAN ESP32-S31 radio of four interfaces
@@ -62,26 +59,39 @@ impl Ieee802154Caps for Esp32s31Ieee802154Multipan {
 }
 
 /// The four interfaces' resources of a multi-PAN radio.
-pub struct MultipanInterfaces<'id> {
+pub struct MultipanInterfaces<'id, Path: PoolPath> {
     /// Interface 0.
-    pub interface0: InterfaceResources<'id, 0, PENDING_TABLE_SIZE>,
+    pub interface0: InterfaceResources<'id, 0, PENDING_TABLE_SIZE, Child<Path, 0>>,
     /// Interface 1.
-    pub interface1: InterfaceResources<'id, 1, PENDING_TABLE_SIZE>,
+    pub interface1: InterfaceResources<'id, 1, PENDING_TABLE_SIZE, Child<Path, 1>>,
     /// Interface 2.
-    pub interface2: InterfaceResources<'id, 2, PENDING_TABLE_SIZE>,
+    pub interface2: InterfaceResources<'id, 2, PENDING_TABLE_SIZE, Child<Path, 2>>,
     /// Interface 3.
-    pub interface3: InterfaceResources<'id, 3, PENDING_TABLE_SIZE>,
+    pub interface3: InterfaceResources<'id, 3, PENDING_TABLE_SIZE, Child<Path, 3>>,
 }
 
 impl Ieee802154RuntimeCaps for Esp32s31Ieee802154Multipan {
-    type Interfaces<'id> = MultipanInterfaces<'id>;
+    type Interfaces = Self;
+    type InterfacePath<const I: u8> = Child<Child<Root, 0>, I>;
+}
 
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
+impl oer_radio_port::PoolSet for Esp32s31Ieee802154Multipan {
+    type Pools<'id, Path: PoolPath> = MultipanInterfaces<'id, Path>;
+
+    fn build<'id, Path: PoolPath>(
+        builder: oer_radio_port::PoolBuilder<'id, Path>,
+    ) -> Self::Pools<'id, Path> {
+        let (interface0, interface1, interface2, interface3) = builder.into_pools::<(
+            oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>,
+            oer_ieee802154::owner::InterfacePool<Self, 1, PENDING_TABLE_SIZE>,
+            oer_ieee802154::owner::InterfacePool<Self, 2, PENDING_TABLE_SIZE>,
+            oer_ieee802154::owner::InterfacePool<Self, 3, PENDING_TABLE_SIZE>,
+        )>();
         MultipanInterfaces {
-            interface0: InterfaceResources::mint::<Self>(mint),
-            interface1: InterfaceResources::mint::<Self>(mint),
-            interface2: InterfaceResources::mint::<Self>(mint),
-            interface3: InterfaceResources::mint::<Self>(mint),
+            interface0,
+            interface1,
+            interface2,
+            interface3,
         }
     }
 }

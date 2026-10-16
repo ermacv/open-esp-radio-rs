@@ -12,6 +12,7 @@ protocol that owns them:
 | `block_ack/frame` | Stateless Block Ack Action parsing and wire identifiers |
 | `block_ack/session` | One TX agreement, its negotiation generation and alarm handling |
 | `block_ack/originator` | One peer's TX agreements, at most `TIDS`: a Dialog Token sequence they share, and each TID's queued negotiation with its attempts and the retry interval (`TxBlockAckRetry`) after a request that did not leave or a response that did not come; the station and the access point use it |
+| `block_ack/reorder` | One receive agreement's bounded reorder window and a complete slot release for each input |
 | `fragmentation` | Validated fragment identities and the shared fragment contract |
 | `fragmentation/parsing` | Header/body validation without reassembly ownership |
 | `fragmentation/reassembly` | Complete bounded reassembler, slots and admission tokens |
@@ -41,17 +42,25 @@ at construction and raw register fields convert at the chip boundary.
 Consumers use `qos` for traffic intent, `extensions::wmm` for WMM elements and
 `extensions::espressif::esp_now` for vendor MAC framing.
 
+A receive reorder window always waits at a vacant head between inputs. At
+most N-1 frames are retained, so a release of N positions holds them and the
+one received frame. Each old frame transfers to its own result position;
+the vacant head reserves a result position for that input. No fallible
+append follows the state change. Physical positions are relative to the
+window head: `sequence % capacity` would alias distinct sequences around
+4095→0 when the capacity does not divide 4096. Immediate delivery performs
+the same slot-ownership check as the buffered path.
+
 QoS classification includes the DSCP mapping and downgrade helpers. The
 admission/downgrade loop belongs to the chip MAC TX runtime; parsing an
 advertised WMM Parameter Set neither acquires admission nor selects a
 hardware queue. AP encoders take an explicit `Advertisement` and a
 `Channel` of either band: a 5 GHz beacon or Association Response carries
 no DSSS Parameter Set and no ERP element, and a beacon refuses a 5 GHz
-advertisement with a DSSS rate;
-`roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
-advertisement. The portable codec carries no implicit ESP32-S31 profile.
+advertisement with a DSSS rate. The portable codec carries no implicit
+ESP32-S31 profile; a chip AP selects its own advertisement.
 
-`ap/src/coordinator.rs` decides the channel of a port a station and an
+`arbiter/src/coordinator.rs` decides the channel of a port a station and an
 access point share (`ChannelCoordinator`): the station's BSS decides it, and
 the access point follows within its `ApFollowPolicy` (2.4 GHz alone by
 default, never a channel that needs radar detection; `ApUnservable` says

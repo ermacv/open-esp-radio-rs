@@ -17,9 +17,9 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | --- | --- | --- |
 | `cli/` (`oer-hil-cli`) | `oer-hil-cli` (`cargo hil`) | The stand's commands, as argument parsing and calls into the stand packages below (leases, boards, owners, devices, stand discovery and doctor, fixtures, flash, the ESP-IDF firmware catalog), the analyses (`runs`, `perf`, the dashboard's runs), the experiments (`ab`, `bisect`, `revision`) and the launch of every run through `oer-hil-experiment`; pending evidence; the frozen binaries and detached processes of jobs |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI and the run core: selection, lease, images, repetitions and seal. It names the family crates once, in its family registry (`scenario.rs`), and reaches every family, fixture provider and preflight through it. Its one extension point is `run --then` ([stand guide](stand.md)), a shell command inside the run's lease after the scenarios that is recorded as events and never changes the outcome |
-| `workload/` (`oer-hil-workload`) | none | What a workload runs against: the repetition `Context`, its one result writer (`results`, sealed as `observations.json`), `for_each_boot`, `require_keys`, failure classification, per-repetition cleanup evidence, the measurements recorder, the type-erased `Fixtures`, `BoardImages` (the run's writer of the board under test's images, through the flash operation), the family registry contract (`family::{Workload, Kind, Registry, FixtureProvider}`), `interrupt_latency`, the software-interrupt latency step, and `phy_tracking_hold`, the shared-PHY tracking-hold step the Wi-Fi, IEEE 802.15.4 and coexistence workloads run beside their clients |
-| `lab/` (`oer-hil-lab`) | none | A run's stand operation: its laboratory configuration, the fixture lock it holds, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` and `StationNetwork` ports. It actuates no hardware and writes no flash record |
-| `link/` (`oer-hil-link`) | none | The host/target link: one DUT session (`SerialCapture`) with the generic exchange (`call`, `request`, `command`, `wait_command`), reboots and the startup artifact; reaches the board only through its `Dut` and `StationNetwork` ports; and the reference peers' `PeerConsole` with the whole `@` line grammar (`peer`) |
+| `workload/` (`oer-hil-workload`) | none | What a workload runs against: the repetition `Context`, its one result writer (`results`, sealed as `observations.json`), `for_each_boot`, `require_keys`, failure classification, per-repetition cleanup evidence, the measurements recorder, the type-erased `Fixtures`, `BoardImages` (the run's writer of the board under test's images, through the flash operation), and the family registry contract (`family::{Workload, Kind, Registry, FixtureProvider}`) |
+| `lab/` (`oer-hil-lab`) | none | A run's stand operation: its laboratory configuration, the fixture lock it holds, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` port. It actuates no hardware and writes no flash record |
+| `link/` (`oer-hil-link`) | none | The host/target link: one DUT session (`SerialCapture`) with the generic exchange (`call`, `request`, `command`, `wait_command`) and reboots; reaches the board only through its `Dut` port; and the reference peers' `PeerConsole` with the whole `@` line grammar (`peer`) |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `run-bundle/` (`oer-hil-run-bundle`) | none | The run bundle: its typed documents, the one writer and its seal, the one typed reader (`RunBundle`) every consumer uses, the qualification evaluator included, integrity verification, the run store with its sidecars and pending evidence (`RunStore`), the run receipt, build provenance and the content-addressed object store, offline verification against the image builder's recipe, and the experiment and laboratory records a run keeps |
 | `analysis/` (`oer-hil-analysis`) | none | Analyses of run bundles: the one measurement aggregation and comparison, run queries, retention, performance baselines, A/B arm comparison, the dashboard's runs and the JUnit/HTML views a run seals |
@@ -27,12 +27,10 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
 | `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, the check of a device's reported keys against them, and where a chip's HIL images are built from (`agent`: the agent's workspace, package and manifest, the bootstrap) |
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
-| `family/ieee80211/`, `family/bluetooth/`, `family/system/`, `family/ieee802154/` (`oer-hil-family-*`) | none | One radio family: its scenario table (`ScenarioFamily`: validation, plan, requirements, image keys, peer image, air use), its `Workload` and its target exchanges; each depends on `oer-hil-workload`, never on another family |
-| `family/coexistence/` (`oer-hil-family-coexistence`) | none | The joint Wi-Fi and Bluetooth workload, the one family that composes two others |
-| `family/phy/` (`oer-hil-family-phy`) | none | The PHY workload: the vendor-versus-production calibration cross-check, which writes the vendor firmware and the scenario's image alternately through the run's `BoardImages` and records the chip's comparison, reached through its comparison port, as its typed result; it names no chip |
-| `family/phy-esp32s31/` (`oer-hil-family-phy-esp32s31`) | none | The ESP32-S31 composition of the PHY family: `oer-esp32s31-phy-vendor-calibration` behind the comparison port; the runner's family registry lists its `FAMILY` |
-| `family/ieee80211-fixture/` (`oer-hil-family-ieee80211-fixture`) | none | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host network routes, air monitors) and their `FixtureProvider` |
-| `family/ieee80211-evidence/` (`oer-hil-family-ieee80211-evidence`) | none | Radio-evidence analysis of Wi-Fi sessions: air captures, protection and the RX delivery frontier |
+| `family/bluetooth/`, `family/system/` (`oer-hil-family-*`) | none | One radio family: its scenario table (`ScenarioFamily`: validation, plan, requirements, image keys, peer image, air use), its `Workload` and its target exchanges; each depends on `oer-hil-workload`, never on another family |
+| `family/phy/` (`oer-hil-family-phy`) | none | The host half of the PHY vendor calibration cross-check: the comparison port and the vendor IEEE 802.15.4 reference firmware driver; no scenario family registers it; it names no chip |
+| `family/phy-esp32s31/` (`oer-hil-family-phy-esp32s31`) | none | The ESP32-S31 comparison port: `oer-esp32s31-phy-vendor-calibration` behind it |
+| `family/ieee80211-fixture/` (`oer-hil-family-ieee80211-fixture`) | none | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host network routes, air monitors), their `FixtureProvider`, and the air-capture and BSS-protection analyses |
 | `net-traffic/` (`oer-hil-net-traffic`) | none | Host traffic against the target's network sessions: session start and evidence, readiness, paced UDP and TCP, offered load and the one ICMP method (datagram sockets) |
 | `../../stand/file/` (`oer-stand-file`) | none | The stand file, the one resolver of a board name (id, chip or MAC) and the XDG paths of the stand's state |
 | `../../stand/board/` (`oer-stand-board`) | none | A stand board: its leased device (the device lock of `oer-device-lock`), the receipted image write of `oer_devices::image`, starts, the reset ladder, hub power and consoles |
@@ -132,8 +130,8 @@ cargo stand fixture install --provider linux-bluetooth --dry-run
 cargo stand fixture install --provider linux-net
 cargo stand fixture install --provider linux-bluetooth
 cargo hil fixture bluetooth-check --adapter hci0
-cargo hil doctor timebase
-cargo hil plan udp-rx-ht40-ceiling
+cargo hil doctor boot-smoke
+cargo hil plan boot-smoke
 cargo hil scenario list
 cargo hil scenario validate [id]
 cargo hil image build <image-class>
@@ -143,59 +141,6 @@ cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all --role qualification  # or --all for the whole catalog
 ```
 
-The `network-comparison` tag selects five station workloads: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
-TX-only at 130 Mbit/s, bidirectional UDP at 130 + 130 Mbit/s, and idle ping.
-Each scenario runs once and uses the task-residence image. UDP windows last
-12 seconds; idle ping sends 120 requests at 100 ms intervals. This is a quick
-comparison, not a repeatability or endurance qualification. Build, association,
-reset and cleanup time is additional:
-
-```console
-cargo hil run-all --tag network-comparison
-```
-
-The throughput criteria still apply under overload; a completed
-measurement can fail its speed gate. Task residence is not full CPU utilization.
-
-CPU utilization is the `cpu.core0.load` and `cpu.core1.load` measurements
-(basis points, lower is better): each core's busy share of a session's
-traffic window, from the cycles its executor spent in `wfi`
-(`network::CpuLoadEvidence`). The performance and correctness classes build
-the instrument (`cpu-load`), so both arms of a `cargo hil ab` carry it and the
-comparison pairs the load like the throughput. The station UDP and TCP, the
-single-client AP UDP and TCP and the multi-client AP traffic workloads record
-it; a bidirectional UDP session runs one window per direction and reports no
-load, while a TCP session of any direction runs one. The idle-link reference is
-`udp-rx-ht40-idle-cpu-load`, a 100 kbit/s receive window.
-
-The separate `ap-network-comparison` tag uses ESP as an HT40 AP with two
-physical stations (laptop and OpenWrt). Each scenario has one boot, one AP
-cycle and one 12-second UDP window:
-
-| Workload | Offered traffic, relative to ESP |
-| --- | --- |
-| Balanced TX | 65 Mbit/s to each station |
-| Balanced RX | 65 Mbit/s from each station |
-| Balanced bidirectional | 32.5 Mbit/s in each direction per station |
-| TX with sparse peer | 130 Mbit/s to laptop; two datagrams every 100 ms to OpenWrt |
-
-```console
-cargo hil run-all --tag ap-network-comparison
-```
-
-The AP comparison checks per-peer progress, with an additional sparse-peer
-delivery and interarrival gate. Its low throughput floors do not qualify
-performance or fairness. Task residence and throughput alone do not establish
-A-MPDU aggregation quality; that requires separate aggregation evidence.
-Multi-client UDP saves each peer's raw host delivery and available target
-transport counters in `cycle-*/delivery-progress.json` before terminal-evidence
-and delivery/rate gates. A later gate failure does not discard these measurements.
-Reverse-path UDP probes wait for target session readiness. Sender failures are
-recorded after joining the receivers and collecting/acknowledging available
-terminal evidence, so they do not discard the other direction's delivery.
-Single-cycle measurements do not replace the catalog's repeated AP lifecycle
-qualification scenarios.
-
 `plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
 it does not read the stand file, inspect tools or contact hardware. `doctor`
 accepts the same selection and reports all independent environment checks as
@@ -204,27 +149,7 @@ catalog. It checks build/flash tools, scenario preconditions, required fixture
 services and current cooperative resource availability; it neither flashes nor
 resets the target. Availability is an observation, not a reservation for a
 later run. Optional monitor tools are checked only when selected evidence uses
-them. AP workloads currently include an initial STA connection, so their
-requirements include the station network.
-
-`cargo hil run memory-copy-benchmark` builds the dedicated memory diagnostic
-image and measures CPU, blocking GDMA and async GDMA copies from SRAM and
-PSRAM into SRAM. It requires the board and serial connection, without an AP
-or network helper. `cargo hil run memory-copy-batch-benchmark` uses the same
-image to compare CPU frame loops with single-chain GDMA batches of 1, 2, 8 and
-32 frames. Scenarios select frame sizes, batch sizes, iterations and repeated
-boots. An omitted `batch_sizes` field means `[1]`; every size/batch combination
-must fit the 49,152-byte payload limit per iteration. Case order is source,
-frame size, batch size, then copy mode.
-
-`memory-benchmark.json` schema 2 preserves each requested case and its typed target
-result, including failed observations. Each case has a 15-second host response
-deadline. The runner checks completeness, data/guard results and counter-scope
-consistency without imposing a throughput or speedup floor. Elapsed and
-foreground cycles/instructions describe their measurement windows, not CPU
-utilization or energy consumption. Measurements distinguish bytes per frame,
-frames per iteration and total payload bytes per iteration; comparisons must
-use the same geometry and source memory.
+them.
 
 Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain one
 family's workload and acceptance criteria, never serial paths or secrets.
@@ -246,20 +171,11 @@ policy remain enforced when constructing a running workload.
 By default, `run` builds and flashes the scenario's exact image before
 executing it. An explicit `--firmware-from` selects exact artifact replay
 instead, never a rebuild. `run-all` groups scenarios by image class, so changing
-UDP/TCP direction or rates does not rebuild or reflash firmware. It continues
+a workload's parameters does not rebuild or reflash firmware. It continues
 after scenario, image-build and image-flash failures, records the remaining
 scenarios as blocked when necessary, writes the complete suite, and returns a
 non-zero status unless every selected scenario passed. Every scenario resets
 the target.
-
-AP scenarios select a controlled Linux or OpenWrt client. The Linux fixture
-leases WLAN as a managed WPA2 client without a gateway and restores
-NetworkManager on every return path. Lifecycle, ICMP,
-UDP and TCP are independent workloads over the same declared image class.
-Correctness scenarios record terminal AP observations as the repetition's
-`access-point` observation; performance scenarios reject driver observations
-and retain only transport, external-fixture and stack evidence. AP IP policy
-belongs to HIL, not to the radio driver request.
 
 Each invocation creates an immutable directory under
 `target/hil/runs/<run-id>/`. The runner never deletes or reuses an old
@@ -329,9 +245,7 @@ produces no rate. Link counters are explicitly named as lifetime observations.
 The projection includes transport, link/stack, timer, scan, monitor, AP peer
 and ED polling measurements; other typed facts remain in `protocol.jsonl`.
 
-Workload-owned ICMP loss/latency, station UDP RX/TX and TCP rate measurements
-also expose their existing acceptance floors. The UDP RX target gate retains
-its integer kbit/s resolution; the host offer gate retains bit/s resolution.
+Workload-owned measurements also expose their existing acceptance floors.
 These are the resolved predicates, not new criteria. Target observations have
 no implicit verdict, and numerical observations alone do not qualify a radio
 feature. Broken or interrupted repetitions can retain failed measurements;
@@ -542,16 +456,13 @@ The host packages follow the roles of the
   before a scenario.
 - `oer-hil-link` owns one UART capture and its protocol/readiness/validation
   state, the host traffic transports and `measurements`, which projects
-  decoded messages into measurements. A session's `Target` holds the board
-  as a `Dut` (console, application reset, startup artifact, journal of the
-  changes the link makes), the `StationNetwork` a station target joins and
-  the scenario's target settings; the stand implements both ports.
+  decoded messages into measurements. It reaches the board as a `Dut`
+  (console and application reset), which the stand implements.
 - `context` gives one workload repetition its laboratory, target settings,
   capture lifecycle and measurements; workloads that control the AP receive
   the prepared fixture explicitly.
-- Each family's `workload` module owns its operations: system, IEEE 802.15.4,
-  IEEE 802.11 role and network traffic, and Bluetooth LE. They report scenario
-  outcomes, not product readiness.
+- Each family's `workload` module owns its operations: system and Bluetooth LE.
+  They report scenario outcomes, not product readiness.
 - The stand's `post_mortem` asks a failed repetition's target, attached
   without a reset, for its boot evidence and trace, and classifies hangs and
   unexpected resets; its `recovery` owns the reset ladder for a target that
@@ -585,7 +496,7 @@ and the answer begins the boot only while it is among the boot's first eight
 messages. The capture's link health records it as `solicited_hello`; any other
 missing Hello still fails as before.
 
-The watchdog, hang-watchdog and PHY fault-lifecycle workloads use
+The watchdog and panic-reset workloads use
 `session::reboot` to arm one expected new boot within an explicit interval. It sends no reset command. A fresh Hello
 at sequence zero is required; prior transport/protocol failures, an early/late
 boot or an additional reboot still fail the capture. All ordinary captures keep

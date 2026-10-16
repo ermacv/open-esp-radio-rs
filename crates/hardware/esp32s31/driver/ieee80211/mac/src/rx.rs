@@ -3,11 +3,14 @@
 use oer_esp32s31_ieee80211_dma::descriptor::{
     BIT_31, descriptor_address_valid, length as descriptor_length, rx_done, size as descriptor_size,
 };
-#[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
+#[cfg(all(
+    not(any(test, feature = "test-support")),
+    feature = "validation-raw-dma"
+))]
 pub use oer_esp32s31_ieee80211_dma::rx_ring::publish_cold_ring;
-#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+#[cfg(any(test, feature = "test-support", feature = "validation-raw-dma"))]
 pub use oer_esp32s31_ieee80211_dma::rx_ring::{build_cold_ring, disable_receive, rearm_descriptor};
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 pub use oer_esp32s31_ieee80211_dma::rx_ring::{enable_receive, publish_cold_ring};
 pub use oer_esp32s31_ieee80211_dma::{
     rx_dma::{
@@ -315,7 +318,6 @@ impl HeBandwidth {
 
 /// HE SU guard-interval and LTF encoding from HE-SIG-A1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// CAPABILITY: wifi-802-11ax-he-he-guard-intervals-0-8-1-6-3-2-microseconds
 pub enum HeGuardIntervalAndLtf {
     OneLtf800Ns,
     TwoLtf800Ns,
@@ -372,7 +374,6 @@ impl HeGuardIntervalAndLtf {
 /// bits 25:23 `nsts_and_midamble_periodicity`; they must not be reported
 /// unconditionally as the number of spatial streams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// CAPABILITY: wifi-802-11ax-he-rx-stbc-one-spatial-stream
 pub struct HeSuSignal {
     pub format: bool,
     pub beam_change: bool,
@@ -606,7 +607,6 @@ impl HeTriggerBasedSignal {
 /// ownership equivalent of the blob's raw pointer walk. The decoder checks
 /// the advertised length before constructing the slice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// CAPABILITY: wifi-802-11ax-he-downlink-ofdma-mu-mimo
 pub struct RxHeMuSigBInfo<'a> {
     pub signal: HeMuSignal,
     pub bit_length: u16,
@@ -874,6 +874,10 @@ pub struct NormalizedRxFrame<'frame> {
     /// prefix: an owner of the buffer finds the MPDU again from it.
     pub mpdu_offset: usize,
     pub metadata: MacRxMetadata<RxPhyInfo>,
+    /// The frame's RSSI from the receive prefix, which every completed
+    /// frame carries ([`decode_normalized_rx_metadata`] observes the same
+    /// byte).
+    pub rssi_dbm: i8,
     pub logical_length: usize,
     /// The receive timestamp of the prefix: the raw MAC local time of the
     /// frame's reception ([`decode_rx_local_timestamp`]).
@@ -907,10 +911,15 @@ pub fn view_normalized_rx_frame<'frame>(
         .get(layout.frame_offset..end)
         .ok_or(RxError::Bounds)?;
     let metadata = decode_normalized_rx_metadata(segment.buffer).ok_or(RxError::Metadata)?;
+    let rssi_dbm = *segment
+        .buffer
+        .get(RX_PHY_RSSI_OFFSET)
+        .ok_or(RxError::Metadata)? as i8;
     Ok(NormalizedRxFrame {
         mpdu,
         mpdu_offset: layout.frame_offset,
         metadata,
+        rssi_dbm,
         logical_length: layout.expected_frame_length,
         stamp: decode_rx_local_timestamp(segment.buffer),
     })

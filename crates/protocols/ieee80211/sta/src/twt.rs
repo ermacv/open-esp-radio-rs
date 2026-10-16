@@ -25,6 +25,10 @@ pub enum IndividualTwtRequesterConfigError {
     ZeroTeardownAttemptLimit,
 }
 
+/// The flow identifier of each entry of the flow array, checked at build:
+/// the array holds only representable flows.
+const FLOW_IDS: [IndividualTwtFlowId; INDIVIDUAL_TWT_FLOW_CAPACITY] = IndividualTwtFlowId::ALL;
+
 /// Association-scoped retry and deadline policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndividualTwtRequesterConfig {
@@ -362,7 +366,6 @@ impl FlowPhase {
 }
 
 /// Exactly eight flow slots, matching the three-bit wire identifier.
-// CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-twt-requester
 pub struct IndividualTwtRequester {
     config: IndividualTwtRequesterConfig,
     flows: [FlowPhase; INDIVIDUAL_TWT_FLOW_CAPACITY],
@@ -385,11 +388,11 @@ impl IndividualTwtRequester {
     }
 
     pub const fn status(&self, flow_id: IndividualTwtFlowId) -> IndividualTwtFlowStatus {
-        self.flows[flow_id.index()].status()
+        flow_id.select(&self.flows).status()
     }
 
     pub const fn agreement(&self, flow_id: IndividualTwtFlowId) -> Option<IndividualTwtAgreement> {
-        match self.flows[flow_id.index()] {
+        match *flow_id.select(&self.flows) {
             FlowPhase::Active(agreement) => Some(agreement),
             _ => None,
         }
@@ -400,7 +403,7 @@ impl IndividualTwtRequester {
         &self,
         flow_id: IndividualTwtFlowId,
     ) -> Option<IndividualTwtProposal> {
-        match self.flows[flow_id.index()] {
+        match *flow_id.select(&self.flows) {
             FlowPhase::SetupTransmitting { proposal, .. } => Some(proposal),
             _ => None,
         }
@@ -413,10 +416,10 @@ impl IndividualTwtRequester {
     ) -> Result<(), IndividualTwtRequesterError> {
         let proposal = proposal.validate()?;
         let flow_id = proposal.parameters.flow_id;
-        if !matches!(self.flows[flow_id.index()], FlowPhase::Idle) {
+        if !matches!(*flow_id.select(&self.flows), FlowPhase::Idle) {
             return Err(IndividualTwtRequesterError::FlowBusy(flow_id));
         }
-        self.flows[flow_id.index()] = FlowPhase::SetupQueued {
+        *flow_id.select_mut(&mut self.flows) = FlowPhase::SetupQueued {
             proposal,
             attempts_remaining: self.config.setup_attempt_limit,
             ready_at: now,
@@ -432,16 +435,16 @@ impl IndividualTwtRequester {
         flow_id: IndividualTwtFlowId,
         now: Instant,
     ) -> Result<(), IndividualTwtRequesterError> {
-        if matches!(self.flows[flow_id.index()], FlowPhase::Idle) {
+        if matches!(*flow_id.select(&self.flows), FlowPhase::Idle) {
             return Err(IndividualTwtRequesterError::NoAgreement(flow_id));
         }
         if matches!(
-            self.flows[flow_id.index()],
+            *flow_id.select(&self.flows),
             FlowPhase::SetupTransmitting { .. } | FlowPhase::TeardownTransmitting { .. }
         ) {
             return Err(IndividualTwtRequesterError::FlowBusy(flow_id));
         }
-        self.flows[flow_id.index()] = FlowPhase::TeardownQueued {
+        *flow_id.select_mut(&mut self.flows) = FlowPhase::TeardownQueued {
             attempts_remaining: self.config.teardown_attempt_limit,
             ready_at: now,
         };
@@ -452,23 +455,21 @@ impl IndividualTwtRequester {
         &mut self,
         now: Instant,
     ) -> Result<IndividualTwtService, IndividualTwtRequesterError> {
-        for index in 0..INDIVIDUAL_TWT_FLOW_CAPACITY {
+        for &flow_id in &FLOW_IDS {
             let FlowPhase::AwaitingResponse {
                 proposal,
                 attempts_remaining,
                 deadline,
                 ..
-            } = self.flows[index]
+            } = *flow_id.select(&self.flows)
             else {
                 continue;
             };
             if now < deadline {
                 continue;
             }
-            let flow_id = IndividualTwtFlowId::new(index as u8)
-                .expect("the fixed flow array only contains representable flow IDs");
             if attempts_remaining == 0 {
-                self.flows[index] = FlowPhase::Idle;
+                *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
                 return Ok(IndividualTwtService::Event(
                     IndividualTwtRequesterEvent::SetupTimedOut { flow_id },
                 ));
@@ -476,7 +477,7 @@ impl IndividualTwtRequester {
             let retry_at = now
                 .checked_add(self.config.retry_interval)
                 .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
-            self.flows[index] = FlowPhase::SetupQueued {
+            *flow_id.select_mut(&mut self.flows) = FlowPhase::SetupQueued {
                 proposal,
                 attempts_remaining,
                 ready_at: retry_at,
@@ -486,10 +487,8 @@ impl IndividualTwtRequester {
             ));
         }
 
-        for index in 0..INDIVIDUAL_TWT_FLOW_CAPACITY {
-            let flow_id = IndividualTwtFlowId::new(index as u8)
-                .expect("the fixed flow array only contains representable flow IDs");
-            match self.flows[index] {
+        for &flow_id in &FLOW_IDS {
+            match *flow_id.select(&self.flows) {
                 FlowPhase::SetupQueued {
                     proposal,
                     attempts_remaining,
@@ -503,8 +502,8 @@ impl IndividualTwtRequester {
                         parameters: proposal.parameters,
                     };
                     let body = setup.encode_body()?;
-                    let attempts_remaining = attempts_remaining - 1;
-                    self.flows[index] = FlowPhase::SetupTransmitting {
+                    let attempts_remaining = attempts_remaining.saturating_sub(1);
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::SetupTransmitting {
                         proposal,
                         dialog_token,
                         generation,
@@ -523,8 +522,8 @@ impl IndividualTwtRequester {
                 } if now >= ready_at => {
                     let body = IndividualTwtTeardown::one(flow_id).encode_body()?;
                     let generation = self.take_generation()?;
-                    let attempts_remaining = attempts_remaining - 1;
-                    self.flows[index] = FlowPhase::TeardownTransmitting {
+                    let attempts_remaining = attempts_remaining.saturating_sub(1);
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::TeardownTransmitting {
                         generation,
                         attempts_remaining,
                     };
@@ -547,8 +546,8 @@ impl IndividualTwtRequester {
         acknowledged: bool,
         now: Instant,
     ) -> Result<IndividualTwtRequesterEvent, IndividualTwtRequesterError> {
-        let index = transmission.flow_id.index();
-        match (self.flows[index], transmission.kind) {
+        let flow_id = transmission.flow_id;
+        match (*flow_id.select(&self.flows), transmission.kind) {
             (
                 FlowPhase::SetupTransmitting {
                     proposal,
@@ -562,7 +561,7 @@ impl IndividualTwtRequester {
                     let deadline = now
                         .checked_add(self.config.response_timeout)
                         .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
-                    self.flows[index] = FlowPhase::AwaitingResponse {
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::AwaitingResponse {
                         proposal,
                         dialog_token,
                         generation,
@@ -591,12 +590,12 @@ impl IndividualTwtRequester {
                 IndividualTwtTxKind::Teardown,
             ) if generation == transmission.generation => {
                 if acknowledged {
-                    self.flows[index] = FlowPhase::Idle;
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
                     Ok(IndividualTwtRequesterEvent::TeardownComplete {
                         flow_id: transmission.flow_id,
                     })
                 } else if attempts_remaining == 0 {
-                    self.flows[index] = FlowPhase::Idle;
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
                     Ok(IndividualTwtRequesterEvent::TeardownTxFailed {
                         flow_id: transmission.flow_id,
                     })
@@ -604,7 +603,7 @@ impl IndividualTwtRequester {
                     let retry_at = now
                         .checked_add(self.config.retry_interval)
                         .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
-                    self.flows[index] = FlowPhase::TeardownQueued {
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::TeardownQueued {
                         attempts_remaining,
                         ready_at: retry_at,
                     };
@@ -624,8 +623,8 @@ impl IndividualTwtRequester {
         &mut self,
         transmission: IndividualTwtTransmission,
     ) -> Result<(), IndividualTwtRequesterError> {
-        let index = transmission.flow_id.index();
-        let matches = match (self.flows[index], transmission.kind) {
+        let flow_id = transmission.flow_id;
+        let matches = match (*flow_id.select(&self.flows), transmission.kind) {
             (FlowPhase::SetupTransmitting { generation, .. }, IndividualTwtTxKind::Setup)
             | (FlowPhase::TeardownTransmitting { generation, .. }, IndividualTwtTxKind::Teardown) => {
                 generation == transmission.generation
@@ -635,7 +634,7 @@ impl IndividualTwtRequester {
         if !matches {
             return Err(IndividualTwtRequesterError::StaleTransmission);
         }
-        self.flows[index] = FlowPhase::Idle;
+        *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
         Ok(())
     }
 
@@ -655,13 +654,13 @@ impl IndividualTwtRequester {
     ) -> Result<IndividualTwtSetupDisposition, IndividualTwtRequesterError> {
         response.validate()?;
         let flow_id = response.parameters.flow_id;
-        let index = flow_id.index();
+
         let FlowPhase::AwaitingResponse {
             proposal,
             dialog_token,
             generation,
             ..
-        } = self.flows[index]
+        } = *flow_id.select(&self.flows)
         else {
             return Ok(IndividualTwtSetupDisposition::Stale);
         };
@@ -676,7 +675,7 @@ impl IndividualTwtRequester {
                 response.control,
                 response.parameters,
             );
-            self.flows[index] = FlowPhase::TeardownQueued {
+            *flow_id.select_mut(&mut self.flows) = FlowPhase::TeardownQueued {
                 attempts_remaining: self.config.teardown_attempt_limit,
                 // A response has already crossed the wire. Zero is due in
                 // every monotonic runtime domain without inventing a new
@@ -690,13 +689,13 @@ impl IndividualTwtRequester {
 
         match response.parameters.setup_command {
             IndividualTwtSetupCommand::Reject => {
-                self.flows[index] = FlowPhase::Idle;
+                *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
                 Ok(IndividualTwtSetupDisposition::Rejected { flow_id })
             }
             command @ (IndividualTwtSetupCommand::Alternate
             | IndividualTwtSetupCommand::Dictate) => {
                 let proposed = IndividualTwtAgreement::from_response(response)?;
-                self.flows[index] = FlowPhase::Idle;
+                *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
                 Ok(IndividualTwtSetupDisposition::Alternative {
                     flow_id,
                     command,
@@ -707,11 +706,11 @@ impl IndividualTwtRequester {
                 if proposal.parameters.setup_command == IndividualTwtSetupCommand::Demand
                     && !demand_response_matches(proposal, response)
                 {
-                    self.flows[index] = FlowPhase::Idle;
+                    *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
                     return Err(IndividualTwtRequesterError::DemandResponseMismatch);
                 }
                 let agreement = IndividualTwtAgreement::from_response(response)?;
-                self.flows[index] = FlowPhase::AwaitingHardwareInstall {
+                *flow_id.select_mut(&mut self.flows) = FlowPhase::AwaitingHardwareInstall {
                     generation,
                     agreement,
                 };
@@ -730,18 +729,17 @@ impl IndividualTwtRequester {
         flow_id: IndividualTwtFlowId,
         generation: u32,
     ) -> Result<IndividualTwtAgreement, IndividualTwtRequesterError> {
-        let index = flow_id.index();
         let FlowPhase::AwaitingHardwareInstall {
             generation: expected,
             agreement,
-        } = self.flows[index]
+        } = *flow_id.select(&self.flows)
         else {
             return Err(IndividualTwtRequesterError::UnexpectedInstall);
         };
         if expected != generation {
             return Err(IndividualTwtRequesterError::UnexpectedInstall);
         }
-        self.flows[index] = FlowPhase::Active(agreement);
+        *flow_id.select_mut(&mut self.flows) = FlowPhase::Active(agreement);
         Ok(agreement)
     }
 
@@ -754,18 +752,17 @@ impl IndividualTwtRequester {
         generation: u32,
         now: Instant,
     ) -> Result<(), IndividualTwtRequesterError> {
-        let index = flow_id.index();
         let FlowPhase::AwaitingHardwareInstall {
             generation: expected,
             ..
-        } = self.flows[index]
+        } = *flow_id.select(&self.flows)
         else {
             return Err(IndividualTwtRequesterError::UnexpectedInstall);
         };
         if expected != generation {
             return Err(IndividualTwtRequesterError::UnexpectedInstall);
         }
-        self.flows[index] = FlowPhase::TeardownQueued {
+        *flow_id.select_mut(&mut self.flows) = FlowPhase::TeardownQueued {
             attempts_remaining: self.config.teardown_attempt_limit,
             ready_at: now,
         };
@@ -782,13 +779,13 @@ impl IndividualTwtRequester {
     ) -> [Option<IndividualTwtAgreement>; INDIVIDUAL_TWT_FLOW_CAPACITY] {
         let mut installed = [None; INDIVIDUAL_TWT_FLOW_CAPACITY];
         if teardown.all_flows {
-            for (index, phase) in self.flows.iter().enumerate() {
+            for (slot, phase) in installed.iter_mut().zip(&self.flows) {
                 if let FlowPhase::Active(agreement) = *phase {
-                    installed[index] = Some(agreement);
+                    *slot = Some(agreement);
                 }
             }
-        } else if let FlowPhase::Active(agreement) = self.flows[teardown.flow_id.index()] {
-            installed[teardown.flow_id.index()] = Some(agreement);
+        } else if let FlowPhase::Active(agreement) = *teardown.flow_id.select(&self.flows) {
+            *teardown.flow_id.select_mut(&mut installed) = Some(agreement);
         }
         installed
     }
@@ -799,7 +796,7 @@ impl IndividualTwtRequester {
         &mut self,
         agreement: IndividualTwtAgreement,
     ) -> Result<(), IndividualTwtRequesterError> {
-        let phase = &mut self.flows[agreement.flow_id.index()];
+        let phase = agreement.flow_id.select_mut(&mut self.flows);
         if !matches!(*phase, FlowPhase::Active(current) if current == agreement) {
             return Err(IndividualTwtRequesterError::UnexpectedRemove);
         }
@@ -817,18 +814,18 @@ impl IndividualTwtRequester {
     ) -> [Option<IndividualTwtAgreement>; INDIVIDUAL_TWT_FLOW_CAPACITY] {
         let mut removed = [None; INDIVIDUAL_TWT_FLOW_CAPACITY];
         if teardown.all_flows {
-            for (index, phase) in self.flows.iter_mut().enumerate() {
+            for (slot, phase) in removed.iter_mut().zip(&mut self.flows) {
                 if let FlowPhase::Active(agreement) = *phase {
-                    removed[index] = Some(agreement);
+                    *slot = Some(agreement);
                 }
                 *phase = FlowPhase::Idle;
             }
         } else {
-            let index = teardown.flow_id.index();
-            if let FlowPhase::Active(agreement) = self.flows[index] {
-                removed[index] = Some(agreement);
+            let flow_id = teardown.flow_id;
+            if let FlowPhase::Active(agreement) = *flow_id.select(&self.flows) {
+                *flow_id.select_mut(&mut removed) = Some(agreement);
             }
-            self.flows[index] = FlowPhase::Idle;
+            *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
         }
         removed
     }
@@ -839,9 +836,9 @@ impl IndividualTwtRequester {
         &mut self,
     ) -> [Option<IndividualTwtAgreement>; INDIVIDUAL_TWT_FLOW_CAPACITY] {
         let mut removed = [None; INDIVIDUAL_TWT_FLOW_CAPACITY];
-        for (index, phase) in self.flows.iter_mut().enumerate() {
+        for (slot, phase) in removed.iter_mut().zip(&mut self.flows) {
             if let FlowPhase::Active(agreement) = *phase {
-                removed[index] = Some(agreement);
+                *slot = Some(agreement);
             }
             *phase = FlowPhase::Idle;
         }
@@ -895,7 +892,7 @@ impl IndividualTwtRequester {
         timed_out: bool,
     ) -> Result<IndividualTwtRequesterEvent, IndividualTwtRequesterError> {
         if attempts_remaining == 0 {
-            self.flows[flow_id.index()] = FlowPhase::Idle;
+            *flow_id.select_mut(&mut self.flows) = FlowPhase::Idle;
             return Ok(if timed_out {
                 IndividualTwtRequesterEvent::SetupTimedOut { flow_id }
             } else {
@@ -905,7 +902,7 @@ impl IndividualTwtRequester {
         let retry_at = now
             .checked_add(self.config.retry_interval)
             .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
-        self.flows[flow_id.index()] = FlowPhase::SetupQueued {
+        *flow_id.select_mut(&mut self.flows) = FlowPhase::SetupQueued {
             proposal,
             attempts_remaining,
             ready_at: retry_at,
@@ -1064,8 +1061,8 @@ const fn next_dialog_token(current: u8) -> u8 {
 /// must explicitly prove hardware admission before enabling requester work.
 pub const INDIVIDUAL_TWT_REQUESTER_DISABLED: Option<IndividualTwtRequesterConfig> = None;
 
-/// Conservative portable profile; it is not installed by any production
-/// ESP32-S31 composition while the hardware boundary remains unsupported.
+/// Portable profile whose use requires an explicit backend admission proof.
+/// Its existence does not advertise hardware TWT support.
 pub const fn conservative_individual_twt_requester_config() -> IndividualTwtRequesterConfig {
     IndividualTwtRequesterConfig {
         response_timeout: Duration::from_secs(1),

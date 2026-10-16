@@ -11,14 +11,19 @@
 //! only: a backend turns a schedule into its PHY rate and programs its own
 //! report-rate registers.
 
+use core::num::{NonZeroU16, NonZeroU32};
+
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
+use oer_ieee80211_lower_mac::LinkMetric;
 use oer_ieee80211_mac::{
     channel::WifiChannelWidth,
     he::{He20Capabilities, He20PeerState, HeDcmConstellation, HeMcsNssSupport},
     phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
     station::association::PhyMode,
 };
-use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
+use oer_ieee80211_upper_mac::rate_control::{
+    AmpduUnavailable, BlockAckTally, MpduOutcome, NegotiatedLegacyRates, RateControl, RatePeer,
+};
 use oer_time::Instant;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
@@ -71,13 +76,16 @@ impl AckSnrFilter {
         let midpoint = if self.latest == Self::UNINITIALIZED {
             0
         } else {
-            ((i16::from(self.latest) + i16::from(sample)) >> 1) as i8
+            (i16::from(self.latest).saturating_add(i16::from(sample)) >> 1) as i8
         };
         self.latest = sample;
         self.filtered = if self.filtered == Self::UNINITIALIZED {
             midpoint
         } else {
-            ((3 * i16::from(self.filtered) + i16::from(midpoint)) / 4) as i8
+            (i16::from(self.filtered)
+                .saturating_mul(3)
+                .saturating_add(i16::from(midpoint))
+                / 4) as i8
         };
     }
 
@@ -155,13 +163,6 @@ pub enum AmpduRateDecision {
         raw_success_ratio: u8,
         filtered_success_ratio: u8,
     },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AmpduRateObservationError {
-    Unavailable,
-    NoAttemptedMpdu,
-    AcknowledgedExceedsAttempted,
 }
 
 /// Independent rate state used by the vendor A-MPDU schedule getter.
@@ -252,46 +253,48 @@ impl AmpduRateControlState {
     pub fn observe_block_ack(
         &mut self,
         now_us: u32,
-        attempted_mpdu: u16,
-        acknowledged_mpdu: u16,
+        tally: BlockAckTally,
         filtered_ack_snr: Option<i8>,
-    ) -> Result<AmpduRateDecision, AmpduRateObservationError> {
-        if attempted_mpdu == 0 {
-            return Err(AmpduRateObservationError::NoAttemptedMpdu);
-        }
-        if acknowledged_mpdu > attempted_mpdu {
-            return Err(AmpduRateObservationError::AcknowledgedExceedsAttempted);
-        }
-
-        let attempted_mpdu = u32::from(attempted_mpdu);
-        let acknowledged_mpdu = u32::from(acknowledged_mpdu);
+    ) -> AmpduRateDecision {
+        let positive = NonZeroU32::from(tally.attempted());
+        let acknowledged_mpdu = u32::from(tally.acknowledged());
         if self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu) >= Self::COUNTER_RESCALE_LIMIT {
             self.attempted_mpdu >>= 1;
             self.acknowledged_mpdu >>= 1;
         }
-        self.attempted_mpdu = self.attempted_mpdu.wrapping_add(attempted_mpdu);
+        // Keep the input's nonzero witness through division. Accumulating
+        // windows hold fewer than EVALUATION_MPDU (500) frames, and an input
+        // holds at most u16::MAX: this sum cannot saturate a u32.
+        let accumulated = positive.saturating_add(self.attempted_mpdu);
+        self.attempted_mpdu = accumulated.get();
         self.acknowledged_mpdu = self.acknowledged_mpdu.wrapping_add(acknowledged_mpdu);
 
         if self.attempted_mpdu < Self::EVALUATION_MPDU
             && vendor_duration(now_us, self.last_evaluation_us) < Self::EVALUATION_US
         {
-            return Ok(AmpduRateDecision::Accumulating);
+            return AmpduRateDecision::Accumulating;
         }
 
-        let raw_success_ratio = ((self.acknowledged_mpdu << 7) / self.attempted_mpdu) as u8;
+        let raw_success_ratio = ((self.acknowledged_mpdu << 7) / accumulated) as u8;
         let rate = schedule_state(self.current_schedule).rate;
         let ack_snr = filtered_ack_snr.unwrap_or(AckSnrFilter::UNINITIALIZED) as u8;
         let down_threshold = ampdu_down_threshold(rate, ack_snr);
         let previous_filtered = self.filtered_success_ratio;
         let filtered_success_ratio = if previous_filtered == 0 {
-            let initial = ((3 * u16::from(down_threshold) + 128) >> 2) as u8;
+            let initial = (u16::from(down_threshold)
+                .saturating_mul(3)
+                .saturating_add(128)
+                >> 2) as u8;
             if initial >= raw_success_ratio {
                 initial
             } else {
-                ((u16::from(initial) + u16::from(raw_success_ratio)) >> 1) as u8
+                (u16::from(initial).saturating_add(u16::from(raw_success_ratio)) >> 1) as u8
             }
         } else {
-            ((3 * u16::from(previous_filtered) + u16::from(raw_success_ratio)) >> 2) as u8
+            (u16::from(previous_filtered)
+                .saturating_mul(3)
+                .saturating_add(u16::from(raw_success_ratio))
+                >> 2) as u8
         };
 
         self.last_evaluation_us = now_us;
@@ -309,61 +312,61 @@ impl AmpduRateControlState {
                     .min(Self::MAX_PROMOTE_COOLDOWN_US);
             }
             if vendor_duration(now_us, self.last_lower_us) > Self::LOWER_HOLDOFF_US
-                && self.current_schedule.index < Self::VENDOR_AMPDU_FLOOR_INDEX
+                && self.current_schedule.index() < Self::VENDOR_AMPDU_FLOOR_INDEX
             {
                 let from = self.current_schedule;
                 if let Some(to) = from.advance() {
                     self.current_schedule = to;
                     self.last_lower_us = now_us;
                     self.clear_after_schedule_change();
-                    return Ok(AmpduRateDecision::Lower {
+                    return AmpduRateDecision::Lower {
                         from,
                         to,
                         raw_success_ratio,
                         filtered_success_ratio,
-                    });
+                    };
                 }
             }
-            return Ok(AmpduRateDecision::Retain {
+            return AmpduRateDecision::Retain {
                 raw_success_ratio,
                 filtered_success_ratio,
-            });
+            };
         }
 
         if self.promotion_probe {
             self.promotion_probe = false;
             self.promote_cooldown_us = Self::INITIAL_PROMOTE_COOLDOWN_US;
-            return Ok(AmpduRateDecision::Retain {
+            return AmpduRateDecision::Retain {
                 raw_success_ratio,
                 filtered_success_ratio,
-            });
+            };
         }
 
         let up_threshold = ampdu_up_threshold(rate, ack_snr);
-        if self.highest_schedule_index < self.current_schedule.index
+        if self.highest_schedule_index < self.current_schedule.index()
             && up_threshold < filtered_success_ratio
             && up_threshold < previous_filtered
             && vendor_duration(now_us, self.last_promote_us) > self.promote_cooldown_us
         {
             let from = self.current_schedule;
-            if let Some(to) = RateScheduleRef::new(from.kind, from.index.wrapping_sub(1)) {
+            if let Some(to) = RateScheduleRef::new(from.kind(), from.index().wrapping_sub(1)) {
                 self.current_schedule = to;
                 self.last_promote_us = now_us;
                 self.promotion_probe = true;
                 self.clear_after_schedule_change();
-                return Ok(AmpduRateDecision::Promote {
+                return AmpduRateDecision::Promote {
                     from,
                     to,
                     raw_success_ratio,
                     filtered_success_ratio,
-                });
+                };
             }
         }
 
-        Ok(AmpduRateDecision::Retain {
+        AmpduRateDecision::Retain {
             raw_success_ratio,
             filtered_success_ratio,
-        })
+        }
     }
 
     fn clear_after_schedule_change(&mut self) {
@@ -387,8 +390,8 @@ const fn vendor_duration(now: u32, previous: u32) -> u32 {
 
 const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
     let mcs = match rate {
-        0x10..=0x19 => rate - 0x10,
-        0x1a..=0x23 => rate - 0x1a,
+        0x10..=0x19 => rate.saturating_sub(0x10),
+        0x1a..=0x23 => rate.saturating_sub(0x1a),
         _ => return 0,
     };
     let reference = match mcs {
@@ -406,16 +409,17 @@ const fn ampdu_rssi_margin(rate: u8, filtered_ack_snr: u8) -> u8 {
     if filtered_ack_snr == AckSnrFilter::UNINITIALIZED as u8 || filtered_ack_snr <= reference {
         return 0;
     }
-    let scaled = (((filtered_ack_snr - reference) >> 1) as u16 * 3) as u8;
+    let scaled =
+        (((filtered_ack_snr.saturating_sub(reference)) >> 1) as u16).saturating_mul(3) as u8;
     if scaled > 32 { 32 } else { scaled }
 }
 
 const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
     let margin = ampdu_rssi_margin(rate, filtered_ack_snr);
     match rate {
-        0x10..=0x12 => 111 - margin,
-        0x13 => 116 - margin,
-        0x14..=0x19 | 0x21..=0x23 => 121 - margin,
+        0x10..=0x12 => 111_u8.saturating_sub(margin),
+        0x13 => 116_u8.saturating_sub(margin),
+        0x14..=0x19 | 0x21..=0x23 => 121_u8.saturating_sub(margin),
         _ => 121,
     }
 }
@@ -423,13 +427,13 @@ const fn ampdu_up_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
 const fn ampdu_down_threshold(rate: u8, filtered_ack_snr: u8) -> u8 {
     let margin = ampdu_rssi_margin(rate, filtered_ack_snr);
     match rate {
-        0x10 => 105 - margin,
-        0x11 => 106 - margin,
-        0x12 => 107 - margin,
-        0x13 => 108 - margin,
-        0x14 => 109 - margin,
-        0x15 | 0x17 => 115 - margin,
-        0x16 | 0x18..=0x19 | 0x21..=0x23 => 114 - margin,
+        0x10 => 105_u8.saturating_sub(margin),
+        0x11 => 106_u8.saturating_sub(margin),
+        0x12 => 107_u8.saturating_sub(margin),
+        0x13 => 108_u8.saturating_sub(margin),
+        0x14 => 109_u8.saturating_sub(margin),
+        0x15 | 0x17 => 115_u8.saturating_sub(margin),
+        0x16 | 0x18..=0x19 | 0x21..=0x23 => 114_u8.saturating_sub(margin),
         _ => 114,
     }
 }
@@ -481,7 +485,7 @@ impl RateControlState {
         self.retry_state_1e = 0;
         self.retry_pressure = 0;
 
-        let next_index = u16::from(self.current_schedule.reference.index) + 1;
+        let next_index = u16::from(self.current_schedule.reference.index()) + 1;
         let selected = if u16::from(self.maximum_schedule_index) < next_index {
             self.legacy_schedule.offset(self.maximum_schedule_index)
         } else {
@@ -700,8 +704,8 @@ impl StaRateControlAssociation {
         let current = schedule_state(selection.current);
         let ampdu_runtime = selection.ampdu_limit_rate.and_then(|_| {
             AmpduRateControlState::new(
-                selection.current.kind,
-                selection.current.index,
+                selection.current.kind(),
+                selection.current.index(),
                 selection.highest_index,
             )
         });
@@ -800,22 +804,21 @@ impl StaRateControlAssociation {
         update
     }
 
+    /// Apply a checked aggregate observation, or return its unavailable
+    /// controller before changing ACK-SNR or rate state.
     pub fn observe_ampdu_block_ack(
         &mut self,
         now_us: u32,
-        attempted_mpdu: u16,
-        acknowledged_mpdu: u16,
-    ) -> Result<AmpduRateDecision, AmpduRateObservationError> {
-        let filtered_ack_snr = self.ack_snr.filtered();
+        tally: BlockAckTally,
+        ack_snr_db: Option<i8>,
+    ) -> Result<AmpduRateDecision, AmpduUnavailable> {
         let Some(runtime) = &mut self.ampdu_runtime else {
-            return Err(AmpduRateObservationError::Unavailable);
+            return Err(AmpduUnavailable);
         };
-        let decision = runtime.observe_block_ack(
-            now_us,
-            attempted_mpdu,
-            acknowledged_mpdu,
-            filtered_ack_snr,
-        )?;
+        if let Some(sample) = ack_snr_db {
+            self.ack_snr.update(sample);
+        }
+        let decision = runtime.observe_block_ack(now_us, tally, self.ack_snr.filtered());
         if matches!(
             decision,
             AmpduRateDecision::Promote { .. } | AmpduRateDecision::Lower { .. }
@@ -862,6 +865,21 @@ pub(crate) struct PhyModeSelection {
     pub ampdu_limit_rate: Option<u8>,
 }
 
+// Constant schedules are constructed only from literal compile-time values.
+// The array equality proves the record bound without a runtime panic path.
+macro_rules! literal_schedule {
+    ($kind:expr, $index:expr) => {{
+        const KIND: RateScheduleKind = $kind;
+        const INDEX: u8 = $index;
+        const _: [(); 1] = [(); ((INDEX as usize) < KIND.record_count()) as usize];
+        const SCHEDULE: RateScheduleRef = match RateScheduleRef::new(KIND, INDEX) {
+            Some(schedule) => schedule,
+            None => panic!("a literal schedule is outside its arena"),
+        };
+        SCHEDULE
+    }};
+}
+
 /// Non-data schedule of an interface whose association has not selected
 /// one: `rc11BSchedTbl` record 3, 1 Mbit/s with a 32-publication budget.
 ///
@@ -869,7 +887,16 @@ pub(crate) struct PhyModeSelection {
 /// (and `+0x64`, `+0x6c`) of the interface's default trc, which every frame
 /// uses until `ic_set_sta` enables the association's own trc; station
 /// authentication and association frames therefore use it.
-pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 3);
+pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef =
+    literal_schedule!(RateScheduleKind::Dot11B, 3);
+
+/// The literal schedule records the selection names, checked at build.
+const LORA_0: RateScheduleRef = literal_schedule!(RateScheduleKind::Lora, 0);
+const LORA_1: RateScheduleRef = literal_schedule!(RateScheduleKind::Lora, 1);
+const P2P_DOT11G_7: RateScheduleRef = literal_schedule!(RateScheduleKind::P2pDot11G, 7);
+const BASIC_OFDM_0: RateScheduleRef = literal_schedule!(RateScheduleKind::BasicOfdm, 0);
+const DOT11B_3: RateScheduleRef = DEFAULT_CONTROL_SCHEDULE;
+const DOT11B_0: RateScheduleRef = literal_schedule!(RateScheduleKind::Dot11B, 0);
 
 /// Non-data schedule `rcUpdatePhyMode` stores at trc `+0x68`.
 ///
@@ -886,130 +913,136 @@ pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind:
 const fn control_schedule(phy: StaRateControlPhy, flagged: bool) -> RateScheduleRef {
     match (phy, flagged) {
         (StaRateControlPhy::Dot11B, _) => DEFAULT_CONTROL_SCHEDULE,
-        (StaRateControlPhy::Lora, _) => schedule(RateScheduleKind::Lora, 0),
-        (StaRateControlPhy::Dot11G, true) => schedule(RateScheduleKind::P2pDot11G, 7),
+        (StaRateControlPhy::Lora, _) => LORA_0,
+        (StaRateControlPhy::Dot11G, true) => P2P_DOT11G_7,
         (StaRateControlPhy::Ht | StaRateControlPhy::He, true) => DEFAULT_CONTROL_SCHEDULE,
         (StaRateControlPhy::Dot11G | StaRateControlPhy::Ht | StaRateControlPhy::He, false) => {
-            schedule(RateScheduleKind::BasicOfdm, 0)
+            BASIC_OFDM_0
         }
     }
 }
 
-const fn schedule(kind: RateScheduleKind, index: u8) -> RateScheduleRef {
-    // Every index used by this recovered finite policy is statically within
-    // its corresponding arena. Avoiding Option in the branch code also makes
-    // accidental unchecked pointer arithmetic impossible.
-    match RateScheduleRef::new(kind, index) {
-        Some(reference) => reference,
-        None => panic!("invalid recovered rate schedule"),
-    }
+// Both arms are independently checked literals: a runtime family choice
+// never creates a raw index that needs a fallback record.
+macro_rules! g_schedule {
+    ($p2p:expr, $index:expr) => {
+        if $p2p {
+            literal_schedule!(RateScheduleKind::P2pDot11G, $index)
+        } else {
+            literal_schedule!(RateScheduleKind::Dot11G, $index)
+        }
+    };
 }
 
-const fn highest_dot11b(rate: u32) -> u8 {
+macro_rules! ht_schedule {
+    ($he:expr, $index:expr) => {
+        if $he {
+            literal_schedule!(RateScheduleKind::Dot11Ax, $index)
+        } else {
+            literal_schedule!(RateScheduleKind::Dot11N, $index)
+        }
+    };
+}
+
+const fn highest_dot11b(rate: u32) -> RateScheduleRef {
     match rate {
-        2 => 3,
-        4 => 2,
-        11 => 1,
-        22 => 0,
-        _ => 0,
+        2 => literal_schedule!(RateScheduleKind::Dot11B, 3),
+        4 => literal_schedule!(RateScheduleKind::Dot11B, 2),
+        11 => literal_schedule!(RateScheduleKind::Dot11B, 1),
+        _ => DOT11B_0,
     }
 }
 
-const fn highest_dot11g(rate: u32) -> u8 {
+const fn highest_dot11g(rate: u32, p2p: bool) -> RateScheduleRef {
     match rate {
-        12 => 7,
-        18 => 6,
-        24 => 5,
-        36 => 4,
-        48 => 3,
-        72 => 2,
-        96 => 1,
-        108 => 0,
-        _ => 0,
+        12 => g_schedule!(p2p, 7),
+        18 => g_schedule!(p2p, 6),
+        24 => g_schedule!(p2p, 5),
+        36 => g_schedule!(p2p, 4),
+        48 => g_schedule!(p2p, 3),
+        72 => g_schedule!(p2p, 2),
+        96 => g_schedule!(p2p, 1),
+        _ => g_schedule!(p2p, 0),
     }
 }
 
-const fn highest_dot11n(rate: u32) -> u8 {
+const fn highest_dot11n(rate: u32) -> RateScheduleRef {
     match rate {
-        13 => 8,
-        26 => 7,
-        39 => 6,
-        52 => 5,
-        78 => 4,
-        104 => 3,
-        117 => 2,
-        130 => 1,
-        144 => 0,
-        _ => 0,
+        13 => literal_schedule!(RateScheduleKind::Dot11N, 8),
+        26 => literal_schedule!(RateScheduleKind::Dot11N, 7),
+        39 => literal_schedule!(RateScheduleKind::Dot11N, 6),
+        52 => literal_schedule!(RateScheduleKind::Dot11N, 5),
+        78 => literal_schedule!(RateScheduleKind::Dot11N, 4),
+        104 => literal_schedule!(RateScheduleKind::Dot11N, 3),
+        117 => literal_schedule!(RateScheduleKind::Dot11N, 2),
+        130 => literal_schedule!(RateScheduleKind::Dot11N, 1),
+        _ => literal_schedule!(RateScheduleKind::Dot11N, 0),
     }
 }
 
-const fn highest_dot11ax(rate: u32) -> u8 {
+const fn highest_dot11ax(rate: u32) -> RateScheduleRef {
     match rate {
-        17 => 9,
-        34 => 8,
-        51 => 7,
-        68 => 6,
-        104 => 5,
-        137 => 4,
-        154 => 3,
-        172 => 2,
-        206 => 1,
-        229 => 0,
-        _ => 0,
+        17 => literal_schedule!(RateScheduleKind::Dot11Ax, 9),
+        34 => literal_schedule!(RateScheduleKind::Dot11Ax, 8),
+        51 => literal_schedule!(RateScheduleKind::Dot11Ax, 7),
+        68 => literal_schedule!(RateScheduleKind::Dot11Ax, 6),
+        104 => literal_schedule!(RateScheduleKind::Dot11Ax, 5),
+        137 => literal_schedule!(RateScheduleKind::Dot11Ax, 4),
+        154 => literal_schedule!(RateScheduleKind::Dot11Ax, 3),
+        172 => literal_schedule!(RateScheduleKind::Dot11Ax, 2),
+        206 => literal_schedule!(RateScheduleKind::Dot11Ax, 1),
+        _ => literal_schedule!(RateScheduleKind::Dot11Ax, 0),
     }
 }
 
-/// Exact log-free port of `rcGetHighestRateIdx` and its five finite helpers.
-///
-/// Invalid rate encodings deliberately retain the vendor result of zero.
-pub(crate) const fn highest_rate_index(
-    phy_type: u8,
-    he_type: u8,
-    supplied_rate: u32,
-    use_supplied_rate: bool,
-) -> u8 {
-    if !use_supplied_rate {
-        return if phy_type == 2 || phy_type == 4 { 1 } else { 0 };
+/// The record selected by `rcGetHighestRateIdx` and its finite helpers.
+/// Unknown wire rate encodings deliberately select the vendor's record zero;
+/// the resulting reference is already valid for its selected arena.
+const fn highest_rate_schedule(input: PhyModeSelectionInput) -> RateScheduleRef {
+    if !input.use_supplied_highest_rate {
+        return match input.phy_type {
+            1 => g_schedule!(input.p2p, 0),
+            2 | 4 => ht_schedule!(input.he_type == 7, 1),
+            3 | 5 => ht_schedule!(input.he_type == 7, 0),
+            6 => LORA_0,
+            _ => DOT11B_0,
+        };
     }
-    match phy_type {
-        0 => highest_dot11b(supplied_rate),
-        1 => highest_dot11g(supplied_rate),
-        2..=5 if he_type == 7 => highest_dot11ax(supplied_rate),
-        2..=5 => highest_dot11n(supplied_rate),
-        _ => {
-            if phy_type == 2 || phy_type == 4 {
-                1
+    match input.phy_type {
+        0 => highest_dot11b(input.supplied_highest_rate),
+        1 => highest_dot11g(input.supplied_highest_rate, input.p2p),
+        2..=5 if input.he_type == 7 => highest_dot11ax(input.supplied_highest_rate),
+        2..=5 => highest_dot11n(input.supplied_highest_rate),
+        6 => LORA_0,
+        _ => DOT11B_0,
+    }
+}
+
+/// Compare the unadjusted HT threshold with the peer's highest record,
+/// then select the checked HT record or its HE record two places lower.
+const fn ht_metric_schedule(metric: i32, he: bool, highest: RateScheduleRef) -> RateScheduleRef {
+    macro_rules! threshold {
+        ($index:expr) => {
+            if $index <= highest.index() {
+                highest
+            } else if he {
+                literal_schedule!(RateScheduleKind::Dot11Ax, $index + 2)
             } else {
-                0
+                literal_schedule!(RateScheduleKind::Dot11N, $index)
             }
-        }
+        };
     }
-}
-
-const fn ht_metric_index(metric: i32) -> u8 {
-    if metric <= 8 {
-        11
-    } else if metric <= 11 {
-        8
-    } else if metric <= 13 {
-        7
-    } else if metric <= 16 {
-        6
-    } else if metric <= 21 {
-        5
-    } else if metric <= 26 {
-        4
-    } else if metric <= 29 {
-        3
-    } else if metric <= 33 {
-        2
-    } else if metric <= 36 {
-        1
-    } else if metric <= 41 {
-        0
-    } else {
-        u8::MAX
+    match metric {
+        ..=8 => threshold!(11),
+        9..=11 => threshold!(8),
+        12..=13 => threshold!(7),
+        14..=16 => threshold!(6),
+        17..=21 => threshold!(5),
+        22..=26 => threshold!(4),
+        27..=29 => threshold!(3),
+        30..=33 => threshold!(2),
+        34..=36 => threshold!(1),
+        _ => highest,
     }
 }
 
@@ -1019,26 +1052,21 @@ const fn ht_metric_index(metric: i32) -> u8 {
 /// Rust-owned association; no vendor record projection remains.
 #[inline(never)]
 pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection {
-    let highest = highest_rate_index(
-        input.phy_type,
-        input.he_type,
-        input.supplied_highest_rate,
-        input.use_supplied_highest_rate,
-    );
-    let lora_fallback = schedule(RateScheduleKind::Lora, 1);
+    let highest = highest_rate_schedule(input);
+    let lora_fallback = LORA_1;
 
     let (current, secondary, legacy, maximum_index, schedule_count, index_map, ampdu_limit_rate) =
         match input.phy_type {
             0 => {
-                let current_index = if input.use_supplied_highest_rate {
+                let current = if input.use_supplied_highest_rate {
                     highest
                 } else {
-                    3
+                    DOT11B_3
                 };
                 (
-                    schedule(RateScheduleKind::Dot11B, current_index),
-                    schedule(RateScheduleKind::Dot11B, 3),
-                    schedule(RateScheduleKind::Dot11B, 0),
+                    current,
+                    DOT11B_3,
+                    DOT11B_0,
                     if input.long_range_rates_present { 5 } else { 3 },
                     6,
                     RateIndexMap::Dot11B,
@@ -1046,33 +1074,31 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                 )
             }
             1 => {
-                let kind = if input.p2p {
-                    RateScheduleKind::P2pDot11G
-                } else {
-                    RateScheduleKind::Dot11G
-                };
-                let mut current_index = if input.metric <= 11 {
-                    if input.p2p { 7 } else { 10 }
-                } else if input.metric <= 16 {
-                    5
-                } else if input.metric <= 21 {
-                    3
-                } else if input.metric < 30 {
-                    2
-                } else {
-                    0
-                };
-                if input.use_supplied_highest_rate {
-                    current_index = highest;
-                }
-                (
-                    schedule(kind, current_index),
+                let current = if input.use_supplied_highest_rate {
+                    highest
+                } else if input.metric <= 11 {
                     if input.p2p {
-                        schedule(RateScheduleKind::P2pDot11G, 7)
+                        P2P_DOT11G_7
                     } else {
-                        schedule(RateScheduleKind::BasicOfdm, 0)
+                        literal_schedule!(RateScheduleKind::Dot11G, 10)
+                    }
+                } else if input.metric <= 16 {
+                    g_schedule!(input.p2p, 5)
+                } else if input.metric <= 21 {
+                    g_schedule!(input.p2p, 3)
+                } else if input.metric < 30 {
+                    g_schedule!(input.p2p, 2)
+                } else {
+                    g_schedule!(input.p2p, 0)
+                };
+                (
+                    current,
+                    if input.p2p {
+                        P2P_DOT11G_7
+                    } else {
+                        BASIC_OFDM_0
                     },
-                    schedule(kind, 0),
+                    g_schedule!(input.p2p, 0),
                     if input.p2p {
                         7
                     } else if input.long_range_rates_present {
@@ -1087,34 +1113,27 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
             }
             2..=5 => {
                 let he = input.he_type == 7;
-                let kind = if he {
-                    RateScheduleKind::Dot11Ax
-                } else {
-                    RateScheduleKind::Dot11N
-                };
-                let threshold = ht_metric_index(input.metric);
-                let adjustment = if he { 2 } else { 0 };
-                let mut current_index = if threshold == u8::MAX || threshold <= highest {
+                let metric_schedule = ht_metric_schedule(input.metric, he, highest);
+                let current = if input.use_supplied_highest_rate {
                     highest
+                } else if input.p2p && metric_schedule.index() > 7 {
+                    ht_schedule!(he, 7)
                 } else {
-                    threshold + adjustment
+                    metric_schedule
                 };
-                if input.p2p && current_index > 7 {
-                    current_index = 7;
-                }
-                if input.use_supplied_highest_rate {
-                    current_index = highest;
-                }
-                let limit_index = if current_index > 8 { 8 } else { current_index };
-                let limit_schedule = schedule(kind, limit_index);
+                let limit_schedule = if current.index() > 8 {
+                    ht_schedule!(he, 8)
+                } else {
+                    current
+                };
                 (
-                    schedule(kind, current_index),
+                    current,
                     if input.p2p {
-                        schedule(RateScheduleKind::P2pDot11G, 7)
+                        P2P_DOT11G_7
                     } else {
-                        schedule(RateScheduleKind::BasicOfdm, 0)
+                        BASIC_OFDM_0
                     },
-                    schedule(kind, 0),
+                    ht_schedule!(he, 0),
                     if input.long_range_rates_present {
                         if he { 15 } else { 13 }
                     } else if he {
@@ -1131,19 +1150,11 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
                     Some(schedule_state(limit_schedule).rate),
                 )
             }
-            6 => (
-                schedule(RateScheduleKind::Lora, 0),
-                schedule(RateScheduleKind::Lora, 0),
-                schedule(RateScheduleKind::Lora, 0),
-                1,
-                2,
-                RateIndexMap::Lora,
-                None,
-            ),
+            6 => (LORA_0, LORA_0, LORA_0, 1, 2, RateIndexMap::Lora, None),
             _ => (
-                schedule(RateScheduleKind::Dot11B, 3),
-                schedule(RateScheduleKind::Dot11B, 3),
-                schedule(RateScheduleKind::Dot11B, 0),
+                DOT11B_3,
+                DOT11B_3,
+                DOT11B_0,
                 if input.long_range_rates_present { 5 } else { 3 },
                 6,
                 RateIndexMap::Dot11B,
@@ -1160,7 +1171,7 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
             secondary
         },
         legacy,
-        highest_index: highest,
+        highest_index: highest.index(),
         maximum_index,
         schedule_count,
         index_map,
@@ -1238,6 +1249,7 @@ pub struct EspressifRateControl {
 /// What turns a schedule into a rate the association can send.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RateDecode {
+    legacy_rates: NegotiatedLegacyRates,
     high_throughput: bool,
     ht_bandwidth: PpduBandwidth,
     ht_short_gi: bool,
@@ -1249,32 +1261,40 @@ impl RateDecode {
     fn rate(self, schedule: RateScheduleRef) -> PhyRate {
         let code = schedule_state(schedule).rate;
         match crate::rate_code::phy_rate(
-            schedule.kind,
+            schedule.kind(),
             code,
             self.ht_bandwidth,
             self.he_800ns_gi_ltf,
         ) {
-            Some(PhyRate::Ht(rate)) if rate.short_gi() && !self.ht_short_gi => PhyRate::Ht(
+            // A schedule rate the peer's capabilities cannot carry as is
+            // goes at the vendor station's fallback, as one without a
+            // portable rate does.
+            Some(PhyRate::Ht(rate)) if rate.short_gi() && !self.ht_short_gi => {
                 HtRate::new(rate.mcs(), rate.bandwidth(), false)
-                    .expect("an HT rate at its own width"),
-            ),
-            Some(PhyRate::He(rate)) if self.he_ldpc => PhyRate::He(
-                HeRate::new(
-                    rate.mcs(),
-                    rate.spatial_streams(),
-                    rate.bandwidth(),
-                    rate.gi_ltf(),
-                    FecCoding::Ldpc,
-                    rate.dcm(),
-                )
-                .expect("an HE rate with LDPC"),
-            ),
+                    .map_or_else(|| self.fallback(), PhyRate::Ht)
+            }
+            Some(PhyRate::He(rate)) if self.he_ldpc => HeRate::new(
+                rate.mcs(),
+                rate.spatial_streams(),
+                rate.bandwidth(),
+                rate.gi_ltf(),
+                FecCoding::Ldpc,
+                rate.dcm(),
+            )
+            .map_or_else(|| self.fallback(), PhyRate::He),
+            Some(PhyRate::Legacy(rate)) => PhyRate::Legacy(self.legacy_rates.constrain(rate)),
             Some(rate) => rate,
-            None if self.high_throughput => PhyRate::Ht(
-                HtRate::new(HtMcs::new(7).expect("HT MCS 7"), self.ht_bandwidth, false)
-                    .expect("HT MCS 7 at the association's width"),
-            ),
-            None => PhyRate::Legacy(LegacyRate::Ofdm54M),
+            None => self.fallback(),
+        }
+    }
+
+    /// The vendor station's fallback: HT MCS 7 with the long guard interval
+    /// on an HT association, at its width, or the highest negotiated legacy
+    /// rate no faster than 54 Mb/s.
+    fn fallback(self) -> PhyRate {
+        match HtRate::new(HtMcs::SINGLE_STREAM_MAX, self.ht_bandwidth, false) {
+            Some(rate) if self.high_throughput => PhyRate::Ht(rate),
+            _ => PhyRate::Legacy(self.legacy_rates.constrain(LegacyRate::Ofdm54M)),
         }
     }
 }
@@ -1282,9 +1302,10 @@ impl RateDecode {
 impl RateControl for EspressifRateControl {
     type Config = ();
 
-    fn for_peer((): (), peer: &RatePeer, link_metric: Option<i8>) -> Self {
+    fn for_peer((): (), peer: &RatePeer, link_metric: LinkMetric) -> Self {
         let he = peer.he_capabilities;
         let phy = match peer.phy {
+            PhyMode::Legacy if !peer.legacy_rates.has_ofdm() => StaRateControlPhy::Dot11B,
             PhyMode::Legacy => StaRateControlPhy::Dot11G,
             PhyMode::Ht20 | PhyMode::Ht40 => StaRateControlPhy::Ht,
             PhyMode::He20 => StaRateControlPhy::He,
@@ -1301,9 +1322,7 @@ impl RateControl for EspressifRateControl {
             .map(StaRateControlPeerHighestRate::he20_one_spatial_stream);
         let association = StaRateControlAssociation::new(StaRateControlAssociationInput {
             phy,
-            // An unknown metric is the weakest link: the selection starts at
-            // the format's slowest schedule and adaptation raises it.
-            link_metric: StaLinkMetric::from_estimator(link_metric.unwrap_or(i8::MIN)),
+            link_metric: StaLinkMetric::from_estimator(link_metric.db()),
             p2p: false,
             peer_highest_rate,
             long_range_rates_present: false,
@@ -1324,6 +1343,7 @@ impl RateControl for EspressifRateControl {
         Self {
             association,
             decode: RateDecode {
+                legacy_rates: peer.legacy_rates,
                 high_throughput: peer.phy != PhyMode::Legacy,
                 ht_bandwidth,
                 ht_short_gi: peer
@@ -1351,36 +1371,37 @@ impl RateControl for EspressifRateControl {
         )
     }
 
-    fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, ack_snr_db: Option<i8>) {
-        if acknowledged && let Some(sample) = ack_snr_db {
+    fn observe_mpdu(&mut self, attempts: NonZeroU16, outcome: MpduOutcome, ack_snr_db: Option<i8>) {
+        if outcome == MpduOutcome::Acknowledged
+            && let Some(sample) = ack_snr_db
+        {
             self.association.update_ack_snr(sample);
         }
-        self.association
-            .update_tx_per(u32::from(attempts.saturating_sub(1)));
+        let retries = attempts.get() - 1;
+        self.association.update_tx_per(u32::from(retries));
     }
 
     fn observe_ampdu(
         &mut self,
         now: Instant,
-        attempted: u16,
-        acknowledged: u16,
+        tally: BlockAckTally,
         ack_snr_db: Option<i8>,
-    ) {
-        // As the S31 station: the BlockAck's ACK SNR feeds the filter the
-        // aggregate thresholds read, before the window is evaluated.
-        if let Some(sample) = ack_snr_db {
-            self.association.update_ack_snr(sample);
-        }
-        // The vendor's wrapping 32-bit microsecond clock.
-        let _ = self.association.observe_ampdu_block_ack(
-            now.as_micros() as u32,
-            attempted,
-            acknowledged,
-        );
+    ) -> Result<(), AmpduUnavailable> {
+        self.association
+            .observe_ampdu_block_ack(now.as_micros() as u32, tally, ack_snr_db)
+            .map(|_| ())
     }
 }
 
 impl EspressifRateControl {
+    /// Apply association admission to a control or retry schedule's rate.
+    pub(super) fn constrain_rate(&self, rate: PhyRate) -> PhyRate {
+        match rate {
+            PhyRate::Legacy(rate) => PhyRate::Legacy(self.decode.legacy_rates.constrain(rate)),
+            rate => rate,
+        }
+    }
+
     /// The association's rate control, as the vendor holds it.
     pub const fn association(&self) -> &StaRateControlAssociation {
         &self.association

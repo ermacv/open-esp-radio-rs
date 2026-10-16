@@ -8,30 +8,13 @@ The production side goes through the same projection functions as the
 comparison probes (its `projection`).
 It does not depend on Blobray peripheral models.
 
-This package is a library: what is compared and how. The capture is a HIL
-run: the `phy` family's `vendor-calibration` workload
-([`oer-hil-family-phy`](../../../host/family/phy/README.md)) and its
-scenarios in [`hil/scenarios/phy`](../../../scenarios/phy):
-
-```console
-cargo hil run phy-vendor-calibration
-cargo hil run phy-vendor-calibration-restart
-cargo hil run phy-vendor-calibration-ieee802154
-cargo hil run phy-vendor-calibration-ieee802154-restart
-```
-
-The run builds the production image class like any scenario and the vendor
-project it flashes against the pinned ESP-IDF (the image pipeline's
-`esp_idf::idf` build, incremental), with the HIL bootloader, partition table
-and OTA selection the pipeline encodes around the vendor application. Every
-flash goes through the run's flash operation under its lease and lock of
-the board, which journals it. The results are the run bundle's: each boot is
-a typed observation (`vendor-boot-NN`, `production-boot-NN`, the chip-neutral
-[`oer-phy-calibration-capture`](../../capture)'s
-`boots::VendorBoot` and `boots::ProductionBoot`), the images both sides ran
-are `images`, and the
-comparison is `comparison` (`compare::Summary`); a verdict other than MATCH
-fails the repetition. Nothing is written to the repository.
+This package is a library: what is compared and how. No HIL scenario runs
+the capture now: the `phy` family's `vendor-calibration` workload and its
+scenarios were deleted with the production images they booted (#762), and
+return with the HIL architecture of #761; the tag `legacy-wifi-2026-10-16`
+keeps them. The host comparison port is
+[`oer-hil-family-phy`](../../../host/family/phy/README.md). The capture below
+describes what the removed workload did and what a new one must reproduce.
 
 ## Capture
 
@@ -51,10 +34,11 @@ table's `boots` rounds the workload takes these steps:
    `register-image`), read through the ESP-IDF analog-I2C driver.
 2. Write the scenario's production image back and boot it with a fresh
    startup artifact path, so the boot calibrates fully and publishes its
-   retained calibration. Then read the radio-PHY register image (HIL
-   `PhyRegisterImage`) at the indices the vendor boot of the round read,
-   and the whole analog image (HIL `PhyAnalogImage`, one production
-   analog-I2C read per register).
+   retained calibration. Then read the radio-PHY register image at the
+   indices the vendor boot of the round read, and the whole analog image
+   (one production analog-I2C read per register). The former HIL messages
+   `PhyRegisterImage` and `PhyAnalogImage` (tag `legacy-wifi-2026-10-16`) carried these reads;
+   no current image serves them.
 
 `lifecycle = "ieee802154"` and `"ieee802154-restart"` read the registers
 with the IEEE 802.15.4 radio instead of Wi-Fi holding the PHY. The vendor
@@ -62,7 +46,7 @@ side is the [IEEE 802.15.4 reference firmware](../../../../verification/esp32s31
 configured on channel 15 at 21 dBm and receiving, after one driver disable
 and enable for the restart point, read through its `PEEK` and `ANALOG`
 commands; a read that resets or hangs the chip is recorded as unreadable
-after a board reset. Production runs the `diagnostic-ieee802154-radio`
+after a board reset. Production ran the former `diagnostic-ieee802154-radio`
 image's IEEE 802.15.4 session on the same channel. These points compare
 register state only.
 

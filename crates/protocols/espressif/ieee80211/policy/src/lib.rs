@@ -1,5 +1,34 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![deny(
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unreachable,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::disallowed_macros
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::arithmetic_side_effects,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::disallowed_macros,
+    )
+)]
 
 //! Espressif IEEE 802.11 transmit policy data.
 //!
@@ -40,6 +69,7 @@ pub mod lmac;
 pub mod rate_code;
 pub mod rate_control;
 pub mod rate_schedule;
+pub mod rate_selection;
 pub mod retry_ladder;
 pub mod station_link;
 

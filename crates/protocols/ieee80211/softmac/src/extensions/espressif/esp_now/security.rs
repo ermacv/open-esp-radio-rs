@@ -31,7 +31,7 @@ use crate::{
 pub const ESP_NOW_KEY_LEN: usize = 16;
 pub const ESP_NOW_RX_REPLAY_WINDOW_BITS: u32 = 64;
 /// Portable encrypted-peer storage default. This is not a hardware-key-slot
-/// claim; an S31 backend currently advertises zero proven encrypted slots.
+/// claim; each backend advertises only its proven encrypted-slot capacity.
 pub const ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY: usize = ESP_NOW_DEFAULT_PEER_CAPACITY;
 const ESP_NOW_PACKET_NUMBER_MAX: u64 = (1_u64 << 48) - 1;
 

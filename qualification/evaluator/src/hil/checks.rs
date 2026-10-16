@@ -28,106 +28,6 @@ pub(super) fn receive_only_station_udp(document: &Value) -> bool {
             .is_none_or(Value::is_null)
 }
 
-pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> {
-    let mut checks = BTreeMap::new();
-    let workload = document.pointer("/wifi/workload");
-    let field = |name: &str| workload.and_then(|workload| workload.get(name));
-    let exactly_once = |checks: &mut BTreeMap<String, Contract>, name: &str| {
-        checks.insert(
-            name.into(),
-            Contract {
-                unit: "count",
-                comparison: "exactly",
-                threshold: 1,
-            },
-        );
-    };
-    let kind = field("kind").and_then(Value::as_str);
-    // A station workload induces the protection; an access-point workload
-    // observes its own protection toward the OpenWrt client.
-    let protection = field("induced_protection")
-        .or_else(|| field("protection"))
-        .filter(|v| !v.is_null());
-    if let Some(induced) = protection {
-        let percent = induced
-            .get("minimum_protected_ppdu_percent")
-            .and_then(Value::as_u64)
-            .filter(|percent| (1..=100).contains(percent))
-            .ok_or("induced protection names no protected-PPDU floor")?;
-        checks.insert(
-            "wifi.protection.rts-cts-before-data".into(),
-            Contract {
-                unit: "basis-points",
-                comparison: "at-least",
-                threshold: percent * 100,
-            },
-        );
-        for name in [
-            "wifi.protection.control-rate",
-            "wifi.protection.nav-covers-exchange",
-        ] {
-            checks.insert(
-                name.into(),
-                Contract {
-                    unit: "count",
-                    comparison: "exactly",
-                    threshold: 0,
-                },
-            );
-        }
-    }
-    if matches!(kind, Some("station-ap-loss" | "station-ap-absence")) {
-        exactly_once(&mut checks, "wifi.station.control-responsive");
-        if kind == Some("station-ap-loss") {
-            exactly_once(&mut checks, "wifi.station.ap-loss-reconnected");
-            if field("require_recovery_echo").and_then(Value::as_bool) == Some(true) {
-                exactly_once(&mut checks, "wifi.station.recovered-ip-exchange");
-            }
-        } else if field("initially_absent").and_then(Value::as_bool) == Some(true) {
-            exactly_once(&mut checks, "wifi.station.initial-retry-exhausted");
-        } else {
-            exactly_once(&mut checks, "wifi.station.recovery-retry-exhausted");
-        }
-        return Ok(checks);
-    }
-    if !receive_only_station_udp(document) {
-        return Ok(checks);
-    }
-    let criterion = |name: &str| {
-        field("criteria")
-            .and_then(|criteria| criteria.get(name))
-            .and_then(Value::as_u64)
-    };
-    if let Some(floor) = criterion("minimum_rx_bps") {
-        for (name, threshold) in [
-            ("udp.rx.target-rate", floor / 1_000 * 1_000),
-            ("udp.rx.host-offer-rate", floor),
-        ] {
-            checks.insert(
-                name.into(),
-                Contract {
-                    unit: "bits-per-second",
-                    comparison: "at-least",
-                    threshold,
-                },
-            );
-        }
-    }
-    if let Some(limit) = criterion("maximum_rx_silence_ms") {
-        checks.insert(
-            "udp.rx.maximum-silence".into(),
-            Contract {
-                unit: "microseconds",
-                comparison: "at-most",
-                threshold: limit
-                    .checked_mul(1_000)
-                    .ok_or("RX silence criterion overflows microseconds")?,
-            },
-        );
-    }
-    Ok(checks)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Assessment {
     Passed,
@@ -168,6 +68,16 @@ pub(super) fn assess(name: &str, contract: &Contract, measurements: &[Value]) ->
     }
 }
 
+/// A contract no scenario family publishes, for the mechanism's tests.
+#[cfg(test)]
+pub(super) fn contract(unit: &'static str, comparison: &'static str, threshold: u64) -> Contract {
+    Contract {
+        unit,
+        comparison,
+        threshold,
+    }
+}
+
 #[cfg(test)]
 fn passes(name: &str, contract: &Contract, measurements: &[Value]) -> bool {
     assess(name, contract, measurements) == Assessment::Passed
@@ -178,120 +88,82 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn catalog() -> ScenarioCatalog {
-        ScenarioCatalog::load(
+    const NAME: &str = "proof.count";
+
+    /// The repository catalog with `checks` published for `scenario`.
+    fn catalog(scenario: &str, checks: &[&str]) -> ScenarioCatalog {
+        let mut catalog = ScenarioCatalog::load(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
                 .as_path(),
             Path::new("hil/scenarios"),
         )
-        .unwrap()
+        .unwrap();
+        catalog.checks.insert(
+            scenario.into(),
+            checks
+                .iter()
+                .map(|name| ((*name).to_owned(), contract("count", "exactly", 1)))
+                .collect(),
+        );
+        catalog
     }
 
-    fn observed(value: u64) -> Value {
-        json!({"name": "wifi.station.control-responsive", "value": value, "unit": "count", "semantics": 1, "better": null, "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
-    }
-
-    #[test]
-    fn induced_protection_publishes_its_air_contracts() {
-        let published = contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
-            "offer":{"tx_bps":1000},"induced_protection":{"peer":"non-ht-member",
-            "minimum_protected_ppdu_percent":95}}}}))
-        .unwrap();
-        let share = &published["wifi.protection.rts-cts-before-data"];
-        let sample = |value: u64| {
-            json!({"name":"wifi.protection.rts-cts-before-data","value":value,"unit":"basis-points", "semantics": 1, "better": "higher",
-                "threshold":{"comparison":"at-least","value":9_500},"verdict":"passed"})
-        };
-        assert!(passes(
-            "wifi.protection.rts-cts-before-data",
-            share,
-            &[sample(9_600)]
-        ));
-        assert!(!passes(
-            "wifi.protection.rts-cts-before-data",
-            share,
-            &[sample(9_400)]
-        ));
-        assert!(published.contains_key("wifi.protection.control-rate"));
-        assert!(published.contains_key("wifi.protection.nav-covers-exchange"));
-        assert!(
-            contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
-                "induced_protection":{"peer":"non-ht-member"}}}}))
-            .is_err()
-        );
-        let access_point = contracts(&json!({"wifi":{"workload":{"kind":"access-point",
-            "protection":{"minimum_protected_ppdu_percent":90}}}}))
-        .unwrap();
-        assert_eq!(
-            access_point["wifi.protection.rts-cts-before-data"].threshold,
-            9_000
-        );
-    }
-
-    #[test]
-    fn ap_start_failure_is_distinct_from_recovery_and_control_liveness() {
-        let initial = contracts(
-            &serde_json::json!({"wifi":{"workload":{"kind":"station-ap-absence","initially_absent":true}}}),
-        )
-        .unwrap();
-        let recovered =
-            contracts(&serde_json::json!({"wifi":{"workload":{"kind":"station-ap-absence"}}}))
-                .unwrap();
-        assert!(initial.contains_key("wifi.station.initial-retry-exhausted"));
-        assert!(!initial.contains_key("wifi.station.recovery-retry-exhausted"));
-        assert!(recovered.contains_key("wifi.station.recovery-retry-exhausted"));
-        let name = "wifi.station.initial-retry-exhausted";
-        let unrelated = serde_json::json!({"name":"wifi.station.control-responsive","value":1,"unit":"count", "semantics": 1, "better": null,"threshold":{"comparison":"exactly","value":1},"verdict":"passed"});
-        assert_eq!(
-            assess(name, &initial[name], &[unrelated]),
-            Assessment::Unavailable
-        );
+    fn observed(name: &str, value: u64) -> Value {
+        json!({"name": name, "value": value, "unit": "count", "semantics": 1, "better": null, "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
     }
 
     #[test]
     fn independently_checks_values_units_thresholds_duplicates_and_missing_data() {
-        let contracts =
-            contracts(&json!({"wifi": {"workload": {"kind": "station-ap-loss"}}})).unwrap();
-        let name = "wifi.station.control-responsive";
-        let contract = &contracts[name];
-        assert!(passes(name, contract, &[observed(1)]));
-        assert!(!passes(name, contract, &[observed(0)]));
-        assert!(!passes(name, contract, &[]));
-        assert!(!passes(name, contract, &[observed(1), observed(1)]));
+        let contract = contract("count", "exactly", 1);
+        assert!(passes(NAME, &contract, &[observed(NAME, 1)]));
+        assert!(!passes(NAME, &contract, &[observed(NAME, 0)]));
+        assert!(!passes(NAME, &contract, &[]));
+        assert!(!passes(
+            NAME,
+            &contract,
+            &[observed(NAME, 1), observed(NAME, 1)]
+        ));
+        assert_eq!(
+            assess(NAME, &contract, &[observed("other.count", 1)]),
+            Assessment::Unavailable
+        );
         for changed in [
             json!({"unit": "bytes"}),
             json!({"verdict": null}),
             json!({"threshold": {"comparison": "at-least", "value": 2}}),
         ] {
-            let mut sample = observed(1);
+            let mut sample = observed(NAME, 1);
             sample
                 .as_object_mut()
                 .unwrap()
                 .extend(changed.as_object().unwrap().clone());
-            assert!(!passes(name, contract, &[sample]));
+            assert!(!passes(NAME, &contract, &[sample]));
         }
     }
 
     #[test]
     fn criteria_are_recomputed_without_rewriting_the_original_assessment() {
-        let original = json!({"name":"udp.rx.target-rate", "value":90_000_000,
+        let name = "proof.rate";
+        let original = json!({"name": name, "value":90_000_000,
             "unit":"bits-per-second", "semantics": 1, "better": "higher", "threshold":{"comparison":"at-least","value":95_000_000},
             "verdict":"failed"});
         let measurements = vec![original.clone()];
         for (floor, expected) in [(85_000_000, true), (90_000_000, true), (95_000_000, false)] {
-            let contracts = contracts(&json!({"wifi":{"workload":{"kind":"station-udp",
-                "offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":floor}}}}))
-            .unwrap();
             assert_eq!(
                 passes(
-                    "udp.rx.target-rate",
-                    &contracts["udp.rx.target-rate"],
+                    name,
+                    &contract("bits-per-second", "at-least", floor),
                     &measurements
                 ),
                 expected
             );
         }
+        assert!(passes(
+            name,
+            &contract("bits-per-second", "at-most", 90_000_000),
+            &measurements
+        ));
         assert_eq!(measurements[0], original);
         // Reassessing one number is not authorization to turn a failed
         // scenario/lifecycle into a successful qualification observation.
@@ -299,10 +171,10 @@ mod tests {
 
     #[test]
     fn every_repetition_must_contain_the_requested_proof() {
-        let catalog = catalog();
+        let catalog = catalog("bluetooth-trouble-secure-gatt-hci-read-failure", &[NAME]);
         let requirement = HilRequirement {
-            scenario: "station-ap-loss".into(),
-            checks: vec!["wifi.station.control-responsive".into()],
+            scenario: "bluetooth-trouble-secure-gatt-hci-read-failure".into(),
+            checks: vec![NAME.into()],
             minimum_repetitions: 3,
             bounds: Vec::new(),
         };
@@ -310,12 +182,12 @@ mod tests {
         let mut index = HilEvidenceIndex::synthetic(&[(&requirement.scenario, 3)]);
         assert!(index.evidence_for(&requirement, &catalog).is_none());
         index.scenarios.get_mut(&requirement.scenario).unwrap()[0].measurements =
-            vec![vec![observed(1)]; 3];
+            vec![vec![observed(NAME, 1)]; 3];
         assert!(
             index
                 .evidence_for(&requirement, &catalog)
                 .unwrap()
-                .contains(":checks=wifi.station.control-responsive")
+                .contains(":checks=proof.count")
         );
         index.scenarios.get_mut(&requirement.scenario).unwrap()[0].measurements[1].clear();
         assert!(index.evidence_for(&requirement, &catalog).is_none());
@@ -323,38 +195,39 @@ mod tests {
 
     #[test]
     fn scope_and_duplicate_requirements_fail_static_validation() {
-        let catalog = catalog();
+        let catalog = catalog("bluetooth-trouble-secure-gatt-hci-read-failure", &[NAME]);
         let mut requirement = HilRequirement {
-            scenario: "udp-rx-he20-ceiling".into(),
-            checks: vec!["wifi.station.control-responsive".into()],
+            scenario: "boot-smoke".into(),
+            checks: vec![NAME.into()],
             minimum_repetitions: 1,
             bounds: Vec::new(),
         };
         assert!(catalog.validate_requirement(&requirement).is_err());
-        requirement.checks = vec!["udp.rx.target-rate".into()];
+        requirement.scenario = "bluetooth-trouble-secure-gatt-hci-read-failure".into();
         catalog.validate_requirement(&requirement).unwrap();
-        requirement.checks.push("udp.rx.target-rate".into());
+        requirement.checks.push(NAME.into());
         assert!(catalog.validate_requirement(&requirement).is_err());
     }
 
     #[test]
     fn individual_proofs_from_different_runs_do_not_satisfy_one_obligation() {
-        let catalog = catalog();
+        let other_name = "proof.other";
+        let catalog = catalog(
+            "bluetooth-trouble-secure-gatt-hci-read-failure",
+            &[NAME, other_name],
+        );
         let requirement = HilRequirement {
-            scenario: "station-ap-loss".into(),
-            checks: vec![
-                "wifi.station.control-responsive".into(),
-                "wifi.station.ap-loss-reconnected".into(),
-            ],
+            scenario: "bluetooth-trouble-secure-gatt-hci-read-failure".into(),
+            checks: vec![NAME.into(), other_name.into()],
             minimum_repetitions: 1,
             bounds: Vec::new(),
         };
         let mut index = HilEvidenceIndex::synthetic(&[(&requirement.scenario, 1)]);
         let entries = index.scenarios.get_mut(&requirement.scenario).unwrap();
-        entries[0].measurements = vec![vec![observed(1)]];
+        entries[0].measurements = vec![vec![observed(NAME, 1)]];
         let mut other = entries[0].clone();
         other.run_id = "another-run".into();
-        other.measurements[0][0]["name"] = "wifi.station.ap-loss-reconnected".into();
+        other.measurements[0][0]["name"] = other_name.into();
         entries.push(other);
         for check in &requirement.checks {
             let single = HilRequirement {

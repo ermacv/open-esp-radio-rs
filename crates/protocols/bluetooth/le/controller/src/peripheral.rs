@@ -995,7 +995,10 @@ impl<const N: usize> Peripheral<N> {
                         // An aborted event proves no peer packet.
                         EventResult::Executed { anchor: None }
                         | EventResult::NotExecuted
-                        | EventResult::Aborted => LePeripheralConnectionEventPeerActivity::Missed,
+                        | EventResult::Aborted
+                        | EventResult::Indeterminate => {
+                            LePeripheralConnectionEventPeerActivity::Missed
+                        }
                     };
                     trace_event(
                         match activity {

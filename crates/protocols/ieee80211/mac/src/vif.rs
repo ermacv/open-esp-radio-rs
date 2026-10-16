@@ -20,7 +20,6 @@ pub struct StaApRxAddresses {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-interfaces-and-operating-modes-four-virtual-wi-fi-interfaces
 pub enum StaApVif {
     Station,
     AccessPoint,

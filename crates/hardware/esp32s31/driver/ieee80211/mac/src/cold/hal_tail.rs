@@ -1,6 +1,9 @@
 //! Ownership boundary for the direct pre-COEX tail of `hal_init`.
 
-use oer_esp32s31_hal::{ieee80211::mac::WifiMacColdHal, types::MacInterruptMask};
+use oer_esp32s31_hal::{
+    ieee80211::mac::WifiMacColdHal,
+    types::{MacInterruptMask, MacRtcCalibration},
+};
 
 /// Availability of the platform slow-clock calibration used by the MAC RTC.
 ///
@@ -10,15 +13,13 @@ use oer_esp32s31_hal::{ieee80211::mac::WifiMacColdHal, types::MacInterruptMask};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacSlowClockCalibration {
     Unavailable,
-    Calibrated(u32),
+    Calibrated(MacRtcCalibration),
 }
 
 impl MacSlowClockCalibration {
-    const MASK: u32 = 0x0003_ffff;
-
     /// Preserve the exact truncation performed by `hal_timer_update_by_rtc`.
     pub const fn from_osi_value(value: u32) -> Self {
-        Self::Calibrated(value & Self::MASK)
+        Self::Calibrated(MacRtcCalibration::from_osi_value(value))
     }
 
     /// Convert the explicit platform state to the value written by the
@@ -27,9 +28,9 @@ impl MacSlowClockCalibration {
     /// The vendor OS adapter returns zero when no calibration source exists.
     /// Keeping that mapping here preserves the observed transaction while the
     /// enum prevents callers from treating the zero as reviewed calibration.
-    pub const fn register_value(self) -> u32 {
+    pub const fn register_value(self) -> MacRtcCalibration {
         match self {
-            Self::Unavailable => 0,
+            Self::Unavailable => MacRtcCalibration::ZERO,
             Self::Calibrated(value) => value,
         }
     }
@@ -49,8 +50,10 @@ impl MacColdHalTailHardware for WifiMacColdHal<'_> {
         event_mask: MacInterruptMask,
         slow_clock_calibration: MacSlowClockCalibration,
     ) {
-        let programmed =
-            self.initialize_hal_tail(event_mask, slow_clock_calibration.register_value());
-        debug_assert!(programmed);
+        WifiMacColdHal::initialize_hal_tail(
+            self,
+            event_mask,
+            slow_clock_calibration.register_value(),
+        );
     }
 }

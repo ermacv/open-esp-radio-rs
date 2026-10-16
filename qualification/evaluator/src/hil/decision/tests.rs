@@ -538,8 +538,11 @@ fn other_scenario_and_wrong_units_cannot_supply_a_requested_obligation() {
     let mut catalog = ScenarioCatalog::default();
     catalog.checks.insert(
         id.into(),
-        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":100_000}}}}))
-        .unwrap(),
+        [(
+            "udp.rx.target-rate".to_owned(),
+            checks::contract("bits-per-second", "at-least", 100_000),
+        )]
+        .into(),
     );
     let mut index = HilEvidenceIndex::synthetic(&[(id, 1)]);
     index.scenarios.get_mut(id).unwrap()[0].measurements = vec![vec![json!({
@@ -596,8 +599,11 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
     let mut catalog = ScenarioCatalog::default();
     catalog.checks.insert(
         id.into(),
-        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":100_000}}}}))
-        .unwrap(),
+        [(
+            "udp.rx.target-rate".to_owned(),
+            checks::contract("bits-per-second", "at-least", 100_000),
+        )]
+        .into(),
     );
     let mut requested = requirement(id, 1);
     requested.checks.push("udp.rx.target-rate".into());
@@ -615,8 +621,11 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
     );
     catalog.checks.insert(
         id.into(),
-        checks::contracts(&json!({"wifi":{"workload":{"kind":"station-udp","offer":{"rx_bps":100_000_000},"criteria":{"minimum_rx_bps":85_000}}}}))
-        .unwrap(),
+        [(
+            "udp.rx.target-rate".to_owned(),
+            checks::contract("bits-per-second", "at-least", 85_000),
+        )]
+        .into(),
     );
     assert_eq!(
         index.decision_for(&requested, &catalog).status,

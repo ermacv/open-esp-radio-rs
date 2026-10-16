@@ -10,12 +10,12 @@ use oer_hil_link::{error::LinkError, test_support::*};
 use oer_hil_protocol::{
     Envelope,
     base::LinkHealth,
+    network::WifiNetworkInterface,
     network::{
         Direction, EvidenceRecord, Finished, FlowTransportEvidence, Transport, TransportEvidence,
         evidence_crc32c,
     },
     system::StackUsage,
-    wifi::WifiNetworkInterface,
 };
 
 use crate::{NetworkSession as _, SessionHandle, prepare_udp_reverse_flow};
@@ -35,7 +35,7 @@ fn is_link_failure(error: &(dyn std::error::Error + 'static)) -> bool {
 fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
     use oer_hil_protocol::{
         network::Direction, network::NetworkInfo, network::ServiceInfo, network::Transport,
-        wifi::WifiNetworkInterface,
+        network::WifiNetworkInterface,
     };
 
     let output = Output::new();

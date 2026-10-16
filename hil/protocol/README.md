@@ -9,10 +9,8 @@ source. Image keys, current-state admission and
 product qualification are separate contracts.
 
 - [Wire contract](wire.md): framing, version checks, discovery and boot identity.
-- [Wi-Fi](wifi.md): role ownership, traffic sessions and retained results.
 - [Bluetooth](bluetooth.md): GATT and secure GATT lifecycle, Direct Test Mode and raw HCI.
-- [PHY](phy.md): fault injection, placement and delivery continuity.
-- [Platform and memory diagnostics](diagnostics.md): watchdog, event trace, program-counter profile and stack/copy measurements.
+- [Platform diagnostics](diagnostics.md): watchdog, event trace, program-counter profile and stack measurements.
 
 Source types define the accepted wire layout; these references explain its
 meaning and limits. Host scenario execution belongs to the
@@ -22,8 +20,8 @@ meaning and limits. Host scenario execution belongs to the
 ## Modules and messages
 
 A module is a path prefix and a directory: `base` (hello, image keys, boot
-status, post-mortem, link health, acceptance and refusal), `system`, `wifi`,
-`network`, `bluetooth`, `ieee802154`, `phy` and `telemetry`. A module declares
+status, post-mortem, link health, acceptance and refusal), `system`,
+`network`, `bluetooth`, `ieee802154`, `phy` (the RX-gain SRAM placement property) and `telemetry`. A module declares
 its messages with `messages!`:
 
 - an endpoint is a request the device serves and names its one response;
@@ -32,8 +30,7 @@ its messages with `messages!`:
   sends.
 
 A response may follow other messages about the same request: a replayed
-session publishes its evidence before `network::Finished`, and an accepted
-Wi-Fi operation publishes its completion later, with the request's identifier.
+session publishes its evidence before `network::Finished`.
 A refusal is `base::Rejected` with its reason.
 
 The crate root is the framework: `key.rs` (message identity and
@@ -53,14 +50,12 @@ message's schema changes its key, and the lock records the change for review.
 ## Radio families
 
 The crate compiles its radio families behind features of the observer
-registry's family names: `wifi` (the `wifi` and `network` modules' messages,
-traffic sessions, roles, monitor and scan, their evidence, UDP probes and
-stream patterns), `bluetooth` (Direct Test Mode, HCI, GATT and secure GATT),
-`ieee802154` (probes, air check, peer sessions and Thread) and `system` (the
-memory copy benchmark). The shared core is always compiled: framing, the
-envelope, keys and image keys, the `base` module, boot and post-mortem
-evidence, the event trace, the program-counter profile, PHY diagnostics and
-startup artifacts. An image enables only the families it serves, so its
+registry's family names: `network` (the `network` module's traffic sessions,
+their evidence, UDP probes and stream patterns), `bluetooth` (Direct Test
+Mode, HCI, GATT and secure GATT), `ieee802154` (probes, air check, peer
+sessions and Thread). The shared core is always compiled: framing, the
+envelope, keys and image keys, the `base` and `system` modules, boot and post-mortem
+evidence, the event trace and the program-counter profile. An image enables only the families it serves, so its
 build, and the evidence bound to its sources, reads only their files; a
 family that is off has no messages in the build. The host decodes every
 message: the `registry` feature enables every family and lists each

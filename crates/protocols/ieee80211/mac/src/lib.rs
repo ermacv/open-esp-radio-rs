@@ -6,7 +6,25 @@
 //! This crate owns bounded frame parsing and protocol state only. It has no
 //! MMIO, DMA, interrupt, executor, allocator, ESP32-S31, vendor archive, or
 //! ROM ABI dependency.
+//!
+//! [`address::Bssid`] proves a nonzero individual address. Scan storage keeps
+//! vacant cells as `None`; [`scan::ScanRecord::new`] requires the actual BSSID,
+//! channel and RSSI, and [`scan::ScanTable::records`] iterates present records.
+//!
+//! Management and A-MSDU construction retain immutable frame parts through
+//! capacity admission and writing. Those same parts determine the output
+//! length; no independent final-offset assertion protects the layout.
+//! In-place station encapsulation borrows prefix and payload separately so
+//! writing a new prefix cannot overwrite the retained Ethernet payload.
+//!
+//! The parser contract of [the strict-lint milestone](https://github.com/ermacv/open-esp-radio-rs/issues/751)
+//! requires field boundaries established with `split_first_chunk` and
+//! retained as fixed-size arrays through subsequent processing. This is
+//! required before step 2 of #563 merges; replacing indexing mechanically
+//! with `.get()` or suppressing its lint does not establish the contract.
 
+pub mod address;
+pub mod ampdu;
 pub mod ap;
 pub mod beacon;
 pub mod block_ack;
@@ -15,6 +33,7 @@ pub mod channel;
 pub mod channel_switch;
 pub mod classification;
 pub mod data;
+mod encoding;
 pub mod extensions;
 pub mod qos;
 
@@ -39,3 +58,7 @@ pub mod trigger;
 pub mod tsf;
 pub mod twt;
 pub mod vif;
+
+/// Checked management/data headers and receive admission.
+pub mod frame;
+pub mod receive;

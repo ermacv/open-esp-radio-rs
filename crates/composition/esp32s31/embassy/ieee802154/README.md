@@ -23,9 +23,9 @@ the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
    the adapter once at boot (`install_interrupt_route` with an
    `Ieee802154InterruptSource` from its token).
 
-`start` returns the running client and the radio's port backend, which the
-application runs under `run_port`. The port's end masks the MAC route and
-returns the engine and MAC owners. `Ieee802154System::stop` takes those
+`start` returns the running client and `Installed<Ieee802154SystemBackend<K>>`,
+which pairs the backend with its independent driver for `run_port`. The
+port's end masks the MAC route and returns the engine and MAC owners. `Ieee802154System::stop` takes those
 parts, proves the foundation again, leaves the domain and BTBB (the radio
 system closes RF after the last PHY client), releases the clocks and
 leaves common power. It returns the partition and engine for a later start.
@@ -62,7 +62,8 @@ is at `ieee802154::openthread`; the
 The runtime is a process singleton. `start` returns the client's port
 backend (`Ieee802154SystemBackend<K>`, with the capabilities marker
 `Esp32s31Ieee802154` or `Esp32s31Ieee802154Multipan`), which the
-application runs under `run_port`; the port's end masks the MAC route and
+application runs under `run_port` as an `Installed` pair; its `PortEnd` carries
+the returned hardware and body output. The port's end masks the MAC route and
 returns the engine and MAC owners (`Ieee802154SystemParts`) to
 `Ieee802154System::stop`. Its
 `Ieee802154Capabilities` carry the figures ESP-IDF reports to an upper
@@ -194,7 +195,7 @@ Next to Wi-Fi, as in a Thread border router,
 `Ieee802154System::enable_wifi_coexistence` enters IEEE 802.15.4 into
 coexistence (`esp_coex_wifi_i154_enable`: `coex_enable` and the schedule
 status bit) through `RadioGuard::enable_ieee802154_coex`; the image must
-run the radio system's coexistence schedule, as its Wi-Fi composition does.
+run the radio system's coexistence schedule.
 The system holds IEEE 802.15.4's common power proof and its coexistence
 state from the radio split (`CoexAbsent`, or `Coexisting` while it takes
 part); leaving power requires the `CoexAbsent`, so it cannot leave power
@@ -214,3 +215,46 @@ closes RF after the last client, and `start` wakes it, as
 
 Modem retention and light sleep are not composed: closing RF keeps the MAC
 and baseband powered. On-air behaviour is qualified only by HIL runs.
+
+`Ieee802154SystemParts` has three outcomes. `Uninstalled::Reusable` returns
+hardware with its affine `RuntimeQueue` permission. `TerminalsQuarantined`
+returns `MacStoppedParts`: TX/RX stopped, PTIs restored and engine disabled,
+while the rejected terminal, pending permits and queue remain in the shared
+`Quarantined`. Both outcomes enter `System::stop`'s normal clock and PHY
+teardown. The returned `Ieee802154Stopped` keeps stopped hardware separate
+from terminal quarantine; only `Reusable(Ieee802154Parked)` can feed `start`
+again. Reinstalling the returned hardware through the runtime API needs a
+new static runtime and its fresh queue permission. The composition's process
+singleton never reuses its quarantined queue.
+
+`Uninstalled::Quarantined` does no MAC teardown.
+A quarantined runtime keeps its static engine and DMA backing installed;
+`stop` returns the explicit `Quarantined` error while preserving the route,
+power and coexistence owners in the shared core's `Quarantined<S>`. Destroying
+that result touches no hardware and releases no ownership. A chip reset is
+required. This path never acquires the runtime's ISR mutex or the shared
+radio lease.
+
+The runtime claims queue permission once with an atomic compare/exchange.
+The permission contains a private reference to that claim; install checks
+its identity before touching hardware. Ordinary teardown returns it, while
+terminal quarantine retains it permanently. Hardware owners alone therefore cannot reconstruct an install over the
+old queue. This adds no shared lifecycle API and no new ISR lock.
+
+## Lifecycle cost
+
+The unchanged lifecycle probe (Rust 1.97.1, RV32IMAFC, `opt-level=3`, LTO,
+one codegen unit, panic abort) was rebuilt for terminal quarantine:
+
+| Measurement | Accepted lifecycle | Terminal quarantine |
+| --- | ---: | ---: |
+| Test ELF `.text` | 6844 bytes | 6844 bytes |
+| `run_port` future per probe backend | 432 bytes | 432 bytes |
+
+This probe measures the shared core, which this change does not modify. It
+contains synthetic backends, so it does not measure concrete MAC teardown,
+composition or queue-claim code. The original pre-core ELF was 2282 bytes;
+its corresponding future was 184 bytes. The block API now adds `RuntimeQueue`,
+`MacStoppedParts`, `Uninstalled::TerminalsQuarantined` and `Ieee802154Stopped`;
+there is no additional allocation or lock in the ISR path. Wi-Fi has no API
+migration from this block-local change.

@@ -132,7 +132,6 @@ pub enum StaApLifecycleError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-interfaces-and-operating-modes-simultaneous-sta-softap
 pub struct StaApLifecycle {
     state: StaApLifecycleState,
 }

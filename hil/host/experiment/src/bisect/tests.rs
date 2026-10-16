@@ -68,7 +68,7 @@ fn a_link_failure_is_told_from_a_compile_failure() {
     );
 }
 
-/// A completed run `7` below `runs` of one scenario `s` on the correctness
+/// A completed run `7` below `runs` of one scenario `s` on the Bluetooth GATT
 /// image: one repetition that ended `outcome` with `failure`, or, for a
 /// blocked scenario, no repetition and the failure that blocked it.
 pub(crate) fn run_with(outcome: Outcome, failure: Option<(FailureKind, &str)>, runs: &Path) -> Run {
@@ -82,11 +82,11 @@ pub(crate) fn run_with(outcome: Outcome, failure: Option<(FailureKind, &str)>, r
     let failure = failure.map(|(kind, message)| Failure::new(kind, message));
     let scenario = match (outcome, failure) {
         (Outcome::Blocked, Some(failure)) => {
-            ScenarioResult::blocked("s".into(), ImageClass::Correctness, 1, failure)
+            ScenarioResult::blocked("s".into(), ImageClass::BluetoothGatt, 1, failure)
         }
         (outcome, failure) => ScenarioResult::from_repetitions(
             "s".into(),
-            ImageClass::Correctness,
+            ImageClass::BluetoothGatt,
             1,
             vec![repetition("s", 1, outcome, failure, Vec::new())],
         ),
@@ -112,7 +112,7 @@ fn a_run_is_judged_by_its_outcome_and_its_build_log() {
     );
     // The suite of a run whose image did not build failed; the scenario
     // it blocked is broken, not bad.
-    let log = directory.path().join("7/firmware/correctness/build.log");
+    let log = directory.path().join("7/firmware/bluetooth-gatt/build.log");
     fs::create_dir_all(log.parent().unwrap()).unwrap();
     fs::write(&log, "rust-lld: error: undefined symbol: foo\n").unwrap();
     assert_eq!(

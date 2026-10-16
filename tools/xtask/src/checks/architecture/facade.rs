@@ -11,7 +11,6 @@ const MANIFEST: &str = "crates/oer/Cargo.toml";
 /// profile's `[packages]`.
 const WIFI: &[&str] = &[
     "oer-ieee80211-sta",
-    "oer-ieee80211-sta-service",
     "oer-ieee80211-rsn-service",
     "oer-ieee80211-ap",
     "oer-ieee80211-softmac",
@@ -92,7 +91,7 @@ fn profiles(chips: &oer_repo::chips::Chips) -> Vec<Profile> {
         for (features, required, forbidden, bluetooth_only) in [
             (
                 Some(""),
-                &["oer-memory", "oer-network-interface", "oer-radio"][..],
+                &["oer-memory", "oer-network-interface"][..],
                 &["wifi", "bluetooth", "ieee802154"][..],
                 false,
             ),

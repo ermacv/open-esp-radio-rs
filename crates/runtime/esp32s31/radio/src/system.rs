@@ -226,7 +226,7 @@ impl CoexSignals {
 
 /// The shared radio: the arbiter with its PHY domain and the platform
 /// resources, taken together through [`Self::lock`].
-// CAPABILITY: coex-protocol-integration-and-lifetime-wifi-ble-coexistence, whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation
+// CAPABILITY: whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation
 pub struct RadioSystem<P, C, T> {
     radio: SharedRadio<ConcurrentPhy>,
     /// The tasks waiting for the arbiter lease; every guard wakes them after

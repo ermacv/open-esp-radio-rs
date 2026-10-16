@@ -88,7 +88,7 @@ pub enum ApGroupManagementError {
     PacketNumbers,
 }
 
-impl AccessPointService<'_> {
+impl<S: SppScope> AccessPointService<'_, S> {
     /// Decide protection without accessing a key slot or transmitting.
     /// Non-robust actions remain plaintext. A closing PMF peer keeps its
     /// pairwise protection until its association and key are removed.
@@ -201,7 +201,7 @@ impl AccessPointService<'_> {
         let AccessPointSecurityMaterial::Wpa3Personal { igtk, .. } = &mut self.security else {
             unreachable!("a BIP transmitter belongs to a WPA3 security epoch");
         };
-        *igtk = RsnIgtk::new(igtk.key_id(), packet_number, *igtk.key())
+        *igtk = RsnIgtk::new(igtk.key_id(), packet_number, igtk.key())
             .expect("the existing IGTK key identifier is valid");
         Ok(protected)
     }

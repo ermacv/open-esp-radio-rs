@@ -4,7 +4,7 @@ use super::{
     AmpduFrameSize, HeAmpduPolicy, HtAmpduLengthError, HtAmpduTxError, HtAmpduTxStorage,
     TX_AMPDU_METADATA_SIZE, TX_FCS_SIZE,
 };
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use crate::tx::{HeEdcaTxopLimit, HeRate, HtAmpduDensity};
 use crate::tx::{HtRate, TxCookie, TxSlotState};
 
@@ -15,7 +15,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// This does not reserve a slot or mutate the batch. A scheduler can
     /// therefore stop at the byte limit without consuming a CCMP PN or
     /// Sequence Control value for a frame that belongs in the next PPDU.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn can_commit_frame(
         &self,
         cookie: TxCookie,
@@ -55,7 +55,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     /// Check one HT MPDU against both negotiated storage and the exact
     /// rate-dependent `rx11NRate2AMPDULimit` ceiling.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn can_commit_ht_frame(
         &self,
         cookie: TxCookie,
@@ -135,7 +135,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .is_none_or(|limit| aggregate_length <= u32::from(limit)))
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn can_commit_frame_with_hardware_he_control(
         &self,
         cookie: TxCookie,
@@ -196,7 +196,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// Unlike [`Self::can_commit_frame`], the caller cannot accidentally
     /// publish an HE short subframe with a guessed metadata-byte-four value.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn can_commit_he_frame(
         &self,
         cookie: TxCookie,
@@ -216,7 +216,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Check one HE frame against both peer and rate/TXOP APEP ceilings.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn can_commit_he_frame_with_txop(
         &self,
         cookie: TxCookie,
@@ -333,7 +333,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The DMA-resident frame length remains unchanged. Only APEP accounting
     /// gains four bytes through metadata byte seven bit zero.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn can_commit_hardware_he_control_frame(
         &self,
         cookie: TxCookie,
@@ -353,7 +353,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Check hardware HE-Control insertion under the same complete APEP gate.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn can_commit_hardware_he_control_frame_with_txop(
         &self,
         cookie: TxCookie,

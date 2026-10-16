@@ -23,6 +23,29 @@ mod i2c;
 mod production_trace;
 mod rx_append;
 
+// Keep the same production publication functions visible to the final RV32
+// placement audit. Black-box the borrow so LTO cannot specialize away the
+// registered-waker paths just because this comparison image has no executor.
+static IRQ_HANDOFF: oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer<
+    oer_esp32s31_ieee80211_mac::irq::consumer::Moderated,
+> = oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer::new(
+    oer_esp32s31_ieee80211_mac::irq::consumer::Moderated::new(|| {}),
+);
+static POWER_HANDOFF: oer_esp32s31_ieee80211_mac::irq::consumer::PowerIrqConsumer =
+    oer_esp32s31_ieee80211_mac::irq::consumer::PowerIrqConsumer::new();
+
+oer_probe_macros::probe! {
+    /// Retain real MAC and power publication paths for SRAM placement checks.
+    pub fn open_mac_irq_publication(events: u32) {
+        core::hint::black_box(&IRQ_HANDOFF).publish(events);
+        core::hint::black_box(&POWER_HANDOFF).publish(
+            oer_esp32s31_hal::types::MacPowerInterruptObservation::from_semantic_events(
+                true, false, false, false, false, false,
+            ),
+        );
+    }
+}
+
 /// Expose externally supplied PHY registers through the HAL shared-PHY port
 /// with a fresh per-call restore slot.
 fn shared_phy(
@@ -1313,12 +1336,13 @@ oer_probe_macros::probe! {
         descriptor: u32,
         buffer: u32,
     ) -> u32 {
-        use oer_esp32s31_ieee80211_mac::tx::{TxCompletionDisposition, runtime::OrdinaryRetryDecision};
+        use oer_esp32s31_ieee80211_mac::tx::runtime::OrdinaryRetryDecision;
+        use oer_ieee80211_lower_mac::TxStatus;
         let disposition = match disposition {
-            0 => TxCompletionDisposition::AckTimeout,
-            1 => TxCompletionDisposition::CtsTimeout,
-            2 => TxCompletionDisposition::Collision,
-            3 => TxCompletionDisposition::Success,
+            0 => TxStatus::AckTimeout,
+            1 => TxStatus::CtsTimeout,
+            2 => TxStatus::Collision,
+            3 => TxStatus::Success,
             _ => panic!("verification disposition is out of range"),
         };
         // SAFETY: see `RetryProbeState`; the reset entry ran first.
@@ -1409,19 +1433,40 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// ABI projection around the exact production status-four classifier.
-    pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, _selector: u32) {
-        use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
+    /// ABI projection: compare the zero-argument hardware path with the
+    /// product decoder; the probe alone represents other vendor ABI calls.
+    ///
+    /// SOURCE(esp32s31): libpp[lmac.o]::lmacProcessTxError +0xb2 handles
+    /// collision details only for a2 == 0; nonzero a2 routes them to ACK
+    /// timeout at +0xca. Detail zero always reaches CTS timeout (+0xe2),
+    /// and 0xc0 with nonzero a2 returns without ending FES (+0xea).
+    /// SOURCE(esp32s31): libpp[lmac.o]::lmacProcessTxRtsError +0xd2 likewise
+    /// suppresses FES end for 0xc0 with nonzero a3. +0x1a..+0x2c resolves
+    /// virtual queue 10 through our_tx_eb, descriptor +52, word +4 bits 7:4;
+    /// +0x42 requires an instance below five. Neither is a hardware decoder
+    /// input: the product retains LegacyTxQueue directly and libpp[lmac.o]::
+    /// lmacProcessTxComplete supplies zero at +0x19a and +0x1cc.
+    pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, selector: u32) {
+        use oer_esp32s31_ieee80211_mac::tx::{CompletionFault, CompletionObservation, CompletionRaw, decode};
+        use oer_ieee80211_lower_mac::TxStatus;
 
-        let completion = TxCompletion::new_validation(TxCookie(0), 4, detail as u8);
-        match completion.disposition() {
-            TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
-            TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
-            TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(queue),
-            TxCompletionDisposition::Terminal(
-                oer_esp32s31_ieee80211_mac::tx::TxCompletionFailure::SecurityKeyError,
-            ) => open_libpp_tx_retry_security_key_error(queue),
-            TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+        if selector != 0 {
+            match detail as u8 {
+                0 => open_libpp_tx_retry_cts_timeout(queue),
+                0xc0 => {},
+                _ => open_libpp_tx_retry_ack_timeout(queue),
+            }
+            return;
+        }
+        let raw = oer_esp32s31_hal::types::MacTxCompletionObservation::new_validation(4, detail as u8);
+        match decode(CompletionRaw::ordinary(raw)) {
+            Ok(CompletionObservation::Observed(TxStatus::AckTimeout)) => open_libpp_tx_retry_ack_timeout(queue),
+            Ok(CompletionObservation::Observed(TxStatus::CtsTimeout)) => open_libpp_tx_retry_cts_timeout(queue),
+            Ok(CompletionObservation::Observed(TxStatus::Collision)) => open_libpp_tx_retry_collision(queue),
+            Err(CompletionFault::SecurityKeyError) => open_libpp_tx_retry_security_key_error(queue),
+            Ok(CompletionObservation::NoEffect) => {},
+            Ok(CompletionObservation::Observed(TxStatus::Success | TxStatus::TimedOut))
+            | Err(CompletionFault::InvalidStatus { .. }) => {},
         }
     }
 }
@@ -1663,12 +1708,10 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     }
     // SAFETY: the branch above initializes the state before every read.
     let state = unsafe { storage.1.assume_init_mut() };
-    // Route the hardware completion through the exact production Embassy
+    // Route the hardware completion through the exact production atomic
     // interrupt handoff. This keeps the compiled comparison from bypassing
     // the adapter boundary by constructing `WifiTxWake` directly.
-    let irq = oer_esp32s31_ieee80211_runtime::datapath::irq::EmbassyMacIrqRuntime::<
-        embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    >::new();
+    let irq = oer_esp32s31_ieee80211_mac::irq::consumer::IrqConsumer::default();
     irq.publish(oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE);
     let Some(events) = irq.try_take_tx() else {
         return 8;
@@ -1708,6 +1751,25 @@ oer_probe_macros::probe! {
     /// decisions and counters come from the exact production state above.
     pub fn open_libpp_tx_retry_trace_ack_timeout_state(_queue: u32, _selector: u32) -> u32 =>
         ordinary_tx_ack_timeout_state(0x3fff_5000);
+}
+
+oer_probe_macros::probe! {
+    /// The scenario domain is STA/AP, CCMP, management policy enabled, SPP 0/1.
+    /// Execute the production association transaction before any key install.
+    pub fn open_libpp_crypto_trace_hal_crypto_enable(interface: u32, _algorithm: u32, _management: u32, spp: u32) {
+        let interface = match interface {
+            0 => oer_esp32s31_hal::types::MacInterface::Station,
+            1 => oer_esp32s31_hal::types::MacInterface::AccessPoint,
+            _ => return,
+        };
+        let spp = match spp {
+            0 => oer_esp32s31_hal::types::MacSppMode::Unauthenticated,
+            1 => oer_esp32s31_hal::types::MacSppMode::Authenticated,
+            _ => return,
+        };
+        let mut owner = RadioRuntimeOwner::claim_for_validation();
+        owner.wifi_mac_hal().configure_ccmp_association(interface, spp);
+    }
 }
 
 oer_probe_macros::probe! {

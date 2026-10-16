@@ -72,7 +72,6 @@ pub struct EspHalPowerInterruptServiceReport {
 ///
 /// The image's interrupt table names the handlers; register storage,
 /// publication, CPU routing and recovery are platform-adapter mechanics.
-// CAPABILITY: wifi-interrupt-epoch-owners
 pub struct EspHalMacInterruptRoute {
     phase: Phase,
     // Bind, detach and resume belong to the same executor/core. Runtime core

@@ -1,4 +1,4 @@
-//! Bounded parsing of the vendor-specific WMM Parameter Element.
+//! Bounded parsing and encoding of the vendor-specific WMM Parameter Element.
 //!
 //! This extension retains the advertised AC parameters. Shared user-priority
 //! values and traffic classification live in `qos`; parsing does not admit TX.
@@ -6,16 +6,18 @@
 use crate::qos::WmmAccessCategory;
 
 const VENDOR_ELEMENT_ID: u8 = 221;
-const WMM_PARAMETER_BODY_LEN: usize = 24;
+const WMM_PARAMETER_BODY_LEN: u8 = 24;
 const WMM_OUI_AND_TYPE: [u8; 4] = [0x00, 0x50, 0xf2, 0x02];
 const WMM_PARAMETER_SUBTYPE: u8 = 1;
 const WMM_VERSION: u8 = 1;
-
-impl WmmAccessCategory {
-    const fn index(self) -> usize {
-        self as usize
-    }
-}
+pub(crate) const WMM_PARAMETER_ELEMENT_LEN: usize = WMM_PARAMETER_BODY_LEN as usize + 2;
+pub(crate) const WMM_NIBBLE_MAX: u8 = 0x0f;
+const ACI_SHIFT: u32 = 5;
+const ACI_MASK: u8 = 0x03;
+const ADMISSION_CONTROL_MANDATORY: u8 = 0x10;
+const ECW_MAX_SHIFT: u32 = 4;
+const UAPSD: u8 = 0x80;
+const ALL_ACCESS_CATEGORIES: u8 = 0b1111;
 
 /// One four-byte AC Parameter Record from a WMM Parameter Element.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -52,8 +54,66 @@ impl WmmParameterSet {
     }
 
     pub const fn access_category(self, category: WmmAccessCategory) -> WmmAcParameters {
-        self.access_categories[category.index()]
+        *category.select(&self.access_categories)
     }
+}
+
+/// Encode the four records already validated by the AP advertisement.
+/// Destructuring fixes every record's ACI and every output byte's place;
+/// no numeric category index or offset calculation participates in encoding.
+pub(crate) const fn encode_wmm_parameter_element(
+    parameter_set_count: u8,
+    uapsd: bool,
+    categories: [WmmAcParameters; 4],
+) -> [u8; WMM_PARAMETER_ELEMENT_LEN] {
+    const fn record(category: WmmAccessCategory, parameters: WmmAcParameters) -> [u8; 4] {
+        let admission = if parameters.admission_control_mandatory {
+            ADMISSION_CONTROL_MANDATORY
+        } else {
+            0
+        };
+        let [low, high] = parameters.txop_limit_units_32_us.to_le_bytes();
+        [
+            ((category as u8) << ACI_SHIFT) | admission | parameters.aifsn,
+            (parameters.ecw_max << ECW_MAX_SHIFT) | parameters.ecw_min,
+            low,
+            high,
+        ]
+    }
+    let [be, bk, vi, vo] = categories;
+    let [be0, be1, be2, be3] = record(WmmAccessCategory::BestEffort, be);
+    let [bk0, bk1, bk2, bk3] = record(WmmAccessCategory::Background, bk);
+    let [vi0, vi1, vi2, vi3] = record(WmmAccessCategory::Video, vi);
+    let [vo0, vo1, vo2, vo3] = record(WmmAccessCategory::Voice, vo);
+    let [oui0, oui1, oui2, kind] = WMM_OUI_AND_TYPE;
+    [
+        VENDOR_ELEMENT_ID,
+        WMM_PARAMETER_BODY_LEN,
+        oui0,
+        oui1,
+        oui2,
+        kind,
+        WMM_PARAMETER_SUBTYPE,
+        WMM_VERSION,
+        parameter_set_count | if uapsd { UAPSD } else { 0 },
+        0, // Reserved octet before the AC records.
+        be0,
+        be1,
+        be2,
+        be3,
+        bk0,
+        bk1,
+        bk2,
+        bk3,
+        vi0,
+        vi1,
+        vi2,
+        vi3,
+        vo0,
+        vo1,
+        vo2,
+        vo3,
+    ]
 }
 
 /// Parse one complete vendor-specific WMM Parameter Element.
@@ -72,43 +132,55 @@ impl WmmParameterSet {
 /// blob's discarded high byte is an implementation limitation, not a
 /// different on-air field.
 pub fn parse_wmm_parameter_element(element: &[u8]) -> Option<WmmParameterSet> {
-    if element.len() < WMM_PARAMETER_BODY_LEN + 2
-        || element[0] != VENDOR_ELEMENT_ID
-        || usize::from(element[1]) < WMM_PARAMETER_BODY_LEN
-        || element.len() < usize::from(element[1]) + 2
-        || element[2..6] != WMM_OUI_AND_TYPE
-        || element[6] != WMM_PARAMETER_SUBTYPE
-        || element[7] != WMM_VERSION
+    let (fixed, _) = element.split_first_chunk::<WMM_PARAMETER_ELEMENT_LEN>()?;
+    let &[
+        id,
+        length,
+        oui0,
+        oui1,
+        oui2,
+        kind,
+        subtype,
+        version,
+        qos_info,
+        _reserved,
+        records @ ..,
+    ] = fixed;
+    if id != VENDOR_ELEMENT_ID
+        || length < WMM_PARAMETER_BODY_LEN
+        || element.len() < usize::from(length) + 2
+        || [oui0, oui1, oui2, kind] != WMM_OUI_AND_TYPE
+        || subtype != WMM_PARAMETER_SUBTYPE
+        || version != WMM_VERSION
     {
         return None;
     }
 
-    let qos_info = element[8];
     let mut access_categories = [WmmAcParameters::default(); 4];
     let mut seen = 0_u8;
-    for record in element[10..26].chunks_exact(4) {
-        let aci = (record[0] >> 5) & 0x03;
+    for &[aci_aifsn, ecw, txop_low, txop_high] in records.as_chunks::<4>().0 {
+        let aci = (aci_aifsn >> ACI_SHIFT) & ACI_MASK;
         let category = WmmAccessCategory::from_aci(aci)?;
         let bit = 1_u8 << aci;
         if seen & bit != 0 {
             return None;
         }
         seen |= bit;
-        access_categories[category.index()] = WmmAcParameters {
-            admission_control_mandatory: record[0] & 0x10 != 0,
-            aifsn: record[0] & 0x0f,
-            ecw_min: record[1] & 0x0f,
-            ecw_max: record[1] >> 4,
-            txop_limit_units_32_us: u16::from_le_bytes([record[2], record[3]]),
+        *category.select_mut(&mut access_categories) = WmmAcParameters {
+            admission_control_mandatory: aci_aifsn & ADMISSION_CONTROL_MANDATORY != 0,
+            aifsn: aci_aifsn & WMM_NIBBLE_MAX,
+            ecw_min: ecw & WMM_NIBBLE_MAX,
+            ecw_max: ecw >> ECW_MAX_SHIFT,
+            txop_limit_units_32_us: u16::from_le_bytes([txop_low, txop_high]),
         };
     }
-    if seen != 0x0f {
+    if seen != ALL_ACCESS_CATEGORIES {
         return None;
     }
 
     Some(WmmParameterSet {
-        parameter_set_count: qos_info & 0x0f,
-        uapsd: qos_info & 0x80 != 0,
+        parameter_set_count: qos_info & WMM_NIBBLE_MAX,
+        uapsd: qos_info & UAPSD != 0,
         access_categories,
     })
 }

@@ -43,7 +43,6 @@ const PHY_PACKAGES: &[&str] = &[
     // the port lifecycle contract the protocol's owner shape extends; plain
     // portable types over `oer-radio-port` and `oer-time`, no vendor code.
     "oer-ieee802154",
-    "oer-ieee802154-port",
     // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive,
     // and the portable trace events it records.
     "oer-espressif-ieee802154-engine",
@@ -57,6 +56,10 @@ const PHY_PACKAGES: &[&str] = &[
     // radio owners are typed over; plain value types, no runtime or driver.
     "oer-radio-port",
     "oer-time",
+    // The no-std waker cell `oer-radio-port` keeps for its lifecycle waits,
+    // and the drop guard it and `oer-ieee802154` use on cancellation paths.
+    "atomic-waker",
+    "scopeguard",
     // The chip-neutral modem clock planner behind the HAL's clock owners.
     "oer-radio-analog",
     "oer-radio-clock",

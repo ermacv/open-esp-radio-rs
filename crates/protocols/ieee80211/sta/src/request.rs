@@ -22,7 +22,7 @@ pub struct StationListenInterval(NonZeroU16);
 
 impl StationListenInterval {
     /// Conservative legacy value used by the existing qualified STA path.
-    pub const DEFAULT: Self = Self(NonZeroU16::new(3).unwrap());
+    pub const DEFAULT: Self = const { Self(NonZeroU16::new(3).unwrap()) };
 
     pub const fn new(beacon_intervals: u16) -> Option<Self> {
         match NonZeroU16::new(beacon_intervals) {
@@ -70,6 +70,9 @@ impl StationPowerMode {
 }
 
 /// Allocation-free set of 2.4-GHz primary channels selected for scanning.
+/// Only bits 0..=13 can be set: constructors validate channels 1..=14
+/// before deriving an offset. Iterators retain that bound, including after
+/// removing a selected preference, so their exact lengths never exceed 14.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct StationScanChannels(u16);
@@ -88,7 +91,8 @@ impl StationScanChannels {
             if !(1..=14).contains(&channel) {
                 return Err(StationScanChannelsError::InvalidPrimary(channel));
             }
-            bits |= CHANNEL_ONE_BIT << (channel - 1);
+            // The checked channel is 1..=14, so the exact shift is 0..=13.
+            bits |= CHANNEL_ONE_BIT << channel.wrapping_sub(1);
         }
         if bits == 0 {
             return Err(StationScanChannelsError::Empty);
@@ -97,7 +101,8 @@ impl StationScanChannels {
     }
 
     pub const fn contains(self, primary: u8) -> bool {
-        primary != 0 && primary <= 14 && self.0 & (CHANNEL_ONE_BIT << (primary - 1)) != 0
+        // Short-circuit range checks prove 1..=14 before subtraction/shift.
+        primary != 0 && primary <= 14 && self.0 & (CHANNEL_ONE_BIT << primary.wrapping_sub(1)) != 0
     }
 
     pub const fn count(self) -> u8 {
@@ -122,10 +127,12 @@ impl StationScanChannels {
             _ => None,
         };
         StationScanChannelOrderIter {
-            remaining: match preferred {
-                Some(channel) => self.0 & !(CHANNEL_ONE_BIT << (channel - 1)),
+            remaining: Self(match preferred {
+                // `contains` proved the selected preference is 1..=14.
+                Some(channel) => self.0 & !(CHANNEL_ONE_BIT << channel.wrapping_sub(1)),
                 None => self.0,
-            },
+            })
+            .primary_channels(),
             preferred,
         }
     }
@@ -144,8 +151,11 @@ impl Iterator for StationScanChannelIter {
             return None;
         }
         let offset = self.remaining.trailing_zeros() as u8;
-        self.remaining &= self.remaining - 1;
-        Some(offset + 1)
+        // A nonempty 14-bit set has a lowest offset 0..=13. Subtracting
+        // one from its nonzero bitmap clears that bit with `bits & (bits-1)`;
+        // neither this subtraction nor offset+1 can wrap.
+        self.remaining &= self.remaining.wrapping_sub(1);
+        Some(offset.wrapping_add(1))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -158,7 +168,7 @@ impl ExactSizeIterator for StationScanChannelIter {}
 
 /// Allocation-free ordered traversal of one checked channel set.
 pub struct StationScanChannelOrderIter {
-    remaining: u16,
+    remaining: StationScanChannelIter,
     preferred: Option<u8>,
 }
 
@@ -166,20 +176,16 @@ impl Iterator for StationScanChannelOrderIter {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(preferred) = self.preferred.take() {
-            return Some(preferred);
-        }
-        if self.remaining == 0 {
-            return None;
-        }
-        let offset = self.remaining.trailing_zeros() as u8;
-        self.remaining &= self.remaining - 1;
-        Some(offset + 1)
+        self.preferred.take().or_else(|| self.remaining.next())
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining =
-            self.remaining.count_ones() as usize + usize::from(self.preferred.is_some());
+        // The preference was removed from the remaining set. Their combined
+        // count is exactly the original subset's length, at most 14.
+        let remaining = self
+            .remaining
+            .len()
+            .wrapping_add(usize::from(self.preferred.is_some()));
         (remaining, Some(remaining))
     }
 }

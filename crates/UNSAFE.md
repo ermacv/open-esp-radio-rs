@@ -67,7 +67,6 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `espressif-executor-embassy` | `adapters/embassy/espressif/executor/` |
 | `espressif-interrupt-table-esp-hal` | `adapters/esp-hal/espressif/interrupt-table/` |
 | `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
-| `esp32s31-ieee80211-system` | `composition/esp32s31/embassy/ieee80211/` |
 | `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |
 | `esp32c5-pac` | `hardware/esp32c5/pac/` |
 | `interrupt-table` | `runtime/interrupt-table/` |
@@ -105,7 +104,6 @@ reset hardware, panic as a release mechanism or claim successful shutdown.
 Because safe Rust permits `mem::forget`, forgetting an owner must remain a
 harmless leak rather than release memory still accessible by hardware.
 
-Wi-Fi's Core0 supervisor may transfer its affine owner to a controlled child
-task and await its return. Task boundaries, cancellation and rendezvous do not
-weaken the same ownership or quiescence obligations. The wider execution and
+Task boundaries, cancellation and rendezvous do not weaken the same ownership
+or quiescence obligations. The wider execution and
 memory-placement contracts are in the [driver architecture](README.md).

@@ -94,9 +94,15 @@ impl Pmk {
             ordered(&context.authenticator_nonce, &context.supplicant_nonce);
         canonical[12..44].copy_from_slice(first_nonce);
         canonical[44..76].copy_from_slice(second_nonce);
-        let bytes = akm.expand_ptk(&self.0, &canonical);
+        // Expand directly into its zeroizing owner. A separate return array
+        // would retain an unowned copy of the PTK, including the CCMP TK.
+        let mut ptk = Ptk {
+            akm,
+            bytes: [0; RSN_PTK_LEN],
+        };
+        akm.expand_ptk(&self.0, &canonical, &mut ptk.bytes);
         canonical.zeroize();
-        Ptk { akm, bytes }
+        ptk
     }
 
     pub fn bind_association_security_ies(

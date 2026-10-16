@@ -65,25 +65,83 @@ pub enum TwtWireError {
 }
 
 /// Three-bit individual TWT flow identifier.
+/// Its closed value can select a cell of an exact eight-flow array without
+/// turning the previously checked identifier back into an unchecked index.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct IndividualTwtFlowId(u8);
+pub struct IndividualTwtFlowId(FlowNumber);
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+enum FlowNumber {
+    Flow0 = 0,
+    Flow1 = 1,
+    Flow2 = 2,
+    Flow3 = 3,
+    Flow4 = 4,
+    Flow5 = 5,
+    Flow6 = 6,
+    Flow7 = 7,
+}
 
 impl IndividualTwtFlowId {
+    /// Every representable flow, in wire order.
+    pub const ALL: [Self; 8] = [
+        Self(FlowNumber::Flow0),
+        Self(FlowNumber::Flow1),
+        Self(FlowNumber::Flow2),
+        Self(FlowNumber::Flow3),
+        Self(FlowNumber::Flow4),
+        Self(FlowNumber::Flow5),
+        Self(FlowNumber::Flow6),
+        Self(FlowNumber::Flow7),
+    ];
     pub const fn new(value: u8) -> Option<Self> {
-        if value < INDIVIDUAL_TWT_FLOW_CAPACITY as u8 {
-            Some(Self(value))
-        } else {
-            None
+        match value {
+            0 => Some(Self(FlowNumber::Flow0)),
+            1 => Some(Self(FlowNumber::Flow1)),
+            2 => Some(Self(FlowNumber::Flow2)),
+            3 => Some(Self(FlowNumber::Flow3)),
+            4 => Some(Self(FlowNumber::Flow4)),
+            5 => Some(Self(FlowNumber::Flow5)),
+            6 => Some(Self(FlowNumber::Flow6)),
+            7 => Some(Self(FlowNumber::Flow7)),
+            _ => None,
         }
     }
-
     pub const fn get(self) -> u8 {
-        self.0
+        self.0 as u8
     }
-
     pub const fn index(self) -> usize {
-        self.0 as usize
+        self.get() as usize
+    }
+    /// Select a cell of the exact eight-entry array by the closed identifier.
+    pub const fn select<T>(self, entries: &[T; 8]) -> &T {
+        let [a, b, c, d, e, f, g, h] = entries;
+        match self.0 {
+            FlowNumber::Flow0 => a,
+            FlowNumber::Flow1 => b,
+            FlowNumber::Flow2 => c,
+            FlowNumber::Flow3 => d,
+            FlowNumber::Flow4 => e,
+            FlowNumber::Flow5 => f,
+            FlowNumber::Flow6 => g,
+            FlowNumber::Flow7 => h,
+        }
+    }
+    /// Select a cell of the exact eight-entry array by the closed identifier.
+    pub const fn select_mut<T>(self, entries: &mut [T; 8]) -> &mut T {
+        let [a, b, c, d, e, f, g, h] = entries;
+        match self.0 {
+            FlowNumber::Flow0 => a,
+            FlowNumber::Flow1 => b,
+            FlowNumber::Flow2 => c,
+            FlowNumber::Flow3 => d,
+            FlowNumber::Flow4 => e,
+            FlowNumber::Flow5 => f,
+            FlowNumber::Flow6 => g,
+            FlowNumber::Flow7 => h,
+        }
     }
 }
 
@@ -392,7 +450,7 @@ impl IndividualTwtTeardown {
 
     pub const fn all() -> Self {
         Self {
-            flow_id: IndividualTwtFlowId(0),
+            flow_id: IndividualTwtFlowId(FlowNumber::Flow0),
             all_flows: true,
         }
     }

@@ -21,8 +21,6 @@
 
 use oer_time::{Duration, Instant};
 
-use crate::time::deadline_after;
-
 /// Period of the vendor's retry timer.
 const RETRY_INTERVAL: Duration = Duration::from_millis(200);
 /// The vendor's one-shot procedure timeout.
@@ -38,7 +36,8 @@ struct ActiveSaQuery {
     transaction: u16,
     /// Requests sent in this procedure.
     requests: u16,
-    next_retry: Instant,
+    /// No further retry is due before the already checked final timeout.
+    next_retry: Option<Instant>,
     timeout: Instant,
 }
 
@@ -51,6 +50,10 @@ pub enum SaQueryStep {
     /// The access point did not confirm the association.
     TimedOut,
 }
+
+/// The procedure cannot schedule its complete response window.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SaQueryDeadlineOverflow;
 
 /// The SA Query procedure of one association.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -71,18 +74,28 @@ impl StationSaQuery {
     /// Start the procedure for one unprotected disconnect and return the
     /// first Request's transaction identifier. A disconnect during a running
     /// procedure is ignored, as the vendor ignores it.
-    pub fn start(&mut self, now: Instant, random: u32) -> Option<[u8; 2]> {
+    /// Overflow leaves the procedure unchanged and requires its caller to
+    /// terminate the association: PMF cannot leave this check outstanding.
+    pub fn start(
+        &mut self,
+        now: Instant,
+        random: u32,
+    ) -> Result<Option<[u8; 2]>, SaQueryDeadlineOverflow> {
         if self.active.is_some() {
-            return None;
+            return Ok(None);
         }
+        let timeout = now.checked_add(TIMEOUT).ok_or(SaQueryDeadlineOverflow)?;
+        let next_retry = now
+            .checked_add(RETRY_INTERVAL)
+            .ok_or(SaQueryDeadlineOverflow)?;
         let transaction = (random % TRANSACTION_MODULUS) as u16;
         self.active = Some(ActiveSaQuery {
             transaction,
             requests: 1,
-            next_retry: deadline_after(now, RETRY_INTERVAL),
-            timeout: deadline_after(now, TIMEOUT),
+            next_retry: Some(next_retry),
+            timeout,
         });
-        Some(transaction.to_le_bytes())
+        Ok(Some(transaction.to_le_bytes()))
     }
 
     /// Match one protected SA Query Response. A Response to a Request of the
@@ -93,7 +106,7 @@ impl StationSaQuery {
         };
         let received = i32::from(u16::from_le_bytes(transaction));
         let latest = i32::from(active.transaction);
-        let first = latest - i32::from(active.requests);
+        let first = latest.saturating_sub(i32::from(active.requests));
         if received <= first || received > latest {
             return false;
         }
@@ -121,23 +134,30 @@ impl StationSaQuery {
             self.active = None;
             return SaQueryStep::TimedOut;
         }
-        if now < active.next_retry {
+        let Some(next_retry) = active.next_retry else {
+            return SaQueryStep::Idle;
+        };
+        if now < next_retry {
             return SaQueryStep::Idle;
         }
         if active.requests == REQUEST_LIMIT {
             self.active = None;
             return SaQueryStep::TimedOut;
         }
-        active.next_retry = deadline_after(active.next_retry, RETRY_INTERVAL);
+        // A retry beyond the terminal timeout is not part of this procedure.
+        // Its overflow cannot turn the checked terminal into an endless wait.
+        active.next_retry = next_retry
+            .checked_add(RETRY_INTERVAL)
+            .filter(|retry| *retry < active.timeout);
         active.transaction = active.transaction.wrapping_add(1);
-        active.requests += 1;
+        active.requests = active.requests.saturating_add(1);
         SaQueryStep::Request(active.transaction.to_le_bytes())
     }
 
     /// The instant the procedure next needs its owner.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.active
-            .map(|active| active.next_retry.min(active.timeout))
+            .map(|active| active.next_retry.unwrap_or(active.timeout))
     }
 }
 

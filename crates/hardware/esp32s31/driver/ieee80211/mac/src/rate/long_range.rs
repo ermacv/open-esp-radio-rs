@@ -36,12 +36,29 @@ impl MacLongRangeRateCode {
     }
 
     pub const fn retry_schedule(self) -> RateScheduleRef {
-        RateScheduleRef {
-            kind: RateScheduleKind::Lora,
-            index: match self {
-                Self::RateCode2a => 0,
-                Self::RateCode29 => 1,
-            },
+        const RECORD_2A: RateScheduleRef = {
+            #[expect(clippy::panic, reason = "evaluated at build")]
+            const fn checked() -> RateScheduleRef {
+                match RateScheduleRef::new(RateScheduleKind::Lora, 0) {
+                    Some(schedule) => schedule,
+                    None => panic!("long-range record zero exists"),
+                }
+            }
+            checked()
+        };
+        const RECORD_29: RateScheduleRef = {
+            #[expect(clippy::panic, reason = "evaluated at build")]
+            const fn checked() -> RateScheduleRef {
+                match RateScheduleRef::new(RateScheduleKind::Lora, 1) {
+                    Some(schedule) => schedule,
+                    None => panic!("long-range record one exists"),
+                }
+            }
+            checked()
+        };
+        match self {
+            Self::RateCode2a => RECORD_2A,
+            Self::RateCode29 => RECORD_29,
         }
     }
 

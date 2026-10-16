@@ -10,14 +10,12 @@ Use Blobray when the missing information is in a captured binary: where a
 register is accessed, which calls reach it, what data a function consumes, or
 how selected observations compare with compiled Rust. Implementing the hardware
 operation belongs to PAC/HAL/PHY and the driver; choosing protocol behavior
-belongs to the portable protocol layer. The
-[architecture route](../../docs/binary-to-station.md) explains those handoffs.
+belongs to the portable protocol layer.
 
 ## Choose a task
 
 Start with [the host tutorial](../../docs/first-contribution.md) for a synthetic
-exercise, or [the hardware route](../../docs/station-hardware.md) for real input
-and board prerequisites.
+exercise; real input needs your own identified vendor artifacts.
 
 | Task | Interface | Reference |
 | --- | --- | --- |

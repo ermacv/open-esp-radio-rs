@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// One protected QoS A-MSDU prepared for S31 hardware CCMP encryption.
+/// One protected QoS A-MSDU prepared for backend CCMP encryption.
 ///
 /// Every borrowed element is a complete Ethernet-II frame. The encoder emits
 /// one outer To-DS QoS MPDU and converts each Ethernet frame to the IEEE
@@ -15,7 +15,6 @@ use super::*;
 /// iterator in `data::AmsduSubframes`. The 3,839-byte ceiling is the baseline
 /// The smaller standard A-MSDU length used by the current bounded encoder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-msdu
 pub struct StaProtectedAmsduFrame<'a> {
     pub source: [u8; 6],
     pub bssid: [u8; 6],
@@ -34,63 +33,12 @@ pub struct StaProtectedAmsduFrame<'a> {
 pub fn sta_protected_amsdu_frame_length(
     ethernet_frames: &[&[u8]],
 ) -> Result<usize, StationFrameError> {
-    if ethernet_frames.is_empty() {
-        return Err(StationFrameError::NoAmsduFrames);
-    }
-
-    let mut amsdu_length = 0_usize;
-    for (index, ethernet) in ethernet_frames.iter().copied().enumerate() {
-        if ethernet.len() < ETHERNET_HEADER_LEN {
-            return Err(StationFrameError::EthernetFrameTooShort);
-        }
-        let msdu_length = LLC_SNAP_HEADER_LEN
-            .checked_add(ethernet.len() - ETHERNET_HEADER_LEN)
-            .ok_or(StationFrameError::AmsduTooLong {
-                length: usize::MAX,
-                maximum: HT_AMSDU_BASELINE_MAX_LEN,
-            })?;
-        if msdu_length > usize::from(u16::MAX) {
-            return Err(StationFrameError::AmsduTooLong {
-                length: msdu_length,
-                maximum: HT_AMSDU_BASELINE_MAX_LEN,
-            });
-        }
-        let subframe_length = AMSDU_SUBFRAME_HEADER_LEN.checked_add(msdu_length).ok_or(
-            StationFrameError::AmsduTooLong {
-                length: usize::MAX,
-                maximum: HT_AMSDU_BASELINE_MAX_LEN,
-            },
-        )?;
-        amsdu_length =
-            amsdu_length
-                .checked_add(subframe_length)
-                .ok_or(StationFrameError::AmsduTooLong {
-                    length: usize::MAX,
-                    maximum: HT_AMSDU_BASELINE_MAX_LEN,
-                })?;
-        if index + 1 != ethernet_frames.len() {
-            amsdu_length = amsdu_length
-                .checked_add((4 - (subframe_length & 3)) & 3)
-                .ok_or(StationFrameError::AmsduTooLong {
-                    length: usize::MAX,
-                    maximum: HT_AMSDU_BASELINE_MAX_LEN,
-                })?;
-        }
-    }
-    if amsdu_length > HT_AMSDU_BASELINE_MAX_LEN {
-        return Err(StationFrameError::AmsduTooLong {
-            length: amsdu_length,
-            maximum: HT_AMSDU_BASELINE_MAX_LEN,
-        });
-    }
-
-    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
-        .checked_add(CCMP_HEADER_LEN)
-        .and_then(|length| length.checked_add(amsdu_length))
-        .ok_or(StationFrameError::AmsduTooLong {
-            length: usize::MAX,
-            maximum: HT_AMSDU_BASELINE_MAX_LEN,
-        })
+    let body = crate::encoding::AmsduBody::checked(ethernet_frames, HT_AMSDU_BASELINE_MAX_LEN)
+        .map_err(amsdu_error)?;
+    let length = body
+        .length()
+        .map_err(|length| amsdu_error(crate::encoding::AmsduError::TooLong(length)))?;
+    Ok(crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN + length)
 }
 
 /// Encoded protected-MPDU length for exactly two Ethernet MSDUs.
@@ -141,55 +89,52 @@ pub fn sta_protected_amsdu_pair_frame_length(
         })
 }
 
-impl StaProtectedAmsduFrame<'_> {
-    fn plan(&self) -> Result<(crate::data::DataEncapPlan, usize), StationFrameError> {
+fn amsdu_error(error: crate::encoding::AmsduError) -> StationFrameError {
+    match error {
+        crate::encoding::AmsduError::Empty => StationFrameError::NoAmsduFrames,
+        crate::encoding::AmsduError::ShortEthernet => StationFrameError::EthernetFrameTooShort,
+        crate::encoding::AmsduError::TooLong(length) => StationFrameError::AmsduTooLong {
+            length,
+            maximum: HT_AMSDU_BASELINE_MAX_LEN,
+        },
+    }
+}
+
+impl<'a> StaProtectedAmsduFrame<'a> {
+    fn plan(
+        &self,
+    ) -> Result<
+        (
+            [u8; crate::data::IEEE80211_QOS_DATA_HEADER_LEN],
+            crate::encoding::AmsduBody<'a>,
+        ),
+        StationFrameError,
+    > {
         validate_peer(self.bssid)?;
-        if self.user_priority > 7 {
-            return Err(StationFrameError::UserPriorityOutOfRange);
-        }
+        let priority = WmmUserPriority::new(self.user_priority)
+            .ok_or(StationFrameError::UserPriorityOutOfRange)?;
         let Some(first) = self.ethernet_frames.first().copied() else {
             return Err(StationFrameError::NoAmsduFrames);
         };
-        if first.len() < ETHERNET_HEADER_LEN {
+        let Some(&first_header) = first.first_chunk::<ETHERNET_HEADER_LEN>() else {
             return Err(StationFrameError::EthernetFrameTooShort);
-        }
-        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
-            .try_into()
-            .expect("length checked above");
+        };
         let mut plan = plan_data_encapsulation(
             DataInterfaceRole::Station,
             self.bssid,
             self.source,
             first_header,
-            self.user_priority,
+            priority,
             true,
             false,
-        )
-        .ok_or(StationFrameError::UserPriorityOutOfRange)?;
+        );
         plan.header[1] |= 0x40;
         plan.header[24] |= 0x80;
-        let required = sta_protected_amsdu_frame_length(self.ethernet_frames)?;
-        Ok((plan, required))
-    }
-
-    fn write_header(
-        &self,
-        plan: crate::data::DataEncapPlan,
-        required: usize,
-        output: &mut [u8],
-    ) -> Result<usize, StationFrameError> {
-        let header_len = usize::from(plan.header_len);
-        debug_assert_eq!(header_len, crate::data::IEEE80211_QOS_DATA_HEADER_LEN);
-        if output.len() < required {
-            return Err(StationFrameError::OutputTooSmall { required });
-        }
-
-        let frame = &mut output[..required];
-        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
-        let offset = header_len;
-        frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
-        Ok(required)
+        plan.header[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
+        let body =
+            crate::encoding::AmsduBody::checked(self.ethernet_frames, HT_AMSDU_BASELINE_MAX_LEN)
+                .map_err(amsdu_error)?;
+        Ok((plan.header, body))
     }
 
     /// Refresh the MAC and CCMP header of an already encoded A-MSDU.
@@ -209,41 +154,24 @@ impl StaProtectedAmsduFrame<'_> {
     /// accepted WPA2 HT40 MCS7 SGI aggregates; preparation fell from 768 us
     /// to 167 us and five-second samples sustained 102.8..109.7 Mbit/s.
     pub fn refresh_header(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        let (plan, required) = self.plan()?;
-        self.write_header(plan, required, output)
+        let (header, body) = self.plan()?;
+        let body_length = body
+            .length()
+            .map_err(|length| amsdu_error(crate::encoding::AmsduError::TooLong(length)))?;
+        let required = header.len() + CCMP_HEADER_LEN + body_length;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+        crate::encoding::FrameParts([header.as_slice(), &self.ccmp_header])
+            .write(output)
+            .map_err(|required| StationFrameError::OutputTooSmall { required })?;
+        Ok(required)
     }
 
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        let (plan, required) = self.plan()?;
-        self.write_header(plan, required, output)?;
-
-        let frame = &mut output[..required];
-        let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN;
-        for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
-            let payload = &ethernet[ETHERNET_HEADER_LEN..];
-            let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
-            frame[offset..offset + 12].copy_from_slice(&ethernet[..12]);
-            frame[offset + 12..offset + 14].copy_from_slice(&(msdu_length as u16).to_be_bytes());
-            offset += AMSDU_SUBFRAME_HEADER_LEN;
-            frame[offset..offset + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
-            frame[offset + 6..offset + 8].copy_from_slice(&ethernet[12..14]);
-            offset += LLC_SNAP_HEADER_LEN;
-            frame[offset..offset + payload.len()].copy_from_slice(payload);
-            offset += payload.len();
-            if index + 1 != self.ethernet_frames.len() {
-                let subframe_length =
-                    AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
-                let padding = (4 - (subframe_length & 3)) & 3;
-                // Only A-MSDU alignment padding is not overwritten by the
-                // header/payload copies above. Clear exactly these bytes so a
-                // reused SRAM slot cannot expose an older MPDU, without
-                // performing a redundant full-frame memset before every
-                // aggregate build.
-                frame[offset..offset + padding].fill(0);
-                offset += padding;
-            }
-        }
-        debug_assert_eq!(offset, required);
-        Ok(required)
+        let (header, body) = self.plan()?;
+        crate::encoding::FrameParts([header.as_slice(), &self.ccmp_header])
+            .write_amsdu(body, output)
+            .map_err(|required| StationFrameError::OutputTooSmall { required })
     }
 }

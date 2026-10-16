@@ -78,8 +78,10 @@ pub const fn phy_rate(
         return Some(PhyRate::Legacy(rate));
     }
     if matches!(kind, RateScheduleKind::Dot11Ax) {
+        // Each guarded range starts at the subtracted base and has ten
+        // values. Both differences are exactly 0..=9, without wrap or clamp.
         let (index, gi_ltf) = if code >= 0x10 && code <= 0x19 {
-            (code - 0x10, HeGiLtf::Ltf2xGi1600Ns)
+            (code.wrapping_sub(0x10), HeGiLtf::Ltf2xGi1600Ns)
         } else if code >= 0x1a && code <= 0x23 {
             if !matches!(
                 he_800ns_gi_ltf,
@@ -87,7 +89,7 @@ pub const fn phy_rate(
             ) {
                 return None;
             }
-            (code - 0x1a, he_800ns_gi_ltf)
+            (code.wrapping_sub(0x1a), he_800ns_gi_ltf)
         } else {
             return None;
         };
@@ -106,10 +108,11 @@ pub const fn phy_rate(
             None => None,
         };
     }
+    // The HT ranges similarly prove an exact difference of 0..=7.
     let (index, short_gi) = if code >= 0x10 && code <= 0x17 {
-        (code - 0x10, false)
+        (code.wrapping_sub(0x10), false)
     } else if code >= 0x1a && code <= 0x21 {
-        (code - 0x1a, true)
+        (code.wrapping_sub(0x1a), true)
     } else {
         return None;
     };
@@ -178,5 +181,62 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn every_mcs_code_preserves_its_guard_interval_and_exact_index() {
+        for kind in [RateScheduleKind::Dot11N, RateScheduleKind::Dot11Ax] {
+            for gi in [
+                HeGiLtf::Ltf1xGi800Ns,
+                HeGiLtf::Ltf2xGi800Ns,
+                HeGiLtf::Ltf2xGi1600Ns,
+                HeGiLtf::Ltf4xGi3200Ns,
+            ] {
+                for code in 0x10..=u8::MAX {
+                    let rate = phy_rate(kind, code, PpduBandwidth::Mhz40, gi);
+                    // Signed, wider arithmetic independently detects either
+                    // an underflowed base subtraction or a clamped index.
+                    let long_index = i16::from(code) - 0x10;
+                    let short_index = i16::from(code) - 0x1a;
+                    match kind {
+                        RateScheduleKind::Dot11N => {
+                            let (index, short) = if (0..8).contains(&long_index) {
+                                (long_index, false)
+                            } else if (0..8).contains(&short_index) {
+                                (short_index, true)
+                            } else {
+                                assert_eq!(rate, None);
+                                continue;
+                            };
+                            let Some(PhyRate::Ht(rate)) = rate else {
+                                panic!("HT code {code}")
+                            };
+                            assert_eq!(i16::from(rate.mcs().index()), index);
+                            assert_eq!(rate.short_gi(), short);
+                            assert_eq!(rate.bandwidth(), PpduBandwidth::Mhz40);
+                        }
+                        RateScheduleKind::Dot11Ax => {
+                            let (index, gi) = if (0..10).contains(&long_index) {
+                                (long_index, HeGiLtf::Ltf2xGi1600Ns)
+                            } else if (0..10).contains(&short_index)
+                                && matches!(gi, HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns)
+                            {
+                                (short_index, gi)
+                            } else {
+                                assert_eq!(rate, None);
+                                continue;
+                            };
+                            let Some(PhyRate::He(rate)) = rate else {
+                                panic!("HE code {code}")
+                            };
+                            assert_eq!(i16::from(rate.mcs().index()), index);
+                            assert_eq!(rate.gi_ltf(), gi);
+                            assert_eq!(rate.bandwidth(), PpduBandwidth::Mhz20);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
     }
 }

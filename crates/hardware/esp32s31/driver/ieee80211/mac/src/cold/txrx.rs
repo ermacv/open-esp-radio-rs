@@ -1,22 +1,6 @@
 //! Ownership boundary for the complete cold `mac_txrx_init` transaction.
 
-use oer_esp32s31_hal::ieee80211::mac::WifiMacColdHal;
-
-/// Vendor MAC-delay jitter reduced to the only representable hardware range.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacDelaySlot(u8);
-
-impl MacDelaySlot {
-    const SLOT_COUNT: u32 = 11;
-
-    pub const fn from_random(random: u32) -> Self {
-        Self((random % Self::SLOT_COUNT) as u8)
-    }
-
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-}
+use oer_esp32s31_hal::{ieee80211::mac::WifiMacColdHal, types::MacDelaySlot};
 
 pub trait MacColdTxRxHardware {
     fn initialize_txrx_prefix(&mut self);
@@ -30,8 +14,7 @@ impl MacColdTxRxHardware for WifiMacColdHal<'_> {
     }
 
     fn initialize_txrx_callbacks(&mut self, delay_slot: MacDelaySlot) {
-        let programmed = self.initialize_txrx_callbacks(delay_slot.value());
-        debug_assert!(programmed);
+        WifiMacColdHal::initialize_txrx_callbacks(self, delay_slot);
     }
 
     fn initialize_txrx_suffix(&mut self) {

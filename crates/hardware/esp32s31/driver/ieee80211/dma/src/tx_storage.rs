@@ -43,13 +43,10 @@ struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 ///
 /// Construct this in static storage. The returned owner is movable; this
 /// backing allocation is not.
+/// Consume the hardware allocation through [`Self::pin_static`].
 #[cfg_attr(
-    target_pointer_width = "32",
-    doc = "Consume the hardware allocation through [`Self::pin_static`]."
-)]
-#[cfg_attr(
-    not(target_pointer_width = "32"),
-    doc = "Consume the native model allocation through [`Self::pin_static_model`]."
+    any(test, feature = "test-support"),
+    doc = "Explicit models consume the allocation through [`Self::pin_static_model`]."
 )]
 #[pin_project]
 #[derive(bytemuck::Zeroable)]
@@ -75,7 +72,6 @@ impl<const BUFFER_SIZE: usize> TxDmaStorage<BUFFER_SIZE> {
 
     /// Consume the unique static hardware allocation and bind its real DMA
     /// addresses to a movable owner.
-    #[cfg(target_pointer_width = "32")]
     pub fn pin_static(
         storage: &'static mut Self,
     ) -> Result<PinnedTxDmaStorage<BUFFER_SIZE>, TxDmaStorageError> {
@@ -87,7 +83,7 @@ impl<const BUFFER_SIZE: usize> TxDmaStorage<BUFFER_SIZE> {
     }
 
     /// Bind deterministic low addresses for a native model with no DMA actor.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn pin_static_model(
         storage: &'static mut Self,
         descriptor_address: u32,

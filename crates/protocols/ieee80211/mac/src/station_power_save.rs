@@ -7,6 +7,7 @@
 //! merely encoding either frame never grants permission to stop the radio:
 //! the runtime must retain the corresponding acknowledged exchange.
 
+use crate::address::{Bssid, OwnAddress};
 use crate::{
     sequence::SequenceNumber,
     station::{StationFrameError, validate_peer},
@@ -57,8 +58,8 @@ pub enum StaPowerManagement {
 /// Address 3 are the BSSID, while Address 2 is the station transmitter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaNullDataFrame {
-    pub station_address: [u8; 6],
-    pub bssid: [u8; 6],
+    pub station_address: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub power_management: StaPowerManagement,
 }
@@ -70,7 +71,7 @@ impl StaNullDataFrame {
     /// `ieee80211_nullfunc_get`: Data/NullFunc + ToDS, BSSID/STA/BSSID address
     /// geometry, with the caller selecting the Power Management bit.
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         if output.len() < STA_NULL_DATA_FRAME_LEN {
             return Err(StationFrameError::OutputTooSmall {
                 required: STA_NULL_DATA_FRAME_LEN,
@@ -86,9 +87,9 @@ impl StaNullDataFrame {
                 0
             };
         frame[0..2].copy_from_slice(&frame_control.to_le_bytes());
-        frame[4..10].copy_from_slice(&self.bssid);
-        frame[10..16].copy_from_slice(&self.station_address);
-        frame[16..22].copy_from_slice(&self.bssid);
+        frame[4..10].copy_from_slice(&self.bssid.get());
+        frame[10..16].copy_from_slice(&self.station_address.get());
+        frame[16..22].copy_from_slice(&self.bssid.get());
         frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         Ok(STA_NULL_DATA_FRAME_LEN)
     }

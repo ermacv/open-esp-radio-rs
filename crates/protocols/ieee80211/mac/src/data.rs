@@ -4,6 +4,9 @@
 //! This is the live, chip-independent owner of the finite encapsulation
 //! policy. Raw ESF, descriptor,
 //! node, key, and interface accesses deliberately remain outside this module.
+//! Encapsulation takes a checked `WmmUserPriority`; a basic data plan is
+//! infallible. Requesting hardware HE-Control can fail only when the resulting
+//! frame is not individual QoS data, reported as `HeControlRequiresQos`.
 
 use crate::qos::{WmmAccessCategory, WmmUserPriority};
 
@@ -18,10 +21,10 @@ const IEEE80211_QOS_DATA: u8 = 0x88;
 const IEEE80211_TO_DS: u8 = 0x01;
 const IEEE80211_FROM_DS: u8 = 0x02;
 const IEEE80211_ORDER: u8 = 0x80;
-const IEEE80211_MORE_FRAGMENTS: u8 = 0x04;
 const IEEE80211_QOS_AMSDU_PRESENT: u8 = 0x80;
 const QOS_NO_ACK_POLICY: u8 = 0x20;
-const RFC1042_LLC_SNAP_PREFIX: [u8; 6] = [0xaa, 0xaa, 0x03, 0, 0, 0];
+/// RFC 1042 LLC/SNAP prefix before the EtherType.
+pub const RFC1042_LLC_SNAP_PREFIX: [u8; 6] = [0xaa, 0xaa, 0x03, 0, 0, 0];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataInterfaceRole {
@@ -34,11 +37,10 @@ pub use duplicate::RxDuplicateFilter;
 
 /// HE-Control policy for an ordinary QoS data MPDU.
 ///
-/// The ESP32-S31 vendor path sets Frame Control's Order bit while keeping
-/// CCMP immediately after the 26-byte DMA-resident QoS header. Its MAC-owned
-/// metadata separately accounts for the four bytes inserted on air. Keeping
-/// this choice explicit prevents an ordinary HT QoS frame from accidentally
-/// advertising a field that is absent on air.
+/// A backend that explicitly supports hardware insertion keeps CCMP
+/// immediately after the 26-byte QoS header and accounts separately for the
+/// four bytes inserted on air. Keeping this capability explicit prevents an
+/// ordinary HT QoS frame from advertising a field absent on air.
 ///
 /// SOURCE(esp32s31): complete `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc` sets Order and descriptor HTC metadata;
 /// `libpp[hal_mac_ctl.o]::hal_he_set_htc` writes the per-queue HTC
@@ -144,13 +146,22 @@ pub struct AmsduSubframe<'a> {
 
 /// Allocation-free iterator over the subframes of one received A-MSDU.
 ///
+/// Construction rejects the entire aggregate when its first destination is
+/// `AA:AA:03:00:00:00`, the RFC 1042 LLC/SNAP prefix. An attacker can otherwise
+/// flip the unauthenticated A-MSDU-present bit of an ordinary QoS MSDU and
+/// reinterpret its LLC header as a subframe destination (CVE-2020-24588).
+/// No subframe is exposed before this check, including on the CCMP-verified
+/// path: integrity evidence alone does not establish negotiated SPP A-MSDU.
+/// This follows the [Linux aggregation-attack mitigation][mitigation].
+///
+/// [mitigation]: https://git.kernel.org/linus/2b8a1fee3488c602aca8bea004a087e60806a5cf
+///
 /// SOURCE: IEEE 802.11 A-MSDU subframe format (DA, SA, big-endian MSDU
 /// length, LLC/SNAP MSDU and four-byte padding). The need for this path was
 /// confirmed by the reviewed source promoted at commit `f233006`, whose
 /// `indicate_multi_received_frame` joins a received MPDU split across Wi-Fi
 /// DMA descriptors before handing it to the upper data path.
 #[derive(Clone, Debug)]
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-msdu
 pub struct AmsduSubframes<'a> {
     remaining: &'a [u8],
     failed: bool,
@@ -206,8 +217,12 @@ pub enum DataDecapError {
     Fragmented,
     RoleMismatch,
     AmsduUnsupported,
+    /// The first A-MSDU destination aliases an ordinary LLC/SNAP header.
+    InvalidAmsduDestination,
     InvalidLlcSnap,
-    OutputTooSmall { required: usize },
+    OutputTooSmall {
+        required: usize,
+    },
 }
 
 impl<'a> Iterator for AmsduSubframes<'a> {
@@ -269,78 +284,48 @@ impl<'a> Iterator for AmsduSubframes<'a> {
     }
 }
 
+/// Plan a data MPDU from a checked user priority.
+///
+/// A raw priority cannot enter the encoder:
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_mac::data::{DataInterfaceRole, plan_data_encapsulation};
+/// let _plan = plan_data_encapsulation(
+///     DataInterfaceRole::Station, [2; 6], [4; 6], [0; 14], 8, true, false,
+/// );
+/// ```
+///
+/// Fixed protocol priorities need no runtime validation:
+///
+/// ```
+/// use oer_ieee80211_mac::data::{DataInterfaceRole, plan_data_encapsulation};
+/// use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
+/// let plan = plan_data_encapsulation(
+///     DataInterfaceRole::Station, [2; 6], [4; 6], [0; 14],
+///     WmmUserPriority::UP7, true, false,
+/// );
+/// assert_eq!(plan.access_category, WmmAccessCategory::Voice);
+/// ```
 pub const fn plan_data_encapsulation(
     role: DataInterfaceRole,
     bssid: [u8; 6],
     interface_mac: [u8; 6],
     ethernet: [u8; ETHERNET_HEADER_LEN],
-    priority: u8,
+    priority: WmmUserPriority,
     peer_qos: bool,
     no_ack_policy: bool,
-) -> Option<DataEncapPlan> {
-    plan_data_encapsulation_with_he_control(
-        role,
-        bssid,
-        interface_mac,
-        ethernet,
-        priority,
-        peer_qos,
-        no_ack_policy,
-        DataHeControl::Disabled,
-    )
-}
-
-/// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
-///
-/// SOURCE(esp32s31): complete
-/// `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
-/// sets byte-one bit seven but does not extend or move the DMA header.
-/// Complete `libpp[pp_he.o]::ppCalSubFrameLength` accounts for the
-/// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
-/// metadata remains outside this IEEE 802.11 encoder.
-#[allow(clippy::too_many_arguments)]
-pub const fn plan_data_encapsulation_with_he_control(
-    role: DataInterfaceRole,
-    bssid: [u8; 6],
-    interface_mac: [u8; 6],
-    ethernet: [u8; ETHERNET_HEADER_LEN],
-    priority: u8,
-    peer_qos: bool,
-    no_ack_policy: bool,
-    he_control: DataHeControl,
-) -> Option<DataEncapPlan> {
-    let access_category = match WmmUserPriority::new(priority) {
-        Some(value) => value.access_category(),
-        None => return None,
-    };
-
-    let mut destination = [0_u8; 6];
-    let mut source = [0_u8; 6];
-    let mut index = 0;
-    while index != 6 {
-        destination[index] = ethernet[index];
-        source[index] = ethernet[index + 6];
-        index += 1;
-    }
-
-    let descriptor_multicast =
-        matches!(role, DataInterfaceRole::AccessPoint) && destination[0] & 1 != 0;
+) -> DataEncapPlan {
+    let [d0, d1, d2, d3, d4, d5, s0, s1, s2, s3, s4, s5, e0, e1] = ethernet;
+    let destination = [d0, d1, d2, d3, d4, d5];
+    let source = [s0, s1, s2, s3, s4, s5];
+    let descriptor_multicast = matches!(role, DataInterfaceRole::AccessPoint) && d0 & 1 != 0;
     let qos = peer_qos && !descriptor_multicast;
-    if !qos
-        && matches!(
-            he_control,
-            DataHeControl::HardwareGeneratedBufferStatusReport
-        )
-    {
-        return None;
-    }
     let mut header = [0_u8; IEEE80211_QOS_DATA_HEADER_LEN];
     header[0] = if qos {
         IEEE80211_QOS_DATA
     } else {
         IEEE80211_DATA
     };
-
     match role {
         DataInterfaceRole::Station => {
             header[1] = IEEE80211_TO_DS;
@@ -355,31 +340,73 @@ pub const fn plan_data_encapsulation_with_he_control(
             copy_six(&mut header, 16, source);
         }
     }
-
     if qos {
-        header[24] = priority | if no_ack_policy { QOS_NO_ACK_POLICY } else { 0 };
+        header[24] = priority.value() | if no_ack_policy { QOS_NO_ACK_POLICY } else { 0 };
     }
-    if matches!(
-        he_control,
-        DataHeControl::HardwareGeneratedBufferStatusReport
-    ) {
-        // The chip-specific DMA owner separately marks the four-byte hardware
-        // insertion; the encoded QoS header itself remains 26 bytes.
-        header[1] |= IEEE80211_ORDER;
-    }
-
-    Some(DataEncapPlan {
+    DataEncapPlan {
         header,
         header_len: if qos {
             IEEE80211_QOS_DATA_HEADER_LEN as u8
         } else {
             IEEE80211_LEGACY_DATA_HEADER_LEN as u8
         },
-        llc_snap: [0xaa, 0xaa, 0x03, 0, 0, 0, ethernet[12], ethernet[13]],
+        llc_snap: [0xaa, 0xaa, 0x03, 0, 0, 0, e0, e1],
         descriptor_multicast,
-        access_category,
+        access_category: priority.access_category(),
+        he_control: DataHeControl::Disabled,
+    }
+}
+
+/// Hardware-generated HE-Control requires an individual QoS data MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeControlRequiresQos;
+
+/// Plan one data MPDU whose HE-Control bytes are inserted by MAC hardware.
+///
+/// # Errors
+///
+/// [`HeControlRequiresQos`] when insertion is requested for a non-QoS frame,
+/// including an AP's group-addressed frame even when the peer supports QoS.
+///
+/// SOURCE(esp32s31): complete
+/// `libnet80211[ieee80211_he.o]::ieee80211_encap_esfbuf_htc`
+/// sets byte-one bit seven but does not extend or move the DMA header.
+/// Complete `libpp[pp_he.o]::ppCalSubFrameLength` accounts for the
+/// inserted bytes through DMA metadata byte seven bit zero; that chip-specific
+/// metadata remains outside this IEEE 802.11 encoder.
+#[allow(clippy::too_many_arguments)]
+pub const fn plan_data_encapsulation_with_he_control(
+    role: DataInterfaceRole,
+    bssid: [u8; 6],
+    interface_mac: [u8; 6],
+    ethernet: [u8; ETHERNET_HEADER_LEN],
+    priority: WmmUserPriority,
+    peer_qos: bool,
+    no_ack_policy: bool,
+    he_control: DataHeControl,
+) -> Result<DataEncapPlan, HeControlRequiresQos> {
+    let mut plan = plan_data_encapsulation(
+        role,
+        bssid,
+        interface_mac,
+        ethernet,
+        priority,
+        peer_qos,
+        no_ack_policy,
+    );
+    if matches!(
         he_control,
-    })
+        DataHeControl::HardwareGeneratedBufferStatusReport
+    ) {
+        if plan.header_len != IEEE80211_QOS_DATA_HEADER_LEN as u8 {
+            return Err(HeControlRequiresQos);
+        }
+        // The chip-specific DMA owner separately marks the four-byte hardware
+        // insertion; the encoded QoS header itself remains 26 bytes.
+        plan.header[1] |= IEEE80211_ORDER;
+    }
+    plan.he_control = he_control;
+    Ok(plan)
 }
 
 /// Validate one ordinary STA/AP data MPDU and locate its Ethernet payload.
@@ -395,67 +422,83 @@ pub fn plan_data_decapsulation(
     payload_offset: usize,
     payload_length: usize,
 ) -> Result<DataDecapPlan, DataDecapError> {
-    if mpdu.len() < IEEE80211_LEGACY_DATA_HEADER_LEN {
-        return Err(DataDecapError::Truncated);
-    }
-    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
-        return Err(DataDecapError::NotData);
-    }
-    if mpdu[1] & IEEE80211_MORE_FRAGMENTS != 0 || mpdu[22] & 0x0f != 0 {
-        return Err(DataDecapError::Fragmented);
-    }
-
-    let to_ds = mpdu[1] & IEEE80211_TO_DS != 0;
-    let from_ds = mpdu[1] & IEEE80211_FROM_DS != 0;
-    let (destination_offset, source_offset) = match (role, to_ds, from_ds) {
-        (DataInterfaceRole::Station, false, true) => (4, 16),
-        (DataInterfaceRole::AccessPoint, true, false) => (16, 10),
-        _ => return Err(DataDecapError::RoleMismatch),
-    };
-
-    let qos = mpdu[0] & 0x80 != 0;
-    let header_length = if qos {
-        IEEE80211_QOS_DATA_HEADER_LEN
-    } else {
-        IEEE80211_LEGACY_DATA_HEADER_LEN
-    };
-    if mpdu.len() < header_length {
-        return Err(DataDecapError::Truncated);
-    }
-    if qos && mpdu[24] & IEEE80211_QOS_AMSDU_PRESENT != 0 {
+    let header = data_header(role, mpdu)?;
+    if header
+        .qos()
+        .is_some_and(|qos| qos & u16::from(IEEE80211_QOS_AMSDU_PRESENT) != 0)
+    {
         return Err(DataDecapError::AmsduUnsupported);
     }
+    let payload = data_payload(header, payload_offset, payload_length)?;
+    let parts = single_payload(header, payload)?;
+    Ok(DataDecapPlan {
+        destination: parts.destination,
+        source: parts.source,
+        ether_type: parts.ether_type,
+        payload_offset: payload_offset + LLC_SNAP_HEADER_LEN,
+        payload_length: parts.payload.len(),
+        ethernet_length: parts.length(),
+    })
+}
 
-    let payload_end = payload_offset
-        .checked_add(payload_length)
+fn data_header(
+    role: DataInterfaceRole,
+    mpdu: &[u8],
+) -> Result<crate::frame::DecodedHeader<'_>, DataDecapError> {
+    let header = crate::frame::DecodedHeader::decode(mpdu).ok_or(DataDecapError::Truncated)?;
+    let control = header.control();
+    if !control.is_data() {
+        return Err(DataDecapError::NotData);
+    }
+    if control.more_fragments() || header.sequence_control() & 15 != 0 {
+        return Err(DataDecapError::Fragmented);
+    }
+    if !matches!(
+        (role, control.ds()),
+        (DataInterfaceRole::Station, 2) | (DataInterfaceRole::AccessPoint, 1)
+    ) {
+        return Err(DataDecapError::RoleMismatch);
+    }
+    Ok(header)
+}
+
+fn data_payload(
+    header: crate::frame::DecodedHeader<'_>,
+    offset: usize,
+    length: usize,
+) -> Result<&[u8], DataDecapError> {
+    let end = offset
+        .checked_add(length)
         .ok_or(DataDecapError::Truncated)?;
-    if payload_offset < header_length
-        || payload_length < LLC_SNAP_HEADER_LEN
-        || payload_end > mpdu.len()
-    {
+    if offset < header.frame().len() - header.body().len() {
         return Err(DataDecapError::Truncated);
     }
-    let llc = &mpdu[payload_offset..payload_offset + LLC_SNAP_HEADER_LEN];
+    header
+        .frame()
+        .get(offset..end)
+        .ok_or(DataDecapError::Truncated)
+}
+
+fn single_payload<'a>(
+    header: crate::frame::DecodedHeader<'_>,
+    payload: &'a [u8],
+) -> Result<EthernetFrameParts<'a>, DataDecapError> {
+    let (llc, payload) = payload
+        .split_first_chunk::<LLC_SNAP_HEADER_LEN>()
+        .ok_or(DataDecapError::Truncated)?;
     if llc[..RFC1042_LLC_SNAP_PREFIX.len()] != RFC1042_LLC_SNAP_PREFIX {
         return Err(DataDecapError::InvalidLlcSnap);
     }
-
-    let mut destination = [0_u8; 6];
-    destination.copy_from_slice(&mpdu[destination_offset..destination_offset + 6]);
-    let mut source = [0_u8; 6];
-    source.copy_from_slice(&mpdu[source_offset..source_offset + 6]);
-    let payload_length = payload_length - LLC_SNAP_HEADER_LEN;
-    let ethernet_length = ETHERNET_HEADER_LEN
-        .checked_add(payload_length)
-        .ok_or(DataDecapError::Truncated)?;
-    Ok(DataDecapPlan {
+    let (destination, source) = match header.control().ds() {
+        2 => (header.receiver(), header.address3()),
+        1 => (header.address3(), header.transmitter()),
+        _ => return Err(DataDecapError::RoleMismatch),
+    };
+    Ok(EthernetFrameParts {
         destination,
         source,
         ether_type: u16::from_be_bytes([llc[6], llc[7]]),
-        payload_offset: payload_offset + LLC_SNAP_HEADER_LEN,
-        payload_length,
-        ethernet_length,
+        payload,
     })
 }
 
@@ -466,86 +509,61 @@ pub fn amsdu_subframes<'a>(
     payload_offset: usize,
     payload_length: usize,
 ) -> Result<AmsduSubframes<'a>, DataDecapError> {
-    if mpdu.len() < IEEE80211_QOS_DATA_HEADER_LEN {
-        return Err(DataDecapError::Truncated);
-    }
-    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-    if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
-        return Err(DataDecapError::NotData);
-    }
-    if mpdu[1] & IEEE80211_MORE_FRAGMENTS != 0 || mpdu[22] & 0x0f != 0 {
-        return Err(DataDecapError::Fragmented);
-    }
-    let to_ds = mpdu[1] & IEEE80211_TO_DS != 0;
-    let from_ds = mpdu[1] & IEEE80211_FROM_DS != 0;
-    if !matches!(
-        (role, to_ds, from_ds),
-        (DataInterfaceRole::Station, false, true) | (DataInterfaceRole::AccessPoint, true, false)
-    ) {
-        return Err(DataDecapError::RoleMismatch);
-    }
-    if mpdu[0] & 0x80 == 0 || mpdu[24] & IEEE80211_QOS_AMSDU_PRESENT == 0 {
+    let header = data_header(role, mpdu)?;
+    if !header
+        .qos()
+        .is_some_and(|qos| qos & u16::from(IEEE80211_QOS_AMSDU_PRESENT) != 0)
+    {
         return Err(DataDecapError::AmsduUnsupported);
     }
-    let payload_end = payload_offset
-        .checked_add(payload_length)
+    let payload = data_payload(header, payload_offset, payload_length)?;
+    aggregate_payload(payload)
+}
+
+fn aggregate_payload(payload: &[u8]) -> Result<AmsduSubframes<'_>, DataDecapError> {
+    let (first, _) = payload
+        .split_first_chunk::<{ ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN }>()
         .ok_or(DataDecapError::Truncated)?;
-    if payload_offset < IEEE80211_QOS_DATA_HEADER_LEN
-        || payload_length < ETHERNET_HEADER_LEN + LLC_SNAP_HEADER_LEN
-        || payload_end > mpdu.len()
-    {
-        return Err(DataDecapError::Truncated);
+    if first.first_chunk::<6>() == Some(&RFC1042_LLC_SNAP_PREFIX) {
+        return Err(DataDecapError::InvalidAmsduDestination);
     }
     Ok(AmsduSubframes {
-        remaining: &mpdu[payload_offset..payload_end],
+        remaining: payload,
         failed: false,
     })
 }
 
 /// Validate one role-addressed data MPDU and expose all contained Ethernet
-/// frames without allocation or chip/runtime policy.
-///
-/// A non-aggregate MPDU yields exactly one frame. An A-MSDU yields each
-/// validated subframe in wire order and reports a malformed later subframe at
-/// that exact iterator position. This preserves the observed publication
-/// order while keeping STA and AP payload interpretation in one owner.
-#[inline(always)]
+/// frames without allocation or chip/runtime policy. Malformed later A-MSDU
+/// subframes remain errors at their iterator position.
 pub fn decapsulate_data_frames<'a>(
     role: DataInterfaceRole,
     mpdu: &'a [u8],
     payload_offset: usize,
     payload_length: usize,
 ) -> Result<DataDecapsulation<'a>, DataDecapError> {
-    match plan_data_decapsulation(role, mpdu, payload_offset, payload_length) {
-        Ok(plan) => {
-            let payload_end = plan
-                .payload_offset
-                .checked_add(plan.payload_length)
-                .ok_or(DataDecapError::Truncated)?;
-            let payload = mpdu
-                .get(plan.payload_offset..payload_end)
-                .ok_or(DataDecapError::Truncated)?;
-            Ok(DataDecapsulation {
-                frames: DataDecapsulationFrames::Single(Some(EthernetFrameParts {
-                    destination: plan.destination,
-                    source: plan.source,
-                    ether_type: plan.ether_type,
-                    payload,
-                })),
-                amsdu: false,
-            })
-        }
-        Err(DataDecapError::AmsduUnsupported) => Ok(DataDecapsulation {
-            frames: DataDecapsulationFrames::Aggregate(amsdu_subframes(
-                role,
-                mpdu,
-                payload_offset,
-                payload_length,
-            )?),
-            amsdu: true,
-        }),
-        Err(error) => Err(error),
-    }
+    let header = data_header(role, mpdu)?;
+    decapsulate_payload(
+        header,
+        data_payload(header, payload_offset, payload_length)?,
+    )
+}
+
+/// The receive admission owner has already checked this header and located
+/// the decrypted payload. Do not parse header geometry or commit replay again.
+pub(crate) fn decapsulate_payload<'a>(
+    header: crate::frame::DecodedHeader<'_>,
+    payload: &'a [u8],
+) -> Result<DataDecapsulation<'a>, DataDecapError> {
+    let amsdu = header
+        .qos()
+        .is_some_and(|qos| qos & u16::from(IEEE80211_QOS_AMSDU_PRESENT) != 0);
+    let frames = if amsdu {
+        DataDecapsulationFrames::Aggregate(aggregate_payload(payload)?)
+    } else {
+        DataDecapsulationFrames::Single(Some(single_payload(header, payload)?))
+    };
+    Ok(DataDecapsulation { frames, amsdu })
 }
 
 /// Copy one validated A-MSDU subframe into ordinary Ethernet-II storage.

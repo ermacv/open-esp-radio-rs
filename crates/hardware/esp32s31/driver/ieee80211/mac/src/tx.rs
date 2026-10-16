@@ -9,9 +9,9 @@ use core::{
     pin::Pin,
 };
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 extern crate alloc;
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use alloc::boxed::Box;
 
 pub use oer_esp32s31_hal::types::MacLegacyTxResponse;
@@ -28,11 +28,12 @@ use oer_esp32s31_hal::types::{
 };
 
 pub use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaState as TxSlotState;
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 
 use oer_esp32s31_ieee80211_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
 
+use oer_ieee80211_lower_mac::TxStatus;
 use oer_ieee80211_mac::qos::WmmAccessCategory;
 
 pub use oer_ieee80211_mac::trigger::HeResourceUnit;
@@ -55,7 +56,9 @@ use oer_ieee80211_mac::{
     },
 };
 
+mod completion;
 mod cost;
+pub use completion::{CompletionFault, CompletionObservation, CompletionRaw, decode};
 
 const LEGACY_FCS_LENGTH: u16 = 4;
 // SOURCE: HIL_VENDOR_HE20_MCS9_SU_2026_07_29. Two synchronous vendor HE SU
@@ -394,28 +397,23 @@ impl TxHardware for RadioRuntimeOwner {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxCookie(pub u32);
 
+/// Completed-publication metadata, constructed only after Observed(status).
+/// Its retained status proof is independent of optional diagnostic fields.
+/// NoEffect and CompletionFault cannot construct this value.
+///
+/// ```compile_fail,E0451
+/// # use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCookie};
+/// # use oer_esp32s31_hal::types::MacTxCompletionObservation;
+/// # use oer_ieee80211_lower_mac::TxStatus;
+/// fn forge(raw: MacTxCompletionObservation) -> TxCompletion {
+///     TxCompletion { cookie: TxCookie(1), observation: raw, tx_status: TxStatus::Success }
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxCompletion {
     cookie: TxCookie,
     observation: MacTxCompletionObservation,
-}
-
-/// Vendor LMAC disposition of one decoded ordinary-queue completion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxCompletionDisposition {
-    Success,
-    AckTimeout,
-    CtsTimeout,
-    Collision,
-    Terminal(TxCompletionFailure),
-}
-
-/// Terminal completion classes which the recovered LMAC does not retry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxCompletionFailure {
-    InvalidStatus { status: u8 },
-    RtsError { detail: u8 },
-    SecurityKeyError,
+    tx_status: TxStatus,
 }
 
 impl TxCompletion {
@@ -448,35 +446,10 @@ impl TxCompletion {
         self.observation.detail()
     }
 
-    /// Reproduce the complete top-level LMAC completion dispatch and the
-    /// retry-relevant leaves of `lmacProcessTxRtsError`/`TxError`.
-    ///
-    /// Status four is not terminal by itself. With the zero selector supplied
-    /// by `lmacProcessTxComplete`, detail zero becomes CTS timeout, details
-    /// one and three through five become collision, detail `0xc0` becomes a
-    /// security-key failure, and every remaining detail becomes ACK timeout.
-    pub const fn disposition(&self) -> TxCompletionDisposition {
-        match self.status() {
-            0 => TxCompletionDisposition::Success,
-            1 if matches!(self.detail(), 3..=5) => TxCompletionDisposition::Collision,
-            1 => TxCompletionDisposition::Terminal(TxCompletionFailure::RtsError {
-                detail: self.detail(),
-            }),
-            2 => TxCompletionDisposition::CtsTimeout,
-            3 => {
-                TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status: 3 })
-            }
-            4 => match self.detail() {
-                0 => TxCompletionDisposition::CtsTimeout,
-                1 | 3..=5 => TxCompletionDisposition::Collision,
-                0xc0 => TxCompletionDisposition::Terminal(TxCompletionFailure::SecurityKeyError),
-                _ => TxCompletionDisposition::AckTimeout,
-            },
-            5 => TxCompletionDisposition::AckTimeout,
-            status => {
-                TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status })
-            }
-        }
+    /// The status retained when the pure decoder observed this completion.
+    /// NoEffect and decoder faults never construct a TxCompletion.
+    pub const fn tx_status(&self) -> TxStatus {
+        self.tx_status
     }
 
     /// Return whether this completion belongs to a Trigger-based transmit flow.
@@ -551,21 +524,25 @@ impl TxCompletion {
     }
 
     /// Construct a semantic completion for a native protocol model.
-    #[cfg(not(target_pointer_width = "32"))]
-    pub const fn new_model(cookie: TxCookie, status: u8, detail: u8) -> Self {
-        Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub const fn new_model(
+        cookie: TxCookie,
+        status: u8,
+        detail: u8,
+    ) -> Result<CompletionObservation<Self>, CompletionFault> {
+        decode_tx_completion(
             cookie,
-            observation: MacTxCompletionObservation::new_model(status, detail),
-        }
+            MacTxCompletionObservation::new_model(status, detail),
+        )
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_trigger_flow_model(mut self, trigger_flow: bool) -> Self {
         self.observation = self.observation.with_trigger_flow_model(trigger_flow);
         self
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_trigger_packet_counts_model(
         mut self,
         primary: u8,
@@ -580,30 +557,39 @@ impl TxCompletion {
         self
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn with_ack_snr_encoded_model(mut self, encoded: u8) -> Self {
         self.observation = self.observation.with_ack_snr_encoded_model(encoded);
         self
     }
+}
 
-    /// Construct a semantic completion in a compiled validation image.
-    #[cfg(feature = "validation-probes")]
-    pub const fn new_validation(cookie: TxCookie, status: u8, detail: u8) -> Self {
-        Self {
-            cookie,
-            observation: MacTxCompletionObservation::new_validation(status, detail),
+/// Attach the status proof to diagnostic metadata only on Observed.
+pub(crate) const fn decode_tx_completion(
+    cookie: TxCookie,
+    observation: MacTxCompletionObservation,
+) -> Result<CompletionObservation<TxCompletion>, CompletionFault> {
+    match decode(CompletionRaw::ordinary(observation)) {
+        Ok(CompletionObservation::Observed(tx_status)) => {
+            Ok(CompletionObservation::Observed(TxCompletion {
+                cookie,
+                observation,
+                tx_status,
+            }))
         }
+        Ok(CompletionObservation::NoEffect) => Ok(CompletionObservation::NoEffect),
+        Err(fault) => Err(fault),
     }
 }
 
-pub(crate) fn decode_tx_completion(
+/// A hardware decoding fault always quarantines its owner's storage before
+/// returning the existing completion fault. NoEffect leaves storage alone.
+pub(crate) fn decode_or_quarantine(
     cookie: TxCookie,
     observation: MacTxCompletionObservation,
-) -> TxCompletion {
-    TxCompletion {
-        cookie,
-        observation,
-    }
+    quarantine: impl FnOnce(),
+) -> Result<CompletionObservation<TxCompletion>, CompletionFault> {
+    decode_tx_completion(cookie, observation).inspect_err(|_| quarantine())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -615,6 +601,8 @@ pub enum TxError {
     DetachFailed,
     TimeoutNotPending,
     ResetRequired,
+    /// A completion contradicted the publication contract; retain DMA for reset.
+    Completion(CompletionFault),
 }
 
 /// Hardware encoding of an ESP32-S31 non-HT transmit rate.
@@ -977,7 +965,6 @@ impl Default for HtPeerAmpduParameters {
 /// queue vector. The same numeric rate code is used for HT20 and HT40, while
 /// HT-SIG1 bit 7 and PLCP1 bit 29 publish CBW for the selected PPDU.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-20-40-mhz-802-11n-mcs0-mcs7
 pub struct HtRate {
     pub mcs: HtMcs,
     pub guard_interval: HtGuardInterval,
@@ -1449,7 +1436,6 @@ impl HtDuplicateTxSelection {
 /// touching the hardware boundary. Today every protocol-valid candidate then
 /// fails closed because no tracked oracle proves the special queue selector,
 /// HT-SIG/DATA_LENGTH image, protection rate or calibrated power lookup.
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-ht-duplicate-mcs32
 pub fn select_esp32s31_ht_duplicate_tx(
     request: Option<HtDuplicateCertificationRequest>,
     link: HtDuplicateTxLinkCapabilities,
@@ -1646,7 +1632,6 @@ impl HeLdpcDcmMcs {
 /// the raw unit in this type avoids accidentally passing microseconds to the
 /// recovered table producer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-txop
 pub struct HeEdcaTxopLimit {
     units_32_us: u8,
 }
@@ -1685,7 +1670,6 @@ impl HeEdcaTxopLimit {
 
 /// Typed HE20 SU transmit rate for the single S31 spatial stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// CAPABILITY: wifi-802-11ax-he-he20-non-ap-1t1r-mcs0-mcs9
 pub struct HeRate {
     mcs: HeMcs,
     guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
@@ -2020,11 +2004,11 @@ impl HeRate {
     /// table entry, but an untrusted peer can advertise such a short TXOP;
     /// treating the wrap as a large APEP would fail open.
     pub const fn checked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> Option<u32> {
-        if txop.is_default() {
+        let Some(units) = core::num::NonZeroU8::new(txop.units_32_us()) else {
             return Some(self.maximum_default_apep_bytes() as u32);
-        }
+        };
 
-        let signed_bytes = self.nonzero_txop_apep_bytes(txop);
+        let signed_bytes = self.nonzero_txop_apep_bytes(units);
         if signed_bytes <= 0 {
             return None;
         }
@@ -2048,16 +2032,16 @@ impl HeRate {
     /// blob's f32 instruction sequence across every peer-admitted TXOP byte,
     /// all three GI/LTF rows and all ten MCS values.
     const fn vendor_unchecked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
-        if txop.is_default() {
+        let Some(units) = core::num::NonZeroU8::new(txop.units_32_us()) else {
             return self.maximum_default_apep_bytes() as u32;
-        }
-        let limit = self.nonzero_txop_apep_bytes(txop) as u32;
+        };
+        let limit = self.nonzero_txop_apep_bytes(units) as u32;
         if self.dcm { limit / 2 } else { limit }
     }
 
-    const fn nonzero_txop_apep_bytes(self, txop: HeEdcaTxopLimit) -> i64 {
-        debug_assert!(!txop.is_default());
-
+    /// A non-default duration is established by the caller's NonZeroU8;
+    /// the default PPDU policy cannot enter this exchange-budget formula.
+    const fn nonzero_txop_apep_bytes(self, txop: core::num::NonZeroU8) -> i64 {
         const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
             [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
         let mcs = self.mcs.index() as usize;
@@ -2072,7 +2056,7 @@ impl HeRate {
             | HeMcs::Mcs8
             | HeMcs::Mcs9 => 32,
         };
-        let exchange_budget_us = txop.units_32_us() as i64 * 32 - 36;
+        let exchange_budget_us = txop.get() as i64 * 32 - 36;
         let data_bits_per_symbol = DATA_BITS_PER_SYMBOL_RU242[mcs] as i64;
         match self.guard_interval_and_ltf {
             crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
@@ -2132,12 +2116,12 @@ impl HeRate {
         if psdu_length == 0 || psdu_length > 0x3fff {
             return None;
         }
-        let current = ((psdu_length as u32 + 3) & !3) + 4;
         let minimum = self.minimum_ampdu_subframe_bytes(density) as u32;
-        if current >= minimum {
-            return Some(0);
-        }
-        let delimiters = (minimum - current).div_ceil(4);
+        let Some(delimiters) =
+            oer_ieee80211_mac::ampdu::empty_delimiters(psdu_length as u32, minimum)
+        else {
+            return None;
+        };
         if delimiters > u8::MAX as u32 {
             None
         } else {
@@ -2152,7 +2136,6 @@ impl HeRate {
 /// subset in this newtype prevents a rate-policy caller from publishing a
 /// nominally "DCM" override whose HE-SIG-A DCM bit is actually clear.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// CAPABILITY: wifi-802-11ax-he-he-dual-carrier-modulation-dcm
 pub struct HeDcmRate(HeRate);
 
 impl HeDcmRate {
@@ -2488,7 +2471,7 @@ impl TxPhyRate {
         he_800ns_gi_ltf: crate::rx::HeGuardIntervalAndLtf,
     ) -> Option<Self> {
         let code = crate::rate::schedule::schedule_state(schedule).rate;
-        Self::from_rate_control_code(schedule.kind, code, ht_width, he_800ns_gi_ltf)
+        Self::from_rate_control_code(schedule.kind(), code, ht_width, he_800ns_gi_ltf)
     }
 
     pub const fn code(self) -> u8 {
@@ -3227,6 +3210,27 @@ impl LegacyTxConfig {
 /// Descriptor and buffer storage live in the audited chip-DMA leaf. This
 /// upper owner retains only the queue, generation and completion policy and
 /// cannot manufacture a DMA address or final queue-start capability.
+#[cfg_attr(
+    not(feature = "test-support"),
+    doc = r"
+Production builds cannot synthesize a DMA owner, on either host or chip:
+
+```compile_fail,E0599
+use oer_esp32s31_ieee80211_mac::tx::TxSlot;
+let slot = TxSlot::<512>::new_model();
+```
+
+The production constructor consumes a pinned DMA allocation:
+
+```
+use oer_esp32s31_ieee80211_dma::tx_storage::PinnedTxDmaStorage;
+use oer_esp32s31_ieee80211_mac::tx::TxSlot;
+fn slot(dma: PinnedTxDmaStorage<512>) -> TxSlot<512> {
+    TxSlot::from_dma(dma)
+}
+```
+"
+)]
 pub struct TxSlot<const BUFFER_SIZE: usize> {
     dma: PinnedTxDmaStorage<BUFFER_SIZE>,
     generation_cursor: u32,
@@ -3249,18 +3253,27 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Construct a native model with no asynchronous DMA actor.
     ///
-    /// Existing host tests use this convenience constructor. The leaked
-    /// allocation intentionally models permanently retained target SRAM; it
-    /// is unavailable in 32-bit production builds.
-    #[cfg(not(target_pointer_width = "32"))]
-    pub fn new_model() -> Self {
+    /// The `test-support` feature enables this allocation-backed constructor
+    /// on either architecture. The allocation models permanently retained
+    /// target SRAM; production builds have no model constructors. An invalid
+    /// buffer extent returns the DMA binding error.
+    ///
+    /// ```
+    /// use oer_esp32s31_ieee80211_mac::tx::TxSlot;
+    /// let slot = TxSlot::<512>::new_model()?;
+    /// # Ok::<(), oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorageError>(())
+    /// ```
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new_model() -> Result<Self, TxDmaStorageError> {
         const MODEL_DESCRIPTOR_ADDRESS: u32 = 0x2f00_5000;
         const MODEL_BUFFER_ADDRESS: u32 = 0x2f04_0000;
         let storage = Box::leak(Box::new(TxDmaStorage::new()));
-        let dma =
-            TxDmaStorage::pin_static_model(storage, MODEL_DESCRIPTOR_ADDRESS, MODEL_BUFFER_ADDRESS)
-                .expect("native TX model addresses cover the complete allocation");
-        Self::from_dma(dma)
+        let dma = TxDmaStorage::pin_static_model(
+            storage,
+            MODEL_DESCRIPTOR_ADDRESS,
+            MODEL_BUFFER_ADDRESS,
+        )?;
+        Ok(Self::from_dma(dma))
     }
 
     /// Receipt remains in pinned CPU metadata across retry detach/abort. Read
@@ -3504,7 +3517,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// TX layer performs its final q0 ENABLE|VALID write under MAC-IRQ
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this
     /// method intentionally performs no incomplete hardware submission.
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn mark_hardware_owned(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
         let slot = self.get_mut();
         if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
@@ -3522,7 +3535,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_q0_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<TxCompletion>, TxError> {
+    ) -> Result<Option<CompletionObservation<TxCompletion>>, TxError> {
         self.acknowledge_completion(hardware)
     }
 
@@ -3531,9 +3544,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<TxCompletion>, TxError> {
+    ) -> Result<Option<CompletionObservation<TxCompletion>>, TxError> {
         let slot = self.get_mut();
-        let index = slot.queue.index();
+        let index = slot.queue.hardware_index();
         let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
         };
@@ -3542,8 +3555,15 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        slot.dma.mark_completed().map_err(map_dma_storage_error)?;
-        Ok(Some(decode_tx_completion(slot.active, registers)))
+        match decode_or_quarantine(slot.active, registers, || slot.dma.quarantine())
+            .map_err(TxError::Completion)?
+        {
+            CompletionObservation::Observed(completion) => {
+                slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+                Ok(Some(CompletionObservation::Observed(completion)))
+            }
+            CompletionObservation::NoEffect => Ok(Some(CompletionObservation::NoEffect)),
+        }
     }
 
     /// Decode and acknowledge the completion of a BlockAckReq together with
@@ -3552,9 +3572,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     pub fn acknowledge_block_ack_completion<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
-    ) -> Result<Option<ampdu::HtAmpduTxCompletion>, TxError> {
+    ) -> Result<Option<CompletionObservation<ampdu::HtAmpduTxCompletion>>, TxError> {
         let slot = self.get_mut();
-        let index = slot.queue.index();
+        let index = slot.queue.hardware_index();
         let Some(registers) = hardware.take_block_ack_completion(index) else {
             return Ok(None);
         };
@@ -3563,18 +3583,27 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        slot.dma.mark_completed().map_err(map_dma_storage_error)?;
-        Ok(Some(ampdu::HtAmpduTxCompletion {
-            tx: decode_tx_completion(slot.active, registers.tx()),
-            block_ack: ampdu::HtBlockAckObservation::new(
-                registers.block_ack_control(),
-                oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(
-                    registers.block_ack_starting_sequence(),
-                ),
-                registers.block_ack_bitmap(),
-            ),
-            block_ack_received: registers.block_ack_received(),
-        }))
+        match decode_or_quarantine(slot.active, registers.tx(), || slot.dma.quarantine())
+            .map_err(TxError::Completion)?
+        {
+            CompletionObservation::Observed(tx) => {
+                slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+                Ok(Some(CompletionObservation::Observed(
+                    ampdu::HtAmpduTxCompletion {
+                        tx,
+                        block_ack: ampdu::HtBlockAckObservation::new(
+                            registers.block_ack_control(),
+                            oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(
+                                registers.block_ack_starting_sequence(),
+                            ),
+                            registers.block_ack_bitmap(),
+                        ),
+                        block_ack_received: registers.block_ack_received(),
+                    },
+                )))
+            }
+            CompletionObservation::NoEffect => Ok(Some(CompletionObservation::NoEffect)),
+        }
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
@@ -3717,7 +3746,9 @@ fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
 }
 
 #[cfg(test)]
-mod completion_disposition_tests;
+mod completion_tests;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub mod ampdu;
 pub mod metadata;

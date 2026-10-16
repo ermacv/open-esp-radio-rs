@@ -1,35 +1,7 @@
-//! The system module's payloads: timebase probes and stack watermarks.
+//! The system module's payloads: stack watermarks.
 
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
-
-/// Bounded alarm/clock agreement probe. It is intentionally independent of
-/// Wi-Fi initialization so a broken platform timer cannot qualify radio code.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct TimebaseProbeRequest {
-    pub intervals: u16,
-    pub period_micros: u32,
-}
-
-impl TimebaseProbeRequest {
-    pub const fn validate(self) -> bool {
-        self.intervals >= 2
-            && self.intervals <= 100
-            && self.period_micros >= 1_000
-            && self.period_micros <= 1_000_000
-    }
-}
-
-/// Target-side timing evidence for one timebase probe.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct TimebaseProbeEvidence {
-    pub intervals: u16,
-    pub period_micros: u32,
-    pub elapsed_micros: u64,
-    pub minimum_interval_micros: u32,
-    pub maximum_interval_micros: u32,
-    pub early_intervals: u16,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct StackWatermark {

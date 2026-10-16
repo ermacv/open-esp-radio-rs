@@ -44,7 +44,6 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct Plan {
     pub image: ImageClass,
     pub requirements: Requirements,
-    pub settings: oer_hil_protocol::wifi::TargetSettings,
     /// Named observations the workload publishes. Their acceptance limits
     /// remain in the family's criteria; listing a check is not a verdict.
     pub checks: Vec<&'static str>,
@@ -58,7 +57,6 @@ impl Plan {
         Self {
             image,
             requirements: Requirements::default(),
-            settings: oer_hil_protocol::wifi::TargetSettings::default(),
             checks: Vec::new(),
             wifi: WifiLabUse::default(),
         }
@@ -176,7 +174,8 @@ impl<F: ScenarioFamily> Scenario<F> {
     pub fn validate(&self) -> Result<()> {
         self.header.validate()?;
         self.family.validate()?;
-        if self.header.profile.is_some() && !self.image().samples_program_counter() {
+        // The program-counter sampler was deleted (#762); no class serves a profile.
+        if self.header.profile.is_some() {
             return Err(format!(
                 "scenario {} requests a profile, but its image {} does not sample the program \
                  counter",

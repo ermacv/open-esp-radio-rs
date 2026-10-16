@@ -194,7 +194,8 @@ pub use wifi::mac::{
         TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
     },
     coex::init::MacCoexPrioritySnapshot,
-    crypto::{MacCcmpKeyIdentity, MacKeyInstallOutcome},
+    crypto::{MacCcmpKeyIdentity, MacKeyInstallOutcome, MacSppMode},
+    hal_init_tail::MacRtcCalibration,
     he::{
         beamforming::{
             MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError,
@@ -243,6 +244,7 @@ pub use wifi::mac::{
         },
         statistics::MacTxStatisticsSnapshot,
     },
+    txrx_init::MacDelaySlot,
 };
 pub mod ownership;
 

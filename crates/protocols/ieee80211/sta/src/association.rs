@@ -60,6 +60,7 @@ pub fn select_association_phy(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAssociatedPeer {
     pub phy: PhyMode,
+    pub legacy_rates: oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates,
     pub ht_capabilities: Option<oer_ieee80211_mac::ht::HtPeerCapabilities>,
     /// The A-MPDU Parameters field of the access point's HT Capabilities:
     /// its maximum A-MPDU length exponent and minimum MPDU start spacing;
@@ -79,6 +80,8 @@ pub struct StaAssociatedPeer {
 pub enum StaAssociatedPeerError {
     /// The Association Response refused the association with this status.
     Rejected(u16),
+    /// The association contains no usable non-HT rate for control/fallback.
+    NoLegacyRates,
     /// An HE association whose access point's HE Capabilities do not parse.
     HeCapabilities(oer_ieee80211_mac::he::HeElementError),
     /// An HE association whose access point's HE elements give no peer state.
@@ -93,6 +96,7 @@ impl StaAssociatedPeer {
     pub const fn rate_peer(&self) -> oer_ieee80211_upper_mac::rate_control::RatePeer {
         oer_ieee80211_upper_mac::rate_control::RatePeer {
             phy: self.phy,
+            legacy_rates: self.legacy_rates,
             ht_capabilities: self.ht_capabilities,
             he_capabilities: self.he_capabilities,
             he_peer_state: self.he_peer_state,
@@ -131,6 +135,12 @@ impl StaAssociatedPeer {
         };
         Ok(Self {
             phy,
+            legacy_rates:
+                oer_ieee80211_upper_mac::rate_control::NegotiatedLegacyRates::from_rate_elements(
+                    access_point.supported_rates_bytes(),
+                    access_point.extended_supported_rates_bytes(),
+                )
+                .ok_or(StaAssociatedPeerError::NoLegacyRates)?,
             ht_capabilities: access_point.ht_peer_capabilities(),
             // HT Capabilities is kept whole: payload byte two is element
             // byte four.

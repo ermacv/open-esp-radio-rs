@@ -10,6 +10,13 @@ const CCMP_ALGORITHM: u32 = 3;
 const PAIRWISE_LOGICAL_KEY_INDEX: u32 = 0;
 const MAX_GROUP_KEY_ID: u8 = 3;
 
+/// Hardware authentication of the QoS A-MSDU-present bit for one interface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacSppMode {
+    Authenticated,
+    Unauthenticated,
+}
+
 /// Semantic identity encoded into one CCMP hardware key-table entry.
 ///
 /// The register image is deliberately not exposed. Peer/control word layout
@@ -105,28 +112,38 @@ impl WifiRadioRegisters {
     pub fn initialize_mac_crypto_bypass(&mut self) {
         let control = &self.peripherals.wifi_mac.wifi_mac_crypto_control;
         crate::svd::zero_based_field_write::mac_crypto_interface_control(
-            control,
-            0,
-            0x0003_0000,
-            0,
+            control, 0, 0, false, 0xc0, 0,
         );
         crate::svd::zero_based_field_write::mac_crypto_interface_control(
-            control,
-            1,
-            0x0003_0000,
-            0,
+            control, 1, 0, false, 0xc0, 0,
         );
-        crate::svd::zero_based_field_write::mac_crypto_interface_control(control, 2, 0, 0);
+        crate::svd::zero_based_field_write::mac_crypto_interface_control(
+            control, 2, 0, false, 0, 0,
+        );
         crate::svd::zero_register_write::clear_mac_crypto_init_aux(control);
         crate::svd::zero_register_write::clear_mac_crypto_policy(control);
+    }
+
+    /// Apply an association's SPP mode before installing any of its keys.
+    /// The driver establishes removal of every previous key before changing
+    /// this per-interface field; installation itself preserves the decision.
+    ///
+    /// SOURCE: complete `libpp[hal_crypto.o]::hal_crypto_enable` consumes
+    /// SPP from `libpp[wdev.o]::wDev_Insert_KeyEntry` at +0x2e..+0x34.
+    pub fn configure_mac_ccmp_association(&mut self, interface: MacInterface, mode: MacSppMode) {
+        enable_ccmp(
+            &self.peripherals.wifi_mac.wifi_mac_crypto_control,
+            interface.bits() as usize,
+            matches!(mode, MacSppMode::Authenticated),
+        );
+        device_fence();
     }
 
     /// Encode and install one semantic STA CCMP key into an invalid entry.
     ///
     /// SOURCE: complete `libpp.a::hal_crypto_clr_key_entry`,
     /// `hal_crypto_set_key_entry`, `hal_crypto_is_key_valid`, and the reachable
-    /// `hal_crypto_enable(STA, CCMP, true, false)` branch.
-    // CAPABILITY: station-hardware-crypto
+    /// `hal_crypto_enable` CCMP branch, retaining the association's SPP field.
     pub fn install_sta_ccmp_key_entry(
         &mut self,
         index: MacKeyEntryIndex,
@@ -174,8 +191,9 @@ impl WifiRadioRegisters {
 
         self.clear_mac_key_entry_words(index);
         let table = &self.peripherals.wifi_mac.wifi_mac_key_table;
-        let peer_low = u32::from_le_bytes(peer[..4].try_into().expect("fixed peer low word"));
-        let peer_high = u16::from_le_bytes(peer[4..].try_into().expect("fixed peer high word"));
+        let [a, b, c, d, e, f] = peer;
+        let peer_low = u32::from_le_bytes([a, b, c, d]);
+        let peer_high = u16::from_le_bytes([e, f]);
         let cipher = CCMP_ALGORITHM << 18;
         let control = (direction << 5)
             | (interface_bits << 8)
@@ -192,29 +210,26 @@ impl WifiRadioRegisters {
             index as usize * KEY_ENTRY_WORDS + 1,
             u32::from(peer_high) | (control << 16),
         );
-        for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
+        for (word, bytes) in temporal_key.as_chunks::<4>().0.iter().enumerate() {
             crate::svd::zero_based_field_write::mac_key_table_entry_word(
                 table,
                 index as usize * KEY_ENTRY_WORDS + word + 2,
-                u32::from_le_bytes(bytes.try_into().expect("four-byte CCMP word")),
+                u32::from_le_bytes(*bytes),
             );
         }
 
         let control = &self.peripherals.wifi_mac.wifi_mac_crypto_control;
         validity[index as usize] = true;
         publish_key_entry_validity(control, validity);
-        crate::svd::zero_based_field_write::mac_crypto_interface_control(
+        enable_ccmp(
             control,
             interface_index,
-            0x0003_0103,
-            0,
+            control
+                .interface_control(interface_index)
+                .read()
+                .spp_amsdu()
+                .bit(),
         );
-        control
-            .policy_control()
-            .modify(|_, w| w.bits_6_21_opaque().set(0));
-        control
-            .interface_control(interface_index)
-            .modify(|_, w| w.bits_30_31_opaque().set(0));
         device_fence();
 
         if !key_entry_validity(control)[index as usize] {
@@ -225,7 +240,6 @@ impl WifiRadioRegisters {
     }
 
     /// Invalidate and zero all ten words of one hardware key entry.
-    // CAPABILITY: station-hardware-crypto
     pub fn clear_mac_key_entry(&mut self, index: MacKeyEntryIndex) {
         let index = index.get();
         let control = &self.peripherals.wifi_mac.wifi_mac_crypto_control;
@@ -246,4 +260,23 @@ impl WifiRadioRegisters {
             );
         }
     }
+}
+
+// Complete ordinary CCMP enable leaf. Keys preserve the interface's prior SPP
+// decision; only configuring a new association supplies a different value.
+fn enable_ccmp(control: &svd::WifiMacCryptoControl, interface_index: usize, spp: bool) {
+    crate::svd::zero_based_field_write::mac_crypto_interface_control(
+        control,
+        interface_index,
+        0x103,
+        spp,
+        0xc0,
+        0,
+    );
+    control
+        .policy_control()
+        .modify(|_, w| w.bits_6_21_opaque().set(0));
+    control
+        .interface_control(interface_index)
+        .modify(|_, w| w.bits_30_31_opaque().set(0));
 }

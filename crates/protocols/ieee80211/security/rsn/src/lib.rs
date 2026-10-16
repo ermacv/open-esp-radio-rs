@@ -20,6 +20,8 @@ extern crate std;
 pub mod aes;
 pub mod akm;
 pub mod bip;
+mod ccm;
+pub mod ccmp_mpdu;
 pub mod element;
 pub mod frames;
 mod kdf;

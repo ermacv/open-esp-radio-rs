@@ -33,9 +33,9 @@ pub trait StationTsfHardware {
 
 /// The owner of the station TSF writes and their relation to the radio
 /// clock. It lives as long as its user (one association of the role, one
-/// port core); its generations come from an epoch it takes when created
-/// (`MacClockHandle::tsf_epoch` of the radio start), so a later owner's
-/// generations never repeat an earlier one's.
+/// port core); its generations come from an epoch its creator supplies, a
+/// number no other TSF relation owner took, so a later owner's generations
+/// never repeat an earlier one's.
 #[derive(Debug, Eq, PartialEq)]
 pub struct StationTsf {
     relation: TsfRelation,

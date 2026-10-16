@@ -104,7 +104,8 @@ contexts = [
 
 # The mask ROM the stack analyses read: the pinned ROM ELF
 # (verification/esp32s31/artifacts.toml), the reviewed function summaries
-# and the vendor radio ROM no final image may call into.
+# and the vendor radio ROM no product image may call into (no check reads
+# these ranges until the first product image returns the Blobray audit).
 [rom]
 elf = "rom"
 summaries = "platform/esp32s31/linker/rom/functions.toml"
@@ -185,7 +186,6 @@ audited-unsafe = [
     "oer-esp32s31-ieee80211-dma",
     "oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-bluetooth-system",
-    "oer-esp32s31-ieee80211-system",
     "oer-esp32s31-ieee802154-system",
 ]
 closed-pac = ["oer-esp32s31-pac"]
@@ -194,16 +194,8 @@ backends = [
     "oer-esp32s31-hal",
     "oer-esp32s31-bluetooth",
     "oer-esp32s31-ieee80211-mac",
-    "oer-esp32s31-ieee80211-sta",
-    "oer-esp32s31-ieee80211-ap",
 ]
-wifi = [
-    "oer-esp32s31-ieee80211-mac",
-    "oer-esp32s31-ieee80211-sta",
-    "oer-esp32s31-ieee80211-ap",
-    "oer-esp32s31-ieee80211-runtime",
-    "oer-esp32s31-ieee80211-system",
-]
+wifi = ["oer-esp32s31-ieee80211-mac"]
 bluetooth = ["oer-esp32s31-bluetooth"]
 
 # What the repository gate builds and audits for the chip (`cargo xtask`).
@@ -217,28 +209,18 @@ doctests = [
     { package = "oer-esp32s31-ieee80211", features = "" },
     { package = "oer-esp32s31-bluetooth", features = "" },
 ]
-host-tests = ["examples/esp32s31/access-point"]
 # esp-hal's interrupt routes stay the image's table.
 static-interrupts = true
 shared-words = true
-integration = { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", package = "oer-esp32s31-ieee80211-system", phy = "oer-esp32s31-phy" }
 phy = { package = "oer-esp32s31-phy", packages = ["oer-esp32s31-hal", "oer-esp32s31-pac", "oer-esp32s31-pac-raw", "oer-esp32s31-phy"] }
 facade = [
     { features = "esp32s31", required = ["oer-esp32s31-hal"], forbidden = ["wifi", "bluetooth"] },
-    { features = "esp32s31-wifi", required = ["oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-ap"], forbidden = ["bluetooth"] },
     { features = "esp32s31-bluetooth", required = ["oer-esp32s31-bluetooth", "oer-bluetooth-hci", "oer-bluetooth-ll"], forbidden = ["wifi"], bluetooth-only = true },
     { features = "ieee802154,esp32s31", required = ["oer-ieee802154", "oer-esp32s31-hal"], forbidden = ["wifi", "bluetooth"] },
     { features = "esp32s31-ieee802154", required = ["oer-espressif-ieee802154-engine", "oer-ieee802154"], forbidden = ["wifi", "bluetooth"] },
     # The composition joins the shared radio through the esp-hal radio
     # platform, which carries the Bluetooth hardware engine's resources.
     { features = "openthread", required = ["oer-esp32s31-ieee802154-system", "oer-ieee802154-openthread"], forbidden = ["wifi"] },
-]
-network = [
-    { boundary = "owned-product", manifest = "examples/esp32s31/access-point/Cargo.toml", features = ["--no-default-features", "--features", "owned-network"] },
-    { boundary = "owned-product", manifest = "hil/targets/esp32s31/agent/Cargo.toml", features = ["--no-default-features", "--features", "open-radio-hil,owned-network"] },
-    { boundary = "radio-core", manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", features = ["--no-default-features"] },
-    { boundary = "owned-product", manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml" },
-    { boundary = "owned-product", manifest = "examples/esp32s31/station/Cargo.toml", features = ["--no-default-features", "--features", "owned-network"] },
 ]
 
 # The Rust probe images of the vendor comparison (verification/esp32s31/probes),

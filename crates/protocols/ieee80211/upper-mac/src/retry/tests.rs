@@ -1,4 +1,3 @@
-use oer_ieee80211_lower_mac::TxFault;
 use oer_ieee80211_mac::phy::LegacyRate;
 
 use super::*;
@@ -133,14 +132,14 @@ fn by_frame_class_accounting_counts_a_long_frame_ack_timeout_as_long() {
 }
 
 #[test]
-fn abort_and_faults_end_the_frame_without_a_retry() {
-    for status in [TxStatus::Aborted, TxStatus::Fault(TxFault::KeyUnavailable)] {
-        let mut state = MpduRetryState::new(VENDOR_LIKE, 5, FrameClass::Short).unwrap();
-        assert_eq!(
-            state.observe(status),
-            complete(RetryOutcome::Terminal(status))
-        );
-    }
+fn an_unknown_hardware_timeout_ends_the_frame_without_a_retry() {
+    let mut state = MpduRetryState::new(VENDOR_LIKE, 5, FrameClass::Short).unwrap();
+    let before = state.counters();
+    assert_eq!(
+        state.observe(TxStatus::TimedOut),
+        complete(RetryOutcome::Terminal(TxStatus::TimedOut))
+    );
+    assert_eq!(state.counters(), before);
 }
 
 #[test]

@@ -24,7 +24,7 @@ mod commit;
 mod hardware;
 mod length;
 mod lifecycle;
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 mod model;
 mod owner;
 mod request;
@@ -41,7 +41,7 @@ pub use block_ack::{
 };
 pub use hardware::HtAmpduHardware;
 pub use length::{HtAmpduLength, HtAmpduLengthAccumulator, HtAmpduLengthError};
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 pub use model::{
     BasicHtAmpduAssemblyError, BasicHtAmpduAssemblyInput, BasicHtAmpduAssemblyOutput,
     BasicHtAmpduCompletionInput, BasicHtAmpduCompletionOutput, basic_ht_ampdu_assembly,
@@ -69,6 +69,7 @@ pub enum HtAmpduTxError {
     /// A commit attempted to advance beyond the statically bounded slot set.
     SlotCapacity,
     Stale,
+    Completion(crate::tx::CompletionFault),
     FrameIndexOutOfRange {
         index: u8,
         count: u8,
@@ -219,11 +220,11 @@ impl HtAmpduTxCompletion {
     }
 }
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 #[repr(C, align(16))]
 struct HtAmpduDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
-#[cfg(not(target_pointer_width = "32"))]
+#[cfg(any(test, feature = "test-support"))]
 impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
     const fn new() -> Self {
         Self([0; BUFFER_SIZE])
@@ -235,9 +236,9 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 /// This type records aggregate layout, completion state and retained frame
 /// metadata. It cannot publish a descriptor chain or start hardware by itself:
 /// production submission requires [`HtAmpduTxResources`], which couples this
-/// state to the lower DMA crate's descriptor/backing owner. Native models also
+/// state to the lower DMA crate's descriptor/backing owner. Explicit models also
 /// retain fixed formatter buffers for oracle tests; those buffers and their
-/// upper-only APIs are absent from 32-bit production builds.
+/// upper-only APIs require `test-support` or unit-test compilation on every target.
 ///
 /// SOURCE\[HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]: ESP32-S31 rev0,
 /// psram-code-psram-data, open PHY/MAC, HT40 MCS7 SGI. Four observed
@@ -245,7 +246,7 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 /// in `0x000f`, with no aggregate hardware timeout.
 #[pin_project]
 pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     buffers: [HtAmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
     /// Stable backing allocation selected for each committed MPDU.
     ///
@@ -286,14 +287,14 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
 // Production metadata size must not scale with the host-only formatter
 // capacity. This is a compile-time target-layout assertion, not a runtime
 // diagnostic.
-#[cfg(target_pointer_width = "32")]
+#[cfg(not(any(test, feature = "test-support")))]
 const _: [(); core::mem::size_of::<HtAmpduTxStorage<8, 0>>()] =
     [(); core::mem::size_of::<HtAmpduTxStorage<8, 4096>>()];
 
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
     pub const fn new() -> Self {
         Self {
-            #[cfg(not(target_pointer_width = "32"))]
+            #[cfg(any(test, feature = "test-support"))]
             buffers: [const { HtAmpduDmaBuffer::new() }; SLOTS],
             buffer_addresses: [0; SLOTS],
             frame_lengths: [0; SLOTS],
@@ -437,7 +438,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The eight-byte S31 TX metadata prefix remains private and is published
     /// by [`commit_frame`](Self::commit_frame).
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn next_frame_buffer(
         self: Pin<&mut Self>,
         cookie: TxCookie,

@@ -6,10 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_protocol::{
-    wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointSecurity,
-    wifi::WifiChannelWidth,
-};
+use crate::wifi::{NetworkIpv4Configuration, WifiChannelWidth};
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -117,7 +114,6 @@ pub struct DeviceConfig {
     /// outlives its port name, which a reset can change.
     pub mac: String,
     pub serial: PathBuf,
-    pub startup_artifact: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -346,7 +342,6 @@ impl LabConfig {
         let device_serial = resolve(board)?;
         let device_mac = board.mac()?.to_string();
         let device_id = board.id.clone();
-        let device_startup_artifact = board.startup_artifact.clone();
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
             return Err("HIL station SSID must contain 1..=32 bytes".into());
         }
@@ -468,13 +463,6 @@ impl LabConfig {
             }
             RawStationFixtureConfig::External { phys } => validate_phys("external", phys)?,
         }
-        let startup_artifact = device_startup_artifact.map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        });
         let station = StationConfig {
             ssid: Zeroizing::new(std::mem::take(&mut raw.station.ssid)),
             passphrase: Zeroizing::new(std::mem::take(&mut raw.station.passphrase)),
@@ -514,7 +502,6 @@ impl LabConfig {
                 id: device_id,
                 mac: device_mac,
                 serial: device_serial,
-                startup_artifact,
             },
             station,
             access_point,
@@ -774,7 +761,6 @@ impl LabConfig {
                 id: String::from("test-device"),
                 mac: String::from("30:ED:A0:00:00:FF"),
                 serial: PathBuf::from("/dev/ttyACM0"),
-                startup_artifact: None,
             },
             station: StationConfig {
                 ssid: Zeroizing::new(String::from("test-network")),
@@ -844,39 +830,12 @@ impl StationConfig {
         self.ipv4
     }
 
-    pub fn protocol_credentials(&self) -> Result<NetworkCredentials> {
-        NetworkCredentials::try_new(self.ssid.as_bytes(), self.passphrase.as_bytes())
-            .map_err(|error| format!("invalid HIL network credentials: {error}").into())
-    }
-
     pub fn credentials(&self) -> (&str, &str) {
         (self.ssid.as_str(), self.passphrase.as_str())
     }
 }
 
 impl AccessPointConfig {
-    pub fn protocol_request(
-        &self,
-        security: WifiAccessPointSecurity,
-    ) -> Result<oer_hil_protocol::wifi::WifiAccessPointRequest> {
-        Ok(oer_hil_protocol::wifi::WifiAccessPointRequest {
-            credentials: NetworkCredentials::try_new(
-                self.ssid.as_bytes(),
-                self.passphrase.as_bytes(),
-            )
-            .map_err(|error| format!("invalid HIL AP credentials: {error}"))?,
-            security,
-            channel: self.channel,
-            channel_width: self.channel_width,
-            client_limit: self.client_limit,
-            ipv4: NetworkIpv4Configuration::Static {
-                address: self.target_address.octets(),
-                prefix_length: self.prefix_length,
-                gateway: None,
-            },
-        })
-    }
-
     pub fn credentials(&self) -> (&str, &str) {
         (self.ssid.as_str(), self.passphrase.as_str())
     }

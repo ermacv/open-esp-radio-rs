@@ -1,4 +1,5 @@
 use super::*;
+use crate::tx::test_support::model_completion;
 use crate::{
     tx::ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     tx::{HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion, TxCookie},
@@ -150,7 +151,7 @@ fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
         Ok(TxPhyRate::Legacy(LegacyRate::Ofdm54M))
     );
     assert_eq!(
-        retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+        retry.observe_completion(&mut policy, oer_ieee80211_lower_mac::TxStatus::AckTimeout),
         OrdinaryRetryDecision::Retry {
             set_retry_bit: true
         }
@@ -171,7 +172,7 @@ fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
     );
 
     assert_eq!(
-        retry.observe_completion(&mut policy, TxCompletionDisposition::CtsTimeout),
+        retry.observe_completion(&mut policy, oer_ieee80211_lower_mac::TxStatus::CtsTimeout),
         OrdinaryRetryDecision::Retry {
             set_retry_bit: false
         }
@@ -192,7 +193,7 @@ fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
     );
 
     assert_eq!(
-        retry.observe_completion(&mut policy, TxCompletionDisposition::Success),
+        retry.observe_completion(&mut policy, oer_ieee80211_lower_mac::TxStatus::Success),
         OrdinaryRetryDecision::Complete
     );
     assert_eq!(policy.contention_exponent(queue), 4);
@@ -216,8 +217,8 @@ fn cts_failures_continue_the_rate_series_beyond_the_mpdu_retry_limit() {
                 retry.rate_after_failed_attempts(index as u8)
             );
             assert_eq!(usize::from(retry.publications()), index + 1);
-            let decision =
-                retry.observe_completion(&mut policy, TxCompletionDisposition::CtsTimeout);
+            let decision = retry
+                .observe_completion(&mut policy, oer_ieee80211_lower_mac::TxStatus::CtsTimeout);
             if index + 1 == usize::from(VENDOR_SHORT_RETRY_LIMIT) {
                 assert_eq!(decision, OrdinaryRetryDecision::Complete);
             } else {
@@ -248,9 +249,7 @@ fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
     .unwrap();
     assert_eq!(
         retry.observe_collision(&mut policy),
-        OrdinaryRetryDecision::Retry {
-            set_retry_bit: false
-        }
+        OrdinaryCollisionDecision::Retry
     );
     assert_eq!(retry.publications(), 2);
     assert_eq!(retry.counters().long, 1);
@@ -262,7 +261,7 @@ fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
     );
     assert_eq!(policy.contention_exponent(queue), 3);
     assert_eq!(
-        retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+        retry.observe_completion(&mut policy, oer_ieee80211_lower_mac::TxStatus::AckTimeout),
         OrdinaryRetryDecision::Retry {
             set_retry_bit: true
         }
@@ -343,7 +342,7 @@ fn p2p_ht20_sgi_mcs0_through_mcs6_enter_same_mcs_lgi_retry_records() {
 
         assert_eq!(retry.current_rate(), Ok(initial));
         assert_eq!(
-            retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+            retry.observe_completion(&mut policy, oer_ieee80211_lower_mac::TxStatus::AckTimeout),
             OrdinaryRetryDecision::Retry {
                 set_retry_bit: true
             }
@@ -407,7 +406,7 @@ fn completion_with_tx(
 
 fn completion(status: u8, starting_sequence: u16, bitmap: u64) -> HtAmpduTxCompletion {
     completion_with_tx(
-        TxCompletion::new_model(TxCookie(1), status, 0),
+        model_completion(TxCookie(1), status, 0),
         starting_sequence,
         bitmap,
     )
@@ -737,7 +736,7 @@ fn vendor_trigger_timeout_finishes_without_fabricating_block_ack() {
     )
     .unwrap();
     let trigger_timeout = completion_with_tx(
-        TxCompletion::new_model(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
+        model_completion(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
             .with_trigger_flow_model(true),
         20,
         u64::MAX,
@@ -766,7 +765,7 @@ fn trigger_timeout_with_reported_packets_stays_on_retry_path() {
         )
         .unwrap();
         let completion = completion_with_tx(
-            TxCompletion::new_model(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
+            model_completion(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
                 .with_trigger_flow_model(true)
                 .with_trigger_packet_counts_model(primary, last_tx_was_trigger_based, secondary),
             20,
@@ -792,7 +791,7 @@ fn trigger_success_predicate_rejects_wrong_status_or_queue_state() {
         )
         .unwrap();
         let completion = completion_with_tx(
-            TxCompletion::new_model(TxCookie(1), status, 0).with_trigger_flow_model(trigger_flow),
+            model_completion(TxCookie(1), status, 0).with_trigger_flow_model(trigger_flow),
             20,
             0,
         );

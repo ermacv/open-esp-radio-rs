@@ -334,6 +334,41 @@ fn helpers_select_compact_and_mark_retries() {
 }
 
 #[test]
+fn compaction_keeps_exactly_the_selected_prefix_in_order() {
+    let original = [11, 22, 33, 44, 55];
+    for mask in 0..=u8::MAX {
+        let mut items = original;
+        let kept = compact(&mut items, u64::from(mask));
+        let expected = original
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| mask & (1 << index) != 0)
+            .map(|(_, item)| item);
+        assert!(items[..kept].iter().copied().eq(expected));
+    }
+}
+
+#[test]
+fn compaction_respects_empty_arrays_and_the_last_mask_bit() {
+    assert_eq!(compact(&mut [0_u8; 0], u64::MAX), 0);
+    let original: [usize; 65] = core::array::from_fn(|index| index);
+    for mask in [
+        0,
+        1,
+        1 << 63,
+        u64::MAX,
+        0xaaaa_aaaa_aaaa_aaaa,
+        0x5555_5555_5555_5555,
+    ] {
+        let mut items = original;
+        let kept = compact(&mut items, mask);
+        let expected = (0..64).filter(|index| mask & (1 << index) != 0);
+        assert!(items[..kept].iter().copied().eq(expected));
+        assert_eq!(items[64], original[64]);
+    }
+}
+
+#[test]
 fn aging_threshold_is_exact_at_radio_epoch_boundaries() {
     use oer_time::RadioDuration;
     let policy = AmpduRetryPolicy {
@@ -376,4 +411,59 @@ fn aging_threshold_is_exact_at_radio_epoch_boundaries() {
         AmpduRetryState::new(SequenceNumber::new(0).unwrap(), 2, before_epoch, first),
         Err(AmpduRetryError::AgingThresholdOutsideEpoch)
     ));
+}
+
+#[test]
+fn every_retry_outcome_finishes_at_the_first_aged_instant() {
+    for prior_protection_failures in 0..POLICY.retry_limit {
+        for result in [
+            AmpduAttemptResult::ProtectionFailure,
+            AmpduAttemptResult::NoResponse,
+            AmpduAttemptResult::Answered(None),
+            answered(100, 0b0101),
+            answered(100, 0b1111),
+            AmpduAttemptResult::TriggerFlowEnd,
+        ] {
+            for now in [9_000, 9_001] {
+                let mut state =
+                    AmpduRetryState::new(seq(100), 4, POLICY, Ieee80211Instant::from_micros(0))
+                        .unwrap();
+                for _ in 0..prior_protection_failures {
+                    assert_eq!(
+                        state.observe(
+                            AmpduAttemptResult::ProtectionFailure,
+                            4,
+                            Ieee80211Instant::from_micros(1),
+                            true,
+                        ),
+                        Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask: 0b1111 })
+                    );
+                }
+                let decision = state
+                    .observe(result, 4, Ieee80211Instant::from_micros(now), true)
+                    .unwrap();
+                if result == AmpduAttemptResult::TriggerFlowEnd {
+                    assert_eq!(decision, AmpduRetryDecision::FinishTriggerFlow);
+                } else if now == 9_001 {
+                    let retry_mask = match result {
+                        AmpduAttemptResult::Answered(Some(report)) => !report.bitmap & 0b1111,
+                        _ => 0b1111,
+                    };
+                    assert_eq!(
+                        decision,
+                        AmpduRetryDecision::Finish { retry_mask },
+                        "{result:?}"
+                    );
+                    assert_eq!(state.missing_original_indices(), retry_mask);
+                } else if result == answered(100, 0b1111) {
+                    assert_eq!(decision, AmpduRetryDecision::Finish { retry_mask: 0 });
+                } else {
+                    assert!(
+                        !matches!(decision, AmpduRetryDecision::Finish { .. }),
+                        "{result:?}: {decision:?}"
+                    );
+                }
+            }
+        }
+    }
 }

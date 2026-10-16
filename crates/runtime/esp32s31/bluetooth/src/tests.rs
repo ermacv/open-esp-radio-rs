@@ -68,6 +68,10 @@ struct State {
     device_tables: Vec<LeDeviceTablePublication>,
     /// Controller-time latch requests.
     time_requests: usize,
+    /// Cancellation probes: keep the time latch or its drain pending.
+    time_waiting: bool,
+    time_drain_waiting: bool,
+    time_busy: bool,
 }
 
 /// The model's owner of a disabled BLE PHY ETM route.
@@ -95,7 +99,12 @@ impl BluetoothRadioHardware for Model {
     }
 
     fn request_time(&mut self) -> Result<ControllerTimeRequest, ControllerTimeRequestError> {
-        self.0.borrow_mut().time_requests += 1;
+        let mut state = self.0.borrow_mut();
+        state.time_requests += 1;
+        if state.time_busy {
+            state.time_busy = false;
+            return Err(ControllerTimeRequestError::Busy);
+        }
         Ok(ControllerTimeRequest::for_validation(1))
     }
 
@@ -103,14 +112,22 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         request: ControllerTimeRequest,
     ) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
+        let state = self.0.borrow();
+        if state.time_waiting {
+            return Ok(ControllerTimeEventStep::Waiting);
+        }
         Ok(ControllerTimeEventStep::Sample {
             request,
-            sample: ControllerTimeSample::for_validation(self.0.borrow().time),
+            sample: ControllerTimeSample::for_validation(state.time),
         })
     }
 
     fn drain_time(&mut self) -> Result<ControllerTimeEventStep, ControllerTimeEventError> {
-        Ok(ControllerTimeEventStep::Idle)
+        Ok(if self.0.borrow().time_drain_waiting {
+            ControllerTimeEventStep::Waiting
+        } else {
+            ControllerTimeEventStep::Idle
+        })
     }
 
     fn publish_rx_chains<const SCANNING: usize, const NON_SCANNING: usize>(
@@ -405,6 +422,7 @@ type Memory = oer_esp32s31_bluetooth_radio::BluetoothRadioMemory<1, 1, 1, 1, 2, 
 struct Fixture {
     runtime: &'static Runtime,
     driver: core::cell::Cell<Option<Driver>>,
+    queue: core::cell::Cell<Option<crate::RuntimeQueue>>,
 }
 
 /// The fixture's driver, lent out of its cell while a call polls it; it
@@ -439,7 +457,12 @@ impl Fixture {
     async fn served<F: Future>(&self, call: F) -> F::Output {
         let mut driver = self.lend();
         let mut call = core::pin::pin!(call);
-        match select(call.as_mut(), driver.get().run(|| false)).await {
+        match select(
+            call.as_mut(),
+            driver.get().run(|| false, core::future::pending()),
+        )
+        .await
+        {
             Either::First(output) => output,
             Either::Second(exit) => {
                 assert!(exit.is_err(), "the driver returned only on a fault");
@@ -453,8 +476,20 @@ impl Fixture {
         memory: Memory,
         hardware: Model,
     ) -> Result<(), (crate::BluetoothInstallError, Memory, Model)> {
-        let mut backend = self.runtime.install(memory, hardware).await?;
-        self.driver.set(Some(backend.take_driver()));
+        // A second attempt uses a foreign claim: the occupied/abandoned
+        // guard must reject before touching any hardware or that queue.
+        let queue = self
+            .queue
+            .take()
+            .unwrap_or_else(|| new_runtime().queue.take().unwrap());
+        let driver = match self.runtime.install_driver(memory, hardware, queue).await {
+            Ok(driver) => driver,
+            Err((error, memory, hardware, queue)) => {
+                self.queue.set(Some(queue));
+                return Err((error, memory, hardware));
+            }
+        };
+        self.driver.set(Some(driver));
         Ok(())
     }
 
@@ -481,13 +516,13 @@ impl Fixture {
 
     async fn enable(
         &self,
-    ) -> oer_bluetooth_port::EnableResult<core::convert::Infallible, BluetoothFault<()>> {
+    ) -> oer_radio_port::EnableResult<core::convert::Infallible, BluetoothFault<()>> {
         self.served(self.runtime.enable()).await
     }
 
     async fn disable(
         &self,
-        sink: &mut dyn FnMut(BluetoothOutcome),
+        sink: &mut dyn FnMut(BluetoothOutcome) -> core::ops::ControlFlow<BluetoothOutcome>,
     ) -> Result<(), Poisoned<BluetoothFault<()>>> {
         self.served(self.runtime.disable(sink)).await
     }
@@ -495,7 +530,7 @@ impl Fixture {
     /// Drive the radio until the driver stops on a fault.
     async fn run(&self) -> crate::BluetoothRuntimeFault<()> {
         let mut driver = self.lend();
-        match driver.get().run(|| false).await {
+        match driver.get().run(|| false, core::future::pending()).await {
             Err(fault) => fault,
             Ok(()) => panic!("the driver ran until a fault"),
         }
@@ -512,9 +547,18 @@ impl Fixture {
         ),
         crate::BluetoothUninstallError<()>,
     > {
-        let mut driver = self.driver.take().expect("a radio is installed");
-        let _stopped = driver.run(|| true).await;
-        driver.into_parts().map_err(|retained| retained.error)
+        let driver = self.driver.take().expect("a radio is installed");
+        let _stopped = driver.run(|| true, core::future::ready(())).await;
+        match driver.into_parts() {
+            crate::Uninstalled::Reusable { parts, queue } => {
+                self.queue.set(Some(queue));
+                Ok(parts)
+            }
+            crate::Uninstalled::Quarantined(retained) => Err(retained.error),
+            crate::Uninstalled::TerminalsQuarantined { .. } => {
+                panic!("use the full outcome for a rejected terminal")
+            }
+        }
     }
 
     async fn with_radio<R>(
@@ -527,10 +571,9 @@ impl Fixture {
     fn wait_event(
         &self,
     ) -> impl Future<
-        Output = oer_bluetooth_radio::PortResult<
-            BluetoothOutcome,
-            oer_bluetooth_radio::EventsLost,
-            BluetoothFault<()>,
+        Output = Result<
+            Result<BluetoothOutcome, oer_bluetooth_radio::EventsLost>,
+            oer_radio_port::EventEnd<BluetoothFault<()>>,
         >,
     > + '_ {
         self.runtime.wait_event()
@@ -540,8 +583,10 @@ impl Fixture {
 /// A runtime for the model's scheduler policy and sleep clock, with no
 /// radio installed.
 fn new_runtime() -> Fixture {
+    let runtime = std::boxed::Box::leak(std::boxed::Box::new(Runtime::new(clock())));
     Fixture {
-        runtime: std::boxed::Box::leak(std::boxed::Box::new(Runtime::new(clock()))),
+        runtime,
+        queue: core::cell::Cell::new(runtime.take_queue()),
         driver: core::cell::Cell::new(None),
     }
 }
@@ -850,6 +895,115 @@ fn disable_hands_the_outcomes_the_phase_left_before_the_withdrawn_ends() {
 }
 
 #[test]
+fn a_foreign_queue_claim_is_returned_without_publishing_hardware() {
+    let first = new_runtime();
+    let second = new_runtime();
+    let model = Model::default();
+    let Err((error, memory, hardware, queue)) = block_on(first.runtime.install(
+        model_memory(),
+        model.clone(),
+        second.queue.take().unwrap(),
+    )) else {
+        panic!("queue identity must match the runtime")
+    };
+    assert_eq!(error, BluetoothInstallError::ForeignQueue);
+    assert!(!model.0.borrow().chains_published);
+    assert_eq!(model.0.borrow().time_requests, 0);
+    let backend = block_on(second.runtime.install(memory, hardware, queue))
+        .unwrap_or_else(|_| panic!("the original runtime still owns this claim"));
+    assert!(matches!(
+        block_on(oer_radio_port::run_port(backend, ConfigureOnce)),
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: crate::Uninstalled::Reusable { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejecting_first_or_middle_disable_outcome_preserves_it_and_its_successors() {
+    for reject_at in [0, 1] {
+        let model = Model::default();
+        let runtime = installed(&model);
+        block_on(runtime.submit_request(configure()))
+            .unwrap()
+            .unwrap();
+        for id in 1..=3 {
+            block_on(runtime.submit_request(advertise(id, u64::from(id) * 30_000)))
+                .unwrap()
+                .unwrap();
+            settle(&runtime);
+        }
+        let mut accepted = Vec::new();
+        let mut offered = 0;
+        let result = block_on(runtime.disable(&mut |outcome| {
+            offered += 1;
+            if accepted.len() == reject_at {
+                core::ops::ControlFlow::Break(outcome)
+            } else {
+                accepted.push(outcome);
+                core::ops::ControlFlow::Continue(())
+            }
+        }));
+        assert_eq!(
+            result,
+            Err(Poisoned {
+                cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::TerminalRejected),
+            })
+        );
+        assert_eq!(offered, reject_at + 1);
+        assert!(
+            !model.0.borrow().running,
+            "disable already stopped the scheduler"
+        );
+        let driver = runtime.driver.take().unwrap();
+        block_on(driver.run(|| true, core::future::ready(()))).unwrap();
+        let crate::Uninstalled::TerminalsQuarantined {
+            parts: (_radio, hardware),
+            terminals,
+        } = driver.into_parts()
+        else {
+            panic!("confirmed retirement returns hardware separately from unread outcomes");
+        };
+        let owners = Rc::strong_count(&model.0);
+        drop(terminals);
+        assert_eq!(Rc::strong_count(&model.0), owners);
+        let expected_end = oer_radio_port::EventEnd::Quarantined {
+            cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::TerminalRejected),
+        };
+        for _ in 0..3 {
+            assert_eq!(block_on(runtime.runtime.wait_event()), Err(expected_end));
+        }
+        let remaining: Vec<_> = (reject_at..3)
+            .map(|_| {
+                runtime
+                    .runtime
+                    .retained_outcome_for_test()
+                    .unwrap()
+                    .unwrap()
+            })
+            .collect();
+        let expected: Vec<_> = ((reject_at as u32 + 1)..=3)
+            .map(|id| BluetoothOutcome::EventEnded {
+                id: EventId::new(id),
+                result: EventResult::Executed { anchor: None },
+            })
+            .collect();
+        assert_eq!(
+            remaining, expected,
+            "dropping quarantine preserved every outcome"
+        );
+        assert!(runtime.runtime.take_queue().is_none());
+        drop(hardware);
+        assert_eq!(
+            Rc::strong_count(&model.0),
+            owners - 1,
+            "hardware is returned, not quarantined"
+        );
+    }
+}
+
+#[test]
 fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
     let model = Model::default();
     let runtime = installed(&model);
@@ -887,13 +1041,108 @@ fn a_runner_fault_poisons_the_port_with_its_cause() {
     let poisoned = Poisoned {
         cause: BluetoothFault::Runner(fault),
     };
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Ok(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(4),
+            result: EventResult::NotExecuted,
+        }))
+    );
+    assert!(model.0.borrow().started.is_empty());
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     assert_eq!(
         core::pin::pin!(runtime.wait_event()).poll(&mut context),
-        core::task::Poll::Ready(Err(poisoned))
+        core::task::Poll::Ready(Err(oer_radio_port::EventEnd::Drained {
+            cause: poisoned.cause
+        }))
     );
     assert_eq!(block_on(runtime.submit_request(configure())), Err(poisoned));
     assert_eq!(block_on(runtime.read_now()), Err(poisoned));
+}
+
+#[test]
+fn a_fault_in_flight_is_indeterminate_and_dropping_the_receipt_keeps_hardware() {
+    let model = Model::default();
+    model.0.borrow_mut().defer_execution = true;
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(test_receive(5)))
+        .unwrap()
+        .unwrap();
+    run_for_a_millisecond(&runtime);
+    assert!(model.0.borrow().running);
+    runtime.runtime.platform_fault();
+    // Command poisoning precedes the driver's terminal accounting. The
+    // stream must not claim completion during that interval.
+    assert!(embassy_futures::poll_once(core::pin::pin!(runtime.wait_event())).is_pending());
+    let _fault = block_on(runtime.run());
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Ok(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(5),
+            result: EventResult::Indeterminate,
+        }))
+    );
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Err(oer_radio_port::EventEnd::Drained {
+            cause: BluetoothFault::Platform
+        })
+    );
+    let owners = Rc::strong_count(&model.0);
+    assert!(block_on(runtime.take()).is_err());
+    // The helper drops BluetoothRetained after reading its cause. Its
+    // quarantine must retain the hardware's Rc owner without running Drop.
+    assert_eq!(Rc::strong_count(&model.0), owners);
+    assert!(model.0.borrow().running, "no hardware stop was invented");
+    assert_eq!(
+        model.0.borrow().routes_restored,
+        0,
+        "software accounting performs no MMIO"
+    );
+    assert!(matches!(
+        block_on(
+            runtime.runtime.install(
+                model_memory(),
+                model.clone(),
+                runtime
+                    .queue
+                    .take()
+                    .unwrap_or_else(|| new_runtime().queue.take().unwrap())
+            )
+        ),
+        Err((crate::BluetoothInstallError::AlreadyInstalled, _, _, _))
+    ));
+}
+
+#[test]
+fn a_fault_before_publication_delivers_the_pending_terminal_before_poison() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    block_on(runtime.submit_request(advertise(8, 10_000)))
+        .unwrap()
+        .unwrap();
+    assert!(model.0.borrow().started.is_empty());
+    runtime.runtime.platform_fault();
+    assert!(embassy_futures::poll_once(core::pin::pin!(runtime.wait_event())).is_pending());
+    let _fault = block_on(runtime.run());
+    assert_eq!(
+        block_on(runtime.wait_event()),
+        Ok(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(8),
+            result: EventResult::NotExecuted,
+        }))
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            block_on(runtime.wait_event()),
+            Err(oer_radio_port::EventEnd::Drained {
+                cause: BluetoothFault::Platform
+            })
+        );
+    }
 }
 
 #[test]
@@ -1067,7 +1316,10 @@ fn settle(runtime: &Fixture) {
 fn disable(runtime: &Fixture) -> Vec<BluetoothOutcome> {
     let mut outcomes = Vec::new();
     assert_eq!(
-        block_on(runtime.disable(&mut |outcome| outcomes.push(outcome))),
+        block_on(runtime.disable(&mut |outcome| {
+            outcomes.push(outcome);
+            core::ops::ControlFlow::Continue(())
+        })),
         Ok(())
     );
     outcomes
@@ -1259,54 +1511,185 @@ struct ConfigureOnce;
 
 type Backend = crate::BluetoothBackend<'static, Runtime, Driver>;
 
-impl oer_bluetooth_port::PortBody<Backend> for ConfigureOnce {
+struct ObserveEventEnd {
+    runtime: &'static Runtime,
+    quarantined: bool,
+}
+
+impl oer_radio_port::PortBody<Backend> for ObserveEventEnd {
+    type Output = usize;
+
     async fn run<'p, 'id>(
         self,
-        owner: oer_bluetooth_port::Owner<'p, 'id, Backend, oer_bluetooth_port::Disabled>,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
         (): (),
-    ) -> oer_bluetooth_port::Ended<'id, Backend> {
+    ) -> oer_radio_port::Ended<'id, Backend, usize> {
+        use oer_bluetooth_radio::LeRadioBackend;
+        use oer_radio_port::{Ended, EventEnd, PortPhase};
+
+        let Ok(mut owner) = owner.enable().await else {
+            panic!("enable")
+        };
+        let mut outstanding = Some(EventId::new(23));
+        let end = {
+            let mut phase = owner.phase();
+            let parts = &mut *phase;
+            assert_eq!(
+                Backend::submit(&mut parts.clients, test_receive(23)).await,
+                Ok(Ok(()))
+            );
+            if self.quarantined {
+                self.runtime.abandon();
+            } else {
+                self.runtime.platform_fault();
+            }
+            let end = loop {
+                match parts.events.next_event().await {
+                    Ok(Ok(BluetoothOutcome::EventEnded { id, .. })) => {
+                        assert_eq!(outstanding.take(), Some(id));
+                    }
+                    Ok(_) => panic!("only one terminal is owed"),
+                    Err(end) => break end,
+                }
+            };
+            match end {
+                EventEnd::Drained { .. } => {
+                    assert!(outstanding.is_none(), "Drained must account every event")
+                }
+                EventEnd::Quarantined { .. } => {
+                    assert!(outstanding.is_some(), "unread work remains quarantined")
+                }
+            }
+            self.runtime.with_fault_held_for_test(|| {
+                for _ in 0..2 {
+                    assert_eq!(block_on(parts.events.next_event()), Err(end));
+                }
+            });
+            end
+        };
+        assert_eq!(owner.phase().next_event().await, Err(end));
+        match end {
+            EventEnd::Quarantined { .. } => Ended::fail_stopped(owner.fail_stop(), 1),
+            EventEnd::Drained { .. } => {
+                let owner = owner
+                    .disable(&mut |_| panic!("all terminals were already issued"))
+                    .await
+                    .err()
+                    .expect("platform fault remains poisoned");
+                Ended::uninstall(owner, (), 0)
+            }
+        }
+    }
+}
+
+#[test]
+fn event_end_accounts_or_quarantines_work_and_is_final_across_phase_loans() {
+    for quarantined in [false, true] {
+        let model = Model::default();
+        let fixture = new_runtime();
+        let runtime = fixture.runtime;
+        let backend =
+            block_on(runtime.install(model_memory(), model.clone(), fixture.queue.take().unwrap()))
+                .unwrap_or_else(|_| panic!("install"));
+        let end = block_on(oer_radio_port::run_port(
+            backend,
+            ObserveEventEnd {
+                runtime,
+                quarantined,
+            },
+        ));
+        assert!(matches!(
+            (quarantined, end),
+            (
+                false,
+                oer_radio_port::PortEnd::Uninstalled {
+                    uninstalled: crate::Uninstalled::Quarantined(_),
+                    output: 0
+                }
+            ) | (
+                true,
+                oer_radio_port::PortEnd::FailStopped {
+                    output: 1,
+                    outcome: oer_radio_port::Abandon::Unconfirmed(_),
+                    ..
+                }
+            )
+        ));
+    }
+}
+
+impl oer_radio_port::PortBody<Backend> for ConfigureOnce {
+    type Output = ();
+
+    async fn run<'p, 'id>(
+        self,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        (): (),
+    ) -> oer_radio_port::Ended<'id, Backend, ()> {
         use oer_bluetooth_radio::LeRadioBackend;
 
         let Ok(mut owner) = owner.enable().await else {
             panic!("the installed port enables")
         };
         {
-            let mut parts = owner.split();
+            let mut phase = owner.phase();
+            let parts = &mut *phase;
             assert_eq!(
-                Backend::submit(&mut *parts.clients, configure()).await,
+                Backend::submit(&mut parts.clients, configure()).await,
                 Ok(Ok(()))
             );
         }
-        let Ok(owner) = owner.disable(&mut |_| {}).await else {
+        let Ok(owner) = owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        else {
             panic!("the port disables")
         };
-        owner.uninstall(())
+        oer_radio_port::Ended::uninstall(owner, (), ())
     }
 }
 
-/// Install returns the port's backend with its driver inside; `run_port`
+/// Install pairs the port's backend with its independent driver; `run_port`
 /// joins the driver with the body, retires it after the body's uninstall
 /// and returns the radio and hardware for the next install.
 #[test]
 fn a_port_body_runs_beside_its_driver_and_the_uninstall_returns_the_radio() {
     let model = Model::default();
     let runtime = new_runtime();
-    let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
-        .unwrap_or_else(|_| panic!("the first install succeeds"));
-    let Some(Ok((radio, hardware))) =
-        block_on(oer_bluetooth_port::run_port(backend, ConfigureOnce))
+    let backend = block_on(
+        runtime.runtime.install(
+            model_memory(),
+            model.clone(),
+            runtime
+                .queue
+                .take()
+                .unwrap_or_else(|| new_runtime().queue.take().unwrap()),
+        ),
+    )
+    .unwrap_or_else(|_| panic!("the first install succeeds"));
+    let oer_radio_port::PortEnd::Uninstalled {
+        uninstalled:
+            crate::Uninstalled::Reusable {
+                parts: (radio, hardware),
+                queue,
+            },
+        ..
+    } = block_on(oer_radio_port::run_port(backend, ConfigureOnce))
     else {
         panic!("the body uninstalls the port, and the driver leaves its radio")
     };
     let memory =
         radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
-    let backend = block_on(runtime.runtime.install(memory, hardware))
+    let backend = block_on(runtime.runtime.install(memory, hardware, queue))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     // The next port starts with an empty queue (#457).
     assert_eq!(taken(&runtime), None);
     assert!(matches!(
-        block_on(oer_bluetooth_port::run_port(backend, ConfigureOnce)),
-        Some(Ok(_))
+        block_on(oer_radio_port::run_port(backend, ConfigureOnce)),
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: crate::Uninstalled::Reusable { .. },
+            ..
+        }
     ));
 }
 
@@ -1336,7 +1719,7 @@ fn a_disable_past_its_bound_poisons_the_runtime_and_halts_the_runner() {
     let runtime = installed(&model);
     // The stop sequence never ends.
     model.0.borrow_mut().stop_never_settles = true;
-    let mut sink = |_| {};
+    let mut sink = |_| core::ops::ControlFlow::Continue(());
     let mut disable = core::pin::pin!(runtime.disable(&mut sink));
     let started = clock().now();
     let ended = loop {
@@ -1525,23 +1908,28 @@ fn readings_beside_each_other_share_one_fresh_sample() {
 /// before it uninstalls: the driver has parked by then.
 struct WaitThenUninstall;
 
-impl oer_bluetooth_port::PortBody<Backend> for WaitThenUninstall {
+impl oer_radio_port::PortBody<Backend> for WaitThenUninstall {
+    type Output = ();
+
     async fn run<'p, 'id>(
         self,
-        owner: oer_bluetooth_port::Owner<'p, 'id, Backend, oer_bluetooth_port::Disabled>,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
         (): (),
-    ) -> oer_bluetooth_port::Ended<'id, Backend> {
+    ) -> oer_radio_port::Ended<'id, Backend, ()> {
         let Ok(owner) = owner.enable().await else {
             panic!("the installed port enables")
         };
-        let Ok(owner) = owner.disable(&mut |_| {}).await else {
+        let Ok(owner) = owner
+            .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+            .await
+        else {
             panic!("the port disables")
         };
         // Something that reaches no port call, as a drained transport.
         for _ in 0..8 {
             embassy_futures::yield_now().await;
         }
-        owner.uninstall(())
+        oer_radio_port::Ended::uninstall(owner, (), ())
     }
 }
 
@@ -1551,9 +1939,18 @@ impl oer_bluetooth_port::PortBody<Backend> for WaitThenUninstall {
 fn a_retire_request_wakes_an_idle_driver() {
     let model = Model::default();
     let runtime = new_runtime();
-    let backend = block_on(runtime.runtime.install(model_memory(), model.clone()))
-        .unwrap_or_else(|_| panic!("the install succeeds"));
-    let mut port = core::pin::pin!(oer_bluetooth_port::run_port(backend, WaitThenUninstall));
+    let backend = block_on(
+        runtime.runtime.install(
+            model_memory(),
+            model.clone(),
+            runtime
+                .queue
+                .take()
+                .unwrap_or_else(|| new_runtime().queue.take().unwrap()),
+        ),
+    )
+    .unwrap_or_else(|_| panic!("the install succeeds"));
+    let mut port = core::pin::pin!(oer_radio_port::run_port(backend, WaitThenUninstall));
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     let started = clock().now();
     let ended = (0..1_000)
@@ -1563,8 +1960,183 @@ fn a_retire_request_wakes_an_idle_driver() {
         })
         .expect("the port ends without time passing");
     assert!(
-        matches!(ended, Some(Ok(_))),
+        matches!(
+            ended,
+            oer_radio_port::PortEnd::Uninstalled {
+                uninstalled: crate::Uninstalled::Reusable { .. },
+                ..
+            }
+        ),
         "the driver retires within its bound"
     );
     assert_eq!(clock().now(), started);
+}
+
+struct UnconfirmedStop(bool);
+impl oer_radio_port::PortBody<Backend> for UnconfirmedStop {
+    type Output = u8;
+    async fn run<'p, 'id>(
+        self,
+        owner: oer_radio_port::Owner<'p, 'id, Backend, oer_radio_port::Disabled>,
+        (): (),
+    ) -> oer_radio_port::Ended<'id, Backend, u8> {
+        if self.0 {
+            let proof = owner.fail_stop();
+            assert!(matches!(
+                proof.outcome(),
+                oer_radio_port::Abandon::Unconfirmed(_)
+            ));
+            oer_radio_port::Ended::fail_stopped(proof, 17)
+        } else {
+            drop(owner);
+            core::future::pending().await
+        }
+    }
+}
+
+#[test]
+fn abandonment_is_unconfirmed_and_does_not_enter_runtime_fault_storage() {
+    for fail_stop in [false, true] {
+        let model = Model::default();
+        let fixture = new_runtime();
+        let runtime = fixture.runtime;
+        let installed =
+            block_on(runtime.install(model_memory(), model.clone(), fixture.queue.take().unwrap()))
+                .unwrap_or_else(|_| panic!("install"));
+        runtime.with_fault_held_for_test(|| {
+            let end = block_on(oer_radio_port::run_port(
+                installed,
+                UnconfirmedStop(fail_stop),
+            ));
+            assert!(matches!(
+                (fail_stop, end),
+                (
+                    true,
+                    oer_radio_port::PortEnd::FailStopped { output: 17, .. }
+                ) | (false, oer_radio_port::PortEnd::Abandoned { .. })
+            ));
+            assert_eq!(
+                block_on(runtime.read_now()),
+                Err(Poisoned {
+                    cause: BluetoothFault::Runner(crate::BluetoothRuntimeFault::Abandoned),
+                })
+            );
+        });
+        assert!(matches!(
+            block_on(runtime.install(
+                model_memory(),
+                model.clone(),
+                new_runtime().queue.take().unwrap()
+            )),
+            Err((crate::BluetoothInstallError::Abandoned, _, _, _))
+        ));
+    }
+}
+
+/// Poll counts include cancellation before entry and after each pending poll.
+/// Hardware waits cover time sampling/draining, resume, stop and retirement;
+/// the ready cases cover the command-yield and idle timer branches as well.
+#[test]
+fn cancelling_driver_at_each_wait_keeps_owners_for_retire_and_uninstall() {
+    #[derive(Clone, Copy, Debug)]
+    enum At {
+        Idle,
+        ClockSample,
+        PreviousClockDrain,
+        EnableSample,
+        DisableStop,
+        DisableSample,
+        RetireStop,
+        RetireDrain,
+    }
+    for at in [
+        At::Idle,
+        At::ClockSample,
+        At::PreviousClockDrain,
+        At::EnableSample,
+        At::DisableStop,
+        At::DisableSample,
+        At::RetireStop,
+        At::RetireDrain,
+    ] {
+        for polls in 0..=4 {
+            let model = Model::default();
+            let runtime = installed_disabled(&model);
+            if matches!(at, At::EnableSample) {
+                disable(&runtime); // resume now needs a fresh clock sample
+            }
+            if matches!(at, At::DisableStop | At::DisableSample) {
+                enable(&runtime);
+                block_on(runtime.submit_request(test_receive(7)))
+                    .unwrap()
+                    .unwrap();
+                settle(&runtime);
+            }
+            let mut sink = |_| core::ops::ControlFlow::Continue(());
+            let mut command = Box::pin(async {
+                match at {
+                    At::ClockSample => {
+                        let _ = runtime.runtime.read_now().await;
+                    }
+                    At::EnableSample => {
+                        let _ = runtime.runtime.enable().await;
+                    }
+                    At::DisableStop | At::DisableSample => {
+                        let _ = runtime.runtime.disable(&mut sink).await;
+                    }
+                    _ => core::future::pending::<()>().await,
+                }
+            });
+            assert!(embassy_futures::poll_once(command.as_mut()).is_pending());
+            {
+                let mut state = model.0.borrow_mut();
+                state.time_waiting =
+                    matches!(at, At::ClockSample | At::EnableSample | At::DisableSample);
+                state.time_busy = matches!(at, At::PreviousClockDrain);
+                state.time_drain_waiting = matches!(at, At::PreviousClockDrain | At::RetireDrain);
+                state.stop_never_settles = matches!(at, At::DisableStop | At::RetireStop);
+            }
+            let retiring = matches!(at, At::RetireStop | At::RetireDrain);
+            {
+                let mut driver = runtime.lend();
+                let mut drive = Box::pin(driver.get().run(|| retiring, core::future::pending()));
+                for _ in 0..polls {
+                    assert!(
+                        embassy_futures::poll_once(drive.as_mut()).is_pending(),
+                        "{at:?}"
+                    );
+                    if let Some(deadline) = clock().next_deadline() {
+                        clock().advance_to(deadline);
+                    }
+                }
+                drop(drive); // releases only the private cell's loan
+            }
+            drop(command);
+            {
+                let mut state = model.0.borrow_mut();
+                state.time_waiting = false;
+                state.time_drain_waiting = false;
+                state.time_busy = false;
+                state.stop_never_settles = false;
+            }
+            // Finish any admitted work after cancellation, then retire the
+            // very same owner. No reconstruction of hardware or memory.
+            if !retiring {
+                disable(&runtime);
+            }
+            let (radio, returned) = block_on(runtime.take()).unwrap();
+            assert!(Rc::ptr_eq(&returned.0, &model.0), "{at:?}, poll {polls}");
+            assert!(!model.0.borrow().running);
+            assert_eq!(routes(&model).0, routes(&model).1);
+            assert!(
+                block_on(runtime.install(
+                    radio.into_memory(
+                        &oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation()
+                    ),
+                    returned
+                ))
+                .is_ok()
+            );
+        }
+    }
 }

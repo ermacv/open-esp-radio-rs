@@ -55,8 +55,6 @@ pub(super) fn observations(
             message.decode()
         {
             link(&mut records, &session, value);
-        } else if let Some(oer_hil_protocol::system::Stacks(value)) = message.decode() {
-            stack(&mut records, &request, value);
         } else if let Some(oer_hil_protocol::system::InterruptStacks { cpu0, cpu1 }) =
             message.decode()
         {
@@ -65,98 +63,6 @@ pub(super) fn observations(
                 &request,
                 [("cpu0-irq", cpu0), ("cpu1-irq", cpu1)],
             );
-        } else if let Some(oer_hil_protocol::system::MemoryBenchmarkCompleted(value)) =
-            message.decode()
-        {
-            for (name, count) in [
-                (
-                    "iterations.completed",
-                    u64::from(value.completed_iterations),
-                ),
-                ("iterations.requested", u64::from(value.request.iterations)),
-                ("frames-per-iteration", u64::from(value.request.frames)),
-                ("elapsed.cycles", value.elapsed_cycles),
-                ("elapsed.instructions", value.elapsed_instructions),
-                ("foreground.cycles", value.foreground_cycles),
-                ("foreground.instructions", value.foreground_instructions),
-                ("transfer.polls", u64::from(value.polls)),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("memory.{name}"),
-                    count,
-                    Unit::Count,
-                );
-            }
-            add(
-                &mut records,
-                &request,
-                "memory.bytes-per-iteration",
-                u64::from(value.request.bytes) * u64::from(value.request.frames),
-                Unit::Bytes,
-            );
-            add(
-                &mut records,
-                &request,
-                "memory.bytes-per-frame",
-                u64::from(value.request.bytes),
-                Unit::Bytes,
-            );
-            add(
-                &mut records,
-                &request,
-                "memory.elapsed",
-                value.elapsed_micros,
-                Unit::Microseconds,
-            );
-        } else if let Some(oer_hil_protocol::system::TimebaseProbed(value)) = message.decode() {
-            for (name, count) in [
-                ("intervals", u64::from(value.intervals)),
-                ("early-intervals", u64::from(value.early_intervals)),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("timebase.{name}"),
-                    count,
-                    Unit::Count,
-                );
-            }
-            for (name, micros) in [
-                ("elapsed", value.elapsed_micros),
-                ("interval.min", value.minimum_interval_micros.into()),
-                ("interval.max", value.maximum_interval_micros.into()),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("timebase.{name}"),
-                    micros,
-                    Unit::Microseconds,
-                );
-            }
-        } else if let Some(oer_hil_protocol::wifi::ScanCompleted(value)) = message.decode() {
-            add(
-                &mut records,
-                &request,
-                "scan.elapsed",
-                value.elapsed_micros,
-                Unit::Microseconds,
-            );
-            for (name, count) in [
-                ("frames", value.observed_frames.into()),
-                ("bss", value.unique_bss.into()),
-                ("dropped-bss", value.dropped_unique_bss.into()),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("scan.{name}"),
-                    count,
-                    Unit::Count,
-                );
-            }
         } else if let Some(oer_hil_protocol::ieee802154::AirCheckCompleted(value)) =
             message.decode()
         {
@@ -200,89 +106,6 @@ pub(super) fn observations(
                         Unit::Count,
                     );
                 }
-            }
-        } else if let Some(oer_hil_protocol::wifi::AccessPointStopped(value)) = message.decode() {
-            for (name, count) in [
-                (
-                    "maximum-associated-peers",
-                    value.maximum_associated_peers.into(),
-                ),
-                (
-                    "maximum-authorized-peers",
-                    value.maximum_authorized_peers.into(),
-                ),
-                ("handshake-failures", value.wpa2_handshake_failures),
-                ("handshake-timeouts", value.wpa2_handshake_timeouts),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("ap.{name}"),
-                    count.into(),
-                    Unit::Count,
-                );
-            }
-        } else if let Some(oer_hil_protocol::wifi::AccessPointAggregateFill(value)) =
-            message.decode()
-        {
-            let prefix = format!("ap.aggregate-fill.aid-{}", value.association_id);
-            for (name, count) in [
-                ("aggregates", value.aggregates),
-                ("subframes", value.subframes),
-                ("maximum-subframes", u32::from(value.maximum_subframes)),
-                ("histogram-1", value.histogram[0]),
-                ("histogram-2-7", value.histogram[1]),
-                ("histogram-8-15", value.histogram[2]),
-                ("histogram-16-31", value.histogram[3]),
-                ("histogram-32", value.histogram[4]),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("{prefix}.{name}"),
-                    count.into(),
-                    Unit::Count,
-                );
-            }
-        } else if let Some(value) = message
-            .decode()
-            .map(|oer_hil_protocol::wifi::MonitorStopped(value)| value)
-            .or_else(|| {
-                message
-                    .decode()
-                    .map(|oer_hil_protocol::wifi::MonitorCaptureCompleted(value)| value)
-            })
-        {
-            add(
-                &mut records,
-                &request,
-                "monitor.elapsed",
-                value.elapsed_micros,
-                Unit::Microseconds,
-            );
-            add(
-                &mut records,
-                &request,
-                "monitor.bytes",
-                value.captured_bytes,
-                Unit::Bytes,
-            );
-            for (name, count) in [
-                ("frames", value.captured_frames),
-                ("published-frames", value.published_frames),
-                ("full-drops", value.full_drops),
-                ("oversized-drops", value.oversized_drops),
-                ("channel-mismatches", value.channel_mismatches),
-                ("generation-mismatches", value.generation_mismatches),
-                ("exported-frames", value.exported_frames),
-            ] {
-                add(
-                    &mut records,
-                    &request,
-                    &format!("monitor.{name}"),
-                    count.into(),
-                    Unit::Count,
-                );
             }
         }
         // Qualifying raw register images, metadata or a radio feature is

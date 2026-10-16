@@ -47,7 +47,7 @@ fn retains_the_standard_txop_high_byte_that_the_blob_drops() {
 fn rejects_wrong_identity_short_elements_and_duplicate_aci() {
     let mut element = STANDARD_PARAMETER_ELEMENT;
     element[2..6].copy_from_slice(&WMM_OUI_AND_TYPE);
-    element[1] = (WMM_PARAMETER_BODY_LEN - 1) as u8;
+    element[1] = WMM_PARAMETER_BODY_LEN - 1;
     assert!(parse_wmm_parameter_element(&element).is_none());
 
     element = STANDARD_PARAMETER_ELEMENT;

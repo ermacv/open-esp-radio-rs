@@ -1,5 +1,5 @@
+use super::WifiNetworkInterface;
 use super::*;
-use crate::wifi::WifiNetworkInterface;
 
 fn flow(flow_id: u8, address: [u8; 4], port: u16) -> SessionFlowConfig {
     let traffic = FlowConfig {

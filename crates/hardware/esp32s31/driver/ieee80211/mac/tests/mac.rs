@@ -1,3 +1,4 @@
+use oer_esp32s31_hal::types::MacDelaySlot;
 use std::{cell::RefCell, rc::Rc};
 
 use oer_esp32s31_hal::types::{
@@ -19,16 +20,13 @@ use oer_esp32s31_ieee80211_mac::{
         MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware, MacColdHalTailHardware,
         MacColdHandshakeHardware, MacColdHeHardware, MacColdLastRxBufferHardware,
         MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartConfig, MacColdStartError,
-        MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
-        MacInterfaceAddressHardware, MacLowRateHardware, MacResetHardware, MacSlowClockCalibration,
+        MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacInterfaceAddressHardware,
+        MacLowRateHardware, MacResetHardware, MacSlowClockCalibration,
         MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair, MacTxPowerSource,
         MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
         configure_sta_link_receive_policy, initialize_wifi_mac,
     },
-    irq::{
-        EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, IrqDisposition, IrqState, IrqWork, MacInterrupt,
-        handle_mac_irq,
-    },
+    irq::{IrqDisposition, IrqWork, MacInterrupt, consumer::IrqConsumer, handle_mac_irq},
     rate::schedule::{RateScheduleKind, RateScheduleRef},
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,

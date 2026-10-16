@@ -89,36 +89,19 @@ mod tests {
     #[test]
     fn variant_and_optional_defaults_apply_only_where_selected() {
         let control = json!({"schema": 5, "id": "x", "description": "d", "tags": ["a"],
-            "wifi": {"image": "correctness", "workload": {"kind": "station-udp",
-            "link": {"phy": "ht40", "minimum_mcs": null}, "offer": {"rx_bps": 1000}}}});
+            "bluetooth": {"kind": "secure-gatt"}});
         let normalized = normalize(&control);
         assert_eq!(normalized["repetitions"], 1);
         assert!(normalized.get("description").is_none() && normalized.get("tags").is_none());
         let mut unsupported = control.clone();
         unsupported["unsupported"] = json!("no image serves it");
         assert_eq!(normalize(&unsupported), normalized);
-        let workload = &normalized["wifi"]["workload"];
-        assert_eq!(
-            workload["link"],
-            json!({"phy": "ht40", "guard_interval": "any"})
-        );
-        assert_eq!(workload["criteria"]["exact_delivery"], false);
-        assert!(workload.get("maintenance").is_none());
-        assert_eq!(normalized["wifi"]["datapath"]["l1_cache_counters"], false);
-        // A document of another family holds no Wi-Fi defaults.
+        assert_eq!(normalized["bluetooth"]["shutdown"], "bond-load-failure");
+        // Another variant holds none of the secure-GATT defaults.
+        let dtm = normalize(&json!({"bluetooth": {"kind": "dtm"}}));
+        assert!(dtm["bluetooth"].get("shutdown").is_none());
+        // A document of another family holds no Bluetooth defaults.
         let system = normalize(&json!({"system": {"kind": "boot-smoke"}}));
-        assert!(system.get("wifi").is_none());
-        let access_point = normalize(&json!({"wifi": {"workload": {"kind": "access-point",
-            "clients": {"kind": "openwrt"}, "traffic": {"kind": "icmp"}}}}));
-        let workload = &access_point["wifi"]["workload"];
-        assert!(workload.get("link").is_none());
-        assert_eq!(workload["clients"]["fixed_guard_interval"], false);
-        assert_eq!(workload["traffic"]["maximum_lost"], 0);
-        let laptop = normalize(&json!({"wifi": {"workload": {"kind": "access-point",
-            "traffic": {"kind": "none"}}}}));
-        assert_eq!(
-            laptop["wifi"]["workload"]["clients"],
-            json!({"kind": "laptop", "laptop_phy": "ht"})
-        );
+        assert!(system.get("bluetooth").is_none());
     }
 }

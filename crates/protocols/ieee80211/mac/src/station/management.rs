@@ -2,17 +2,41 @@
 //! codecs.
 
 use super::*;
+use crate::address::{Bssid, OwnAddress};
 
+/// An Open System request distinguishes the transmitter from the BSS.
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_mac::station::OpenAuthenticationRequest;
+/// fn swapped(request: OpenAuthenticationRequest) -> OpenAuthenticationRequest {
+///     OpenAuthenticationRequest {
+///         source: request.bssid,
+///         bssid: request.source,
+///         sequence_number: request.sequence_number,
+///     }
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_mac::station::OpenAuthenticationRequest;
+/// fn unchanged(request: OpenAuthenticationRequest) -> OpenAuthenticationRequest {
+///     OpenAuthenticationRequest {
+///         source: request.source,
+///         bssid: request.bssid,
+///         sequence_number: request.sequence_number,
+///     }
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OpenAuthenticationRequest {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
 }
 
 impl OpenAuthenticationRequest {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let required = MANAGEMENT_HEADER_LEN + 6;
         if output.len() < required {
             return Err(StationFrameError::OutputTooSmall { required });
@@ -23,9 +47,9 @@ impl OpenAuthenticationRequest {
         write_management_header(
             frame,
             OPEN_AUTHENTICATION_FRAME_CONTROL,
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[24..26].copy_from_slice(&OPEN_SYSTEM_ALGORITHM.to_le_bytes());
@@ -86,15 +110,15 @@ impl StaManagementSubtype {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaManagementFrame<'a> {
     pub subtype: StaManagementSubtype,
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub body: &'a [u8],
 }
 
 impl StaManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
             StationFrameError::OutputTooSmall {
                 required: usize::MAX,
@@ -109,9 +133,9 @@ impl StaManagementFrame<'_> {
         write_management_header(
             frame,
             self.subtype.frame_control(),
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[MANAGEMENT_HEADER_LEN..].copy_from_slice(self.body);
@@ -130,8 +154,8 @@ impl StaManagementFrame<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedManagementFrame<'a> {
     pub subtype: StaManagementSubtype,
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
     pub body: &'a [u8],
@@ -139,7 +163,7 @@ pub struct StaProtectedManagementFrame<'a> {
 
 impl StaProtectedManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let body_start = MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN;
         let required =
             body_start
@@ -156,9 +180,9 @@ impl StaProtectedManagementFrame<'_> {
         write_management_header(
             frame,
             self.subtype.frame_control() | PROTECTED_FRAME,
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[MANAGEMENT_HEADER_LEN..body_start].copy_from_slice(&self.ccmp_header);
@@ -177,8 +201,8 @@ pub const SAE_CONFIRM_TRANSACTION: u16 = 2;
 /// One SAE Authentication frame this station sends: a Commit or a Confirm.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SaeAuthenticationFrame<'a> {
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub source: OwnAddress,
+    pub bssid: Bssid,
     pub sequence_number: SequenceNumber,
     pub transaction: u16,
     pub status_code: u16,
@@ -187,7 +211,7 @@ pub struct SaeAuthenticationFrame<'a> {
 
 impl SaeAuthenticationFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid)?;
+        validate_peer(self.bssid.get())?;
         let body_start = MANAGEMENT_HEADER_LEN + 6;
         let required =
             body_start
@@ -203,9 +227,9 @@ impl SaeAuthenticationFrame<'_> {
         write_management_header(
             frame,
             OPEN_AUTHENTICATION_FRAME_CONTROL,
-            self.bssid,
-            self.source,
-            self.bssid,
+            self.bssid.get(),
+            self.source.get(),
+            self.bssid.get(),
             self.sequence_number,
         );
         frame[24..26].copy_from_slice(&SAE_AUTHENTICATION_ALGORITHM.to_le_bytes());
@@ -273,6 +297,9 @@ pub fn parse_open_authentication_response(
 }
 
 /// Parse a Disassociation or Deauthentication sent by the selected AP.
+/// Accept only unfragmented, unprotected management addressed to this station
+/// or broadcast. Protected management requires the separate PMF owner and its
+/// authenticated body; this parser never interprets a CCMP header as a reason.
 ///
 /// An authentication wait must treat this as a protocol transition rather
 /// than an absent response. In particular, an AP may reject the first Open
@@ -284,22 +311,32 @@ pub fn parse_open_authentication_response(
 /// (Disassociation) and `.L737` (Deauthentication) read the reason code at
 /// management-body offset zero (`frame + 24`) and immediately call
 /// `ieee80211_sta_new_state(g_ic, 0, (reason << 8) | subtype)`.
-pub fn parse_sta_disconnect(frame: &[u8], local: [u8; 6], bssid: [u8; 6]) -> Option<StaDisconnect> {
-    if frame.len() < MANAGEMENT_HEADER_LEN + 2
-        || frame[4..10] != local
-        || frame[10..16] != bssid
-        || frame[16..22] != bssid
+pub fn parse_sta_disconnect(
+    frame: &[u8],
+    local: OwnAddress,
+    bssid: Bssid,
+) -> Option<StaDisconnect> {
+    let header = crate::frame::DecodedHeader::decode(frame)?;
+    let control = header.control();
+    if control.is_data()
+        || control.ds() != 0
+        || control.protected()
+        || control.more_fragments()
+        || header.sequence_control() & 15 != 0
+        || (header.receiver() != local.get() && header.receiver() != [0xff; 6])
+        || header.transmitter() != bssid.get()
+        || header.address3() != bssid.get()
     {
         return None;
     }
 
-    let kind = match read_u16(frame, 0)? & 0x00fc {
+    let kind = match control.get() & 0x00fc {
         DISASSOCIATION_FRAME_CONTROL => StaDisconnectKind::Disassociation,
         DEAUTHENTICATION_FRAME_CONTROL => StaDisconnectKind::Deauthentication,
         _ => return None,
     };
     Some(StaDisconnect {
         kind,
-        reason_code: read_u16(frame, MANAGEMENT_HEADER_LEN)?,
+        reason_code: read_u16(header.body(), 0)?,
     })
 }

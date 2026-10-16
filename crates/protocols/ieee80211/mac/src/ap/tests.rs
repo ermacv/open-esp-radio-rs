@@ -457,8 +457,13 @@ fn sae_authentication_frames_cross_between_station_and_access_point() {
     let commit = [0x13, 0, 0xaa, 0xbb];
     let mut request = [0_u8; 64];
     let len = SaeAuthenticationFrame {
-        source: peer,
-        bssid: access_point,
+        source: crate::address::OwnAddress::new(
+            crate::address::IndividualAddress::new(peer).unwrap(),
+        ),
+        bssid: crate::address::Bssid::new(
+            crate::address::IndividualAddress::new(access_point).unwrap(),
+        )
+        .unwrap(),
         sequence_number: seq(1),
         transaction: 1,
         status_code: 126,

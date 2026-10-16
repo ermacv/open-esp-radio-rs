@@ -6,15 +6,8 @@ fn key(peer: [u8; 6], value: u8) -> RsnKeyInstall {
         peer,
         kind: RsnKeyKind::Pairwise,
         receive_sequence: [0; 8],
-        key: CcmpKey::new([value; RSN_TK_LEN]),
+        key: Ccmp128Key::new(&[value; 16]),
     }
-}
-
-#[test]
-fn ccmp_key_is_word_aligned() {
-    let key = CcmpKey::new([7; RSN_TK_LEN]);
-    assert!(key.is_word_aligned());
-    assert_eq!(core::mem::align_of::<CcmpKey>(), 4);
 }
 
 #[test]
@@ -22,15 +15,23 @@ fn static_key_table_replaces_matching_slot_and_fails_when_full() {
     let mut keys = StaticRsnKeys::<1>::new();
     assert_eq!(keys.insert(key([1; 6], 2)), Ok(0));
     assert_eq!(keys.insert(key([1; 6], 3)), Ok(0));
-    assert_eq!(keys.get(0).unwrap().key().as_bytes(), &[3; RSN_TK_LEN]);
+    assert_eq!(keys.get(0).unwrap().key().as_bytes(), &[3; 16]);
     assert_eq!(keys.insert(key([2; 6], 4)), Err(StaticKeyTableError::Full));
 }
 
 #[test]
 fn group_transmit_flag_change_reuses_key_id_slot() {
     let mut keys = StaticRsnKeys::<1>::new();
-    let first = RsnGtk::new(2, false, [6; RSN_TK_LEN]).unwrap();
-    let second = RsnGtk::new(2, true, [7; RSN_TK_LEN]).unwrap();
+    let first = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        false,
+        &[6; 16],
+    );
+    let second = RsnGtk::new(
+        oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
+        true,
+        &[7; 16],
+    );
     assert_eq!(
         keys.insert(RsnKeyInstall::group(
             RsnInterface::AccessPoint,
@@ -50,7 +51,7 @@ fn group_transmit_flag_change_reuses_key_id_slot() {
     assert_eq!(
         keys.get(0).unwrap().kind(),
         RsnKeyKind::Group {
-            key_id: 2,
+            key_id: oer_ieee80211_mac::ccmp::GroupKeyId::new(2).unwrap(),
             transmit: true
         }
     );

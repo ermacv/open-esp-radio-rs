@@ -186,8 +186,9 @@ fn short_hash(hash: &str) -> &str {
 }
 
 /// The newest flash of every board, in order of first appearance, and the
-/// newest event of every startup-artifact host file. The artifact is a host
-/// file uploaded at each boot, so it belongs to a checkout, not to a board.
+/// newest recorded event of every startup-artifact host file. The artifact
+/// was a host file belonging to a checkout, not to a board; no current image
+/// uploads or writes it, so only earlier records name one.
 pub fn latest(events: &[BoardEvent]) -> (Vec<&BoardEvent>, Vec<&BoardEvent>) {
     let flashes = newest_per_key(events, |event| match &event.kind {
         BoardEventKind::Flashed { .. } => Some(event.device.as_deref()),
@@ -363,7 +364,7 @@ mod tests {
             checkout: Some("/src/wifi".into()),
             device: Some("30:ED:A0:F3:F6:D0".into()),
             kind: BoardEventKind::Flashed {
-                image: "correctness".into(),
+                image: "bluetooth-gatt".into(),
                 application_sha256: "0123456789abcdef".into(),
                 commit: Some("fedcba9876543210".into()),
                 dirty: Some(true),
@@ -375,7 +376,7 @@ mod tests {
         assert_eq!(serde_json::from_value::<BoardEvent>(json).unwrap(), event);
         assert_eq!(
             event.to_string(),
-            "wifi (/src/wifi) flashed correctness fedcba987654+dirty app 0123456789ab (run r1)"
+            "wifi (/src/wifi) flashed bluetooth-gatt fedcba987654+dirty app 0123456789ab (run r1)"
         );
         let artifact = BoardEvent {
             kind: BoardEventKind::StartupArtifactWritten {

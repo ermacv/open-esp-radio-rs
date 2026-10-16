@@ -31,11 +31,7 @@ oer-stand-board = { path = "../../../stand/board" }
 oer-hil-flash = { path = "../flash" }
 oer-hil-workload = { path = "../workload" }
 oer-hil-family-bluetooth = { path = "../family/bluetooth" }
-oer-hil-family-coexistence = { path = "../family/coexistence" }
-oer-hil-family-ieee80211 = { path = "../family/ieee80211" }
 oer-hil-family-ieee80211-fixture = { path = "../family/ieee80211-fixture" }
-oer-hil-family-ieee802154 = { path = "../family/ieee802154" }
-oer-hil-family-phy-esp32s31 = { path = "../family/phy-esp32s31" }
 oer-hil-family-system = { path = "../family/system" }
 oer-command-tree = { path = "../../../tools/command-tree", features = ["clap"] }
 oer-process = { path = "../../../tools/process" }

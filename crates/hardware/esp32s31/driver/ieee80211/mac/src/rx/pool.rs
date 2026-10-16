@@ -67,7 +67,6 @@ struct StagedMetadata {
 
 /// Fixed token storage for descriptor-backed upper ownership.
 #[derive(bytemuck::Zeroable)]
-// CAPABILITY: rx-tx-dma
 pub struct RxStagePool<const SLOTS: usize, const CAPACITY: usize> {
     external: ExternalRxHandoffPool<CAPACITY, SLOTS>,
     next_claim: AtomicUsize,

@@ -1,5 +1,6 @@
 use super::*;
 use crate::rate::schedule::{RateScheduleKind, RateScheduleRef};
+use crate::tx::test_support::model_completion;
 use oer_espressif_ieee80211_policy::rate_control::{
     DEFAULT_CONTROL_SCHEDULE, HeLowMetricReportFeatures, StaLinkMetric,
     StaRateControlAssociationInput, StaRateControlPhy,
@@ -250,7 +251,7 @@ fn association_owns_ordinary_ampdu_and_completion_rate_transitions() {
         HE20_POLICY.rate_for_schedule(association.current_ampdu_schedule().unwrap())
     );
     association.observe_tx_completion(
-        TxCompletion::new_model(crate::tx::TxCookie(1), 0, 0).with_ack_snr_encoded_model(0xeb),
+        model_completion(crate::tx::TxCookie(1), 0, 0).with_ack_snr_encoded_model(0xeb),
     );
     assert_eq!(association.latest_ack_snr(), Some(75));
 }

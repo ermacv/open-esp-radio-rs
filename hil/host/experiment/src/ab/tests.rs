@@ -78,10 +78,10 @@ fn a_feature_delta_reaches_the_runner_as_one_argument_even_when_it_removes_first
 #[test]
 fn a_variant_is_a_revision_and_its_dependency_overrides() {
     assert_eq!(
-        "rev=main;override:xarxa=/src/xarxa".parse::<VariantSpec>(),
+        "rev=main;override:esp-hal=/src/esp-hal".parse::<VariantSpec>(),
         Ok(VariantSpec {
             revision: String::from("main"),
-            overrides: vec![(Dependency::Xarxa, PathBuf::from("/src/xarxa"))],
+            overrides: vec![(Dependency::EspHal, PathBuf::from("/src/esp-hal"))],
             features: FeatureDelta::default(),
         })
     );
@@ -102,9 +102,10 @@ fn a_variant_is_a_revision_and_its_dependency_overrides() {
     );
     for invalid in [
         "rev=a;rev=b",
-        "override:xarxa=/a;override:xarxa=/b",
+        "override:esp-hal=/a;override:esp-hal=/b",
         "override:tokio=/t",
-        "override:xarxa",
+        "override:xarxa=/x",
+        "override:esp-hal",
         "features=x",
         "features=+a;features=+b",
         "colour=red",
@@ -131,7 +132,7 @@ fn run(runs: &Path, id: &str, arm: Arm, index: u32, throughput: u64) -> Run {
         RunState::Completed,
         vec![ScenarioResult::from_repetitions(
             "udp-rx".into(),
-            ImageClass::DiagnosticTaskResidence,
+            ImageClass::DiagnosticBluetoothGattTrace,
             1,
             vec![repetition(
                 "udp-rx",
@@ -190,7 +191,7 @@ fn the_summary_names_the_variants_and_each_verdict() {
         b: Variant {
             commit: String::from("aaaaaaaaaaaaaaaa"),
             overrides: vec![DependencyOverride {
-                dependency: Dependency::Xarxa,
+                dependency: Dependency::EspHal,
                 path: PathBuf::from("/x"),
                 commit: String::from("ea9385e"),
                 dirty: true,
@@ -210,7 +211,7 @@ fn the_summary_names_the_variants_and_each_verdict() {
     };
     let text = summary(&report);
     assert!(
-        text.contains("A aaaaaaaaaaaa vs B aaaaaaaaaaaa +xarxa@ea9385e+"),
+        text.contains("A aaaaaaaaaaaa vs B aaaaaaaaaaaa +esp-hal@ea9385e+"),
         "{text}"
     );
     assert!(
@@ -222,7 +223,7 @@ fn the_summary_names_the_variants_and_each_verdict() {
         "{text}"
     );
     let json = serde_json::to_value(&report).unwrap();
-    assert_eq!(json["b"]["overrides"][0]["dependency"], "xarxa");
+    assert_eq!(json["b"]["overrides"][0]["dependency"], "esp-hal");
 }
 
 #[test]

@@ -12,7 +12,7 @@ An `ImageSpec` names the tree (`root`: a checkout or a source snapshot), the
 chip, the application crate (workspace, package, binary, features), the
 stack policy, what the interrupt-stack gate requires (`Required::Proven`, or
 `Partial` for diagnostic images), the layout seed, local dependency
-`Overrides` (`ESP_HAL_ROOT`, `EMBASSY_ROOT`, `OPEN_RADIO_XARXA_ROOT`), the
+`Overrides` (`ESP_HAL_ROOT`), the
 caller's builder packages and extra policy files, the bundle directory
 (every build compiles in the host's one `compile_cache()`) and an optional audit of the runtime ELF (HIL's observer
 placement).

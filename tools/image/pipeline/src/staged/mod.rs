@@ -134,7 +134,7 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
         bootstrap.arg("--locked");
     }
     bootstrap_lock.configure(&mut bootstrap);
-    spec.overrides.apply_esp_hal(&mut bootstrap);
+    spec.overrides.apply(&mut bootstrap);
     crate::zeroed_inputs(&mut bootstrap, profile);
     oer_toolchain::image::configure(
         &mut bootstrap,

@@ -1,27 +1,29 @@
 //! Zeroizing group-key owners, key-data construction and parsing.
 
 use super::*;
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RsnGtk {
-    key_id: u8,
+    #[zeroize(skip)]
+    key_id: GroupKeyId,
     transmit: bool,
     key: [u8; RSN_GTK_LEN],
 }
 
 impl RsnGtk {
-    pub fn new(key_id: u8, transmit: bool, key: [u8; RSN_GTK_LEN]) -> Result<Self, RsnFrameError> {
-        if key_id > 3 {
-            return Err(RsnFrameError::InvalidKeyId);
-        }
-        Ok(Self {
+    /// Copy borrowed key data straight into its zeroizing protocol owner.
+    pub fn new(key_id: GroupKeyId, transmit: bool, key: &[u8; RSN_GTK_LEN]) -> Self {
+        let mut gtk = Self {
             key_id,
             transmit,
-            key,
-        })
+            key: [0; RSN_GTK_LEN],
+        };
+        gtk.key.copy_from_slice(key);
+        gtk
     }
 
-    pub const fn key_id(&self) -> u8 {
+    pub const fn key_id(&self) -> GroupKeyId {
         self.key_id
     }
 
@@ -48,16 +50,18 @@ impl RsnIgtk {
     pub fn new(
         key_id: u8,
         packet_number: [u8; RSN_IPN_LEN],
-        key: [u8; RSN_IGTK_LEN],
+        key: &[u8; RSN_IGTK_LEN],
     ) -> Result<Self, RsnFrameError> {
         if !(4..=5).contains(&key_id) {
             return Err(RsnFrameError::InvalidKeyId);
         }
-        Ok(Self {
+        let mut igtk = Self {
             key_id,
             packet_number,
-            key,
-        })
+            key: [0; RSN_IGTK_LEN],
+        };
+        igtk.key.copy_from_slice(key);
+        Ok(igtk)
     }
 
     pub const fn key_id(&self) -> u8 {
@@ -122,7 +126,7 @@ impl<const N: usize> RsnPlainKeyData<N> {
         kde[1] = 22;
         kde[2..5].copy_from_slice(&RSN_OUI);
         kde[5] = GTK_KDE_TYPE;
-        kde[6] = gtk.key_id | u8::from(gtk.transmit) << 2;
+        kde[6] = gtk.key_id.get() | u8::from(gtk.transmit) << 2;
         kde[7] = 0;
         kde[8..24].copy_from_slice(gtk.key());
         if let Some(igtk) = igtk {
@@ -249,9 +253,12 @@ fn parse_key_data(
                         if gtk.is_some() {
                             return Err(RsnFrameError::DuplicateGtk);
                         }
-                        let mut key = [0; RSN_GTK_LEN];
-                        key.copy_from_slice(&element[8..24]);
-                        gtk = Some(RsnGtk::new(element[6] & 0x03, element[6] & 0x04 != 0, key)?);
+                        let key = element[8..24]
+                            .try_into()
+                            .map_err(|_| RsnFrameError::MalformedKeyData)?;
+                        let key_id = GroupKeyId::new(element[6] & 0x03)
+                            .ok_or(RsnFrameError::InvalidKeyId)?;
+                        gtk = Some(RsnGtk::new(key_id, element[6] & 0x04 != 0, key));
                     }
                     IGTK_KDE_TYPE => {
                         if !management_protection {
@@ -266,8 +273,9 @@ fn parse_key_data(
                         let key_id = u16::from_le_bytes([element[6], element[7]]);
                         let mut packet_number = [0; RSN_IPN_LEN];
                         packet_number.copy_from_slice(&element[8..14]);
-                        let mut key = [0; RSN_IGTK_LEN];
-                        key.copy_from_slice(&element[14..30]);
+                        let key = element[14..30]
+                            .try_into()
+                            .map_err(|_| RsnFrameError::MalformedKeyData)?;
                         let key_id =
                             u8::try_from(key_id).map_err(|_| RsnFrameError::InvalidKeyId)?;
                         igtk = Some(RsnIgtk::new(key_id, packet_number, key)?);

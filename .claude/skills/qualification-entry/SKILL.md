@@ -41,8 +41,8 @@ and [named checks](../../../qualification/README.md#named-checks).
 ```console
 cargo xtask check capabilities --changed <file>
 cargo qualification catalog check --catalog qualification/catalog/esp32s31/wifi-phy.toml
-cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
-cargo qualification status --manifest qualification/targets/esp32s31/wifi-sta.toml --capability <id>
+cargo qualification validate --manifest qualification/targets/esp32s31/bluetooth-le.toml
+cargo qualification status --manifest qualification/targets/esp32s31/bluetooth-le.toml --capability <id>
 cargo xtask check docs
 ```
 

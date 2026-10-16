@@ -12,7 +12,6 @@ description = "Executor-independent ESP32-S31 Bluetooth LE radio runtime over th
 trace = ["oer-trace/record"]
 
 [dependencies]
-oer-bluetooth-port = { path = "../../../protocols/bluetooth/le/port" }
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-bluetooth-radio = { path = "../../../protocols/bluetooth/le/radio" }

@@ -74,11 +74,10 @@ fn portable_data_intent_preserves_every_existing_s31_queue_and_packet_profile() 
                 [0x30; 6],
                 [0x40; 6],
                 ethernet,
-                priority as u8,
+                WmmUserPriority::new(priority as u8).unwrap(),
                 peer_qos,
                 false,
-            )
-            .unwrap();
+            );
 
             assert_eq!(plan.access_category, category);
             assert_eq!(&plan.header[..2], &frame_control);
@@ -98,23 +97,10 @@ fn portable_data_intent_preserves_every_existing_s31_queue_and_packet_profile() 
 
 #[test]
 fn invalid_user_priorities_never_reach_s31_metadata_encoding() {
-    use oer_ieee80211_mac::data::plan_data_encapsulation;
-
     for priority in 8..=u8::MAX {
         assert_eq!(queue_class(priority), None);
         assert_eq!(descriptor_priority_byte(priority), None);
-        assert!(
-            plan_data_encapsulation(
-                DataInterfaceRole::Station,
-                [0x30; 6],
-                [0x40; 6],
-                [0x20; 14],
-                priority,
-                true,
-                false,
-            )
-            .is_none()
-        );
+        assert!(WmmUserPriority::new(priority).is_none());
     }
 }
 

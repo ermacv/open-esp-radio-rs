@@ -5,13 +5,20 @@
 //! the parent receives only the stop/wait capability, while the task receives
 //! only the request/return capability. A dropped task endpoint poisons the
 //! resources, so a replacement epoch cannot erase an unreturned owner.
+//! Waiting only observes readiness: each controller retains its returned owner
+//! outside the observation future. `try_finish(self)` consumes the capability
+//! and returns that owner once. A timeout or cancelled wait leaves the same
+//! group available for another observation, including after one child stops.
 
 use core::{
     future::Future,
     sync::atomic::{AtomicU8, Ordering},
 };
 
-use embassy_futures::select::{Either, select};
+use embassy_futures::{
+    join::join,
+    select::{Either, select},
+};
 use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal};
 use oer_time::{Duration, Timer};
 
@@ -26,9 +33,17 @@ pub trait ConnectedTaskGroup {
     /// Publish the idempotent cooperative stop request to every task.
     fn request_stop(&mut self);
 
-    /// Wait until every task has released its epoch resources.
+    /// Observe completion without transferring any owner out of this group.
+    /// Cancellation must retain partial results in `self`, not in this future.
     #[allow(async_fn_in_trait)]
-    async fn wait_stopped(&mut self) -> Self::Stopped;
+    async fn wait_stopped(&mut self);
+
+    /// Consume a completed group, or return the entire still-stopping group.
+    /// This may be attempted without first waiting; readiness alone never
+    /// releases a resource or permits reuse of its control storage.
+    fn try_finish(self) -> Result<Self::Stopped, Self>
+    where
+        Self: Sized;
 }
 
 /// One owner-bearing connected task plus an auxiliary task which must stop
@@ -40,14 +55,48 @@ pub trait ConnectedTaskGroup {
 /// is revealed. This is useful for application/HIL services which share an
 /// Embassy network epoch without giving those services access to DMA or PAC
 /// ownership.
-pub struct ConnectedTaskGroupWithAuxiliary<P, A> {
-    primary: P,
-    auxiliary: A,
+pub struct ConnectedTaskGroupWithAuxiliary<P: ConnectedTaskGroup, A: ConnectedTaskGroup> {
+    primary: TaskCompletion<P>,
+    auxiliary: TaskCompletion<A>,
 }
 
-impl<P, A> ConnectedTaskGroupWithAuxiliary<P, A> {
+/// An early consuming finish may return one child before the other. The group
+/// retains that result, just as a child retains results of a cancelled wait.
+enum TaskCompletion<G: ConnectedTaskGroup> {
+    Waiting(G),
+    Finished(G::Stopped),
+}
+
+impl<G: ConnectedTaskGroup> TaskCompletion<G> {
+    fn request_stop(&mut self) {
+        if let Self::Waiting(group) = self {
+            group.request_stop();
+        }
+    }
+
+    async fn wait_stopped(&mut self) {
+        if let Self::Waiting(group) = self {
+            group.wait_stopped().await;
+        }
+    }
+
+    fn finish(self) -> Self {
+        match self {
+            Self::Waiting(group) => match group.try_finish() {
+                Ok(stopped) => Self::Finished(stopped),
+                Err(group) => Self::Waiting(group),
+            },
+            finished => finished,
+        }
+    }
+}
+
+impl<P: ConnectedTaskGroup, A: ConnectedTaskGroup> ConnectedTaskGroupWithAuxiliary<P, A> {
     pub const fn new(primary: P, auxiliary: A) -> Self {
-        Self { primary, auxiliary }
+        Self {
+            primary: TaskCompletion::Waiting(primary),
+            auxiliary: TaskCompletion::Waiting(auxiliary),
+        }
     }
 }
 
@@ -63,10 +112,17 @@ where
         self.auxiliary.request_stop();
     }
 
-    async fn wait_stopped(&mut self) -> Self::Stopped {
-        let primary = self.primary.wait_stopped().await;
-        let _auxiliary = self.auxiliary.wait_stopped().await;
-        primary
+    async fn wait_stopped(&mut self) {
+        join(self.primary.wait_stopped(), self.auxiliary.wait_stopped()).await;
+    }
+
+    fn try_finish(self) -> Result<Self::Stopped, Self> {
+        match (self.primary.finish(), self.auxiliary.finish()) {
+            (TaskCompletion::Finished(primary), TaskCompletion::Finished(_auxiliary)) => {
+                Ok(primary)
+            }
+            (primary, auxiliary) => Err(Self { primary, auxiliary }),
+        }
     }
 }
 
@@ -80,7 +136,9 @@ pub enum ConnectedTaskControlError {
 /// Reusable signal storage for one sequential executor task.
 ///
 /// Only a completed task endpoint followed by consumption of its returned
-/// owner restores `Idle`. There is deliberately no safe reset operation.
+/// owner restores `Idle`. Retirement clears that epoch's stop signal before
+/// publishing `Idle`, including stops issued after the endpoint completed.
+/// There is deliberately no safe reset operation.
 pub struct ConnectedTaskControlResources<M: RawMutex, S> {
     stop: Signal<M, ()>,
     stopped: Signal<M, S>,
@@ -137,6 +195,7 @@ impl<M: RawMutex, S> ConnectedTaskControlResources<M, S> {
                 ConnectedTaskController {
                     resources: self,
                     completed: false,
+                    stopped: None,
                 },
                 ConnectedTaskEndpoint {
                     resources: self,
@@ -161,6 +220,17 @@ impl<M: RawMutex, S> ConnectedTaskControlResources<M, S> {
     pub fn is_poisoned(&self) -> bool {
         self.state.load(Ordering::Acquire) == POISONED
     }
+
+    /// Abandon an active pair without overwriting a terminal state already
+    /// published by the other endpoint.
+    fn poison_active(&self) {
+        match self
+            .state
+            .compare_exchange(ACTIVE, POISONED, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) | Err(_) => {}
+        }
+    }
 }
 
 impl<M: RawMutex, S> Default for ConnectedTaskControlResources<M, S> {
@@ -173,6 +243,8 @@ impl<M: RawMutex, S> Default for ConnectedTaskControlResources<M, S> {
 pub struct ConnectedTaskController<'resources, M: RawMutex, S> {
     resources: &'resources ConnectedTaskControlResources<M, S>,
     completed: bool,
+    /// Returned ownership lives here across every cancelled observation.
+    stopped: Option<S>,
 }
 
 impl<M: RawMutex, S> ConnectedTaskGroup for ConnectedTaskController<'_, M, S> {
@@ -184,25 +256,30 @@ impl<M: RawMutex, S> ConnectedTaskGroup for ConnectedTaskController<'_, M, S> {
         }
     }
 
-    async fn wait_stopped(&mut self) -> Self::Stopped {
-        let stopped = self.resources.stopped.wait().await;
+    async fn wait_stopped(&mut self) {
+        if self.stopped.is_none() {
+            self.stopped = Some(self.resources.stopped.wait().await);
+        }
+    }
+
+    fn try_finish(mut self) -> Result<Self::Stopped, Self> {
+        let Some(stopped) = self.stopped.take() else {
+            return Err(self);
+        };
         // Only `ConnectedTaskEndpoint::complete` can publish this value.
-        // Its destructor has therefore already been disarmed.
+        // The endpoint has been consumed and its destructor disarmed.
+        // This controller is consumed too; observation alone kept it active.
         self.completed = true;
+        self.resources.stop.reset();
         self.resources.state.store(IDLE, Ordering::Release);
-        stopped
+        Ok(stopped)
     }
 }
 
 impl<M: RawMutex, S> Drop for ConnectedTaskController<'_, M, S> {
     fn drop(&mut self) {
         if !self.completed {
-            let _ = self.resources.state.compare_exchange(
-                ACTIVE,
-                POISONED,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            );
+            self.resources.poison_active();
         }
     }
 }
@@ -228,12 +305,7 @@ impl<M: RawMutex, S> ConnectedTaskEndpoint<'_, M, S> {
 impl<M: RawMutex, S> Drop for ConnectedTaskEndpoint<'_, M, S> {
     fn drop(&mut self) {
         if !self.completed {
-            let _ = self.resources.state.compare_exchange(
-                ACTIVE,
-                POISONED,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            );
+            self.resources.poison_active();
         }
     }
 }
@@ -243,13 +315,16 @@ impl<M: RawMutex, S> Drop for ConnectedTaskEndpoint<'_, M, S> {
 /// `Pending` does not poison the task group and does not imply that radio
 /// reset is required. The caller may keep waiting or observe the same stopping
 /// transaction again; the task owners remain inside the group until
-/// [`ConnectedTaskGroup::wait_stopped`] returns them.
-pub enum ConnectedTaskStopAttempt<S> {
-    Stopped(S),
-    Pending { waited: Duration },
+/// [`ConnectedTaskGroup::try_finish`] consumes the group and returns them.
+pub enum ConnectedTaskStopAttempt {
+    /// Every child has returned, with owners still retained in the group.
+    Stopped,
+    Pending {
+        waited: Duration,
+    },
 }
 
-impl<S> ConnectedTaskStopAttempt<S> {
+impl ConnectedTaskStopAttempt {
     pub const fn is_pending(&self) -> bool {
         matches!(self, Self::Pending { .. })
     }
@@ -257,9 +332,10 @@ impl<S> ConnectedTaskStopAttempt<S> {
 
 /// Request and await release of all executor tasks attached to one epoch.
 ///
-/// This is the normal ownership transition. It has no internal deadline:
-/// returning is the proof that every attached task released its exact owner.
-pub async fn stop_connected_task_group<G>(group: &mut G) -> G::Stopped
+/// This observation has no internal deadline. On return the group retains all
+/// stopped owners until its consuming `try_finish`; cancellation retains the
+/// group and every partial result as well.
+pub async fn stop_connected_task_group<G>(group: &mut G)
 where
     G: ConnectedTaskGroup,
 {
@@ -277,7 +353,7 @@ pub async fn stop_connected_task_group_until<G>(
     group: &mut G,
     timer: &impl Timer,
     timeout: Duration,
-) -> ConnectedTaskStopAttempt<G::Stopped>
+) -> ConnectedTaskStopAttempt
 where
     G: ConnectedTaskGroup,
 {
@@ -288,7 +364,7 @@ where
         }
     };
     match select(group.wait_stopped(), expiry).await {
-        Either::First(stopped) => ConnectedTaskStopAttempt::Stopped(stopped),
+        Either::First(()) => ConnectedTaskStopAttempt::Stopped,
         Either::Second(()) => ConnectedTaskStopAttempt::Pending { waited: timeout },
     }
 }

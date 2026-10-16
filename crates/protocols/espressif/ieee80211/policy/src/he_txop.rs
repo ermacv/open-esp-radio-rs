@@ -77,38 +77,56 @@ pub fn maximum_unprotected_apep_bytes(
     padding: HePacketPadding,
     rate: HeRate,
 ) -> u16 {
-    const PREAMBLE_US: [f32; 3] = [23.2, 24.0, 32.0];
-    const SYMBOL_US: [f32; 3] = [13.6, 14.4, 16.0];
-    const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
-        [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
-    let row = match rate.gi_ltf() {
-        HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns => 0,
-        HeGiLtf::Ltf2xGi1600Ns => 1,
-        HeGiLtf::Ltf4xGi3200Ns => 2,
+    let (preamble_us, symbol_us) = match rate.gi_ltf() {
+        HeGiLtf::Ltf1xGi800Ns | HeGiLtf::Ltf2xGi800Ns => (23.2, 13.6),
+        HeGiLtf::Ltf2xGi1600Ns => (24.0, 14.4),
+        HeGiLtf::Ltf4xGi3200Ns => (32.0, 16.0),
     };
     let mcs = rate.mcs().index();
-    let Some(&data_bits) = DATA_BITS_PER_SYMBOL_RU242.get(usize::from(mcs)) else {
-        return 0;
+    let data_bits = match mcs {
+        0 => 117,
+        1 => 234,
+        2 => 351,
+        3 => 468,
+        4 => 702,
+        5 => 936,
+        6 => 1053,
+        7 => 1170,
+        8 => 1404,
+        9 => 1560,
+        _ => return 0,
     };
     let block_ack_us = match mcs {
         0 => 68,
         1 | 2 => 44,
         _ => 32,
     } as f32;
-    let budget = (i32::from(threshold.units_32_us()) * 32 - 20) as f32
-        - PREAMBLE_US[row]
+    // The checked threshold is 1..=1022: this integer prefix is 12..=32684,
+    // so neither operation wraps. Keep the vendor's subsequent f32 steps
+    // in their original order at symbol-boundary roundings.
+    let budget = i32::from(threshold.units_32_us())
+        .wrapping_mul(32)
+        .wrapping_sub(20) as f32
+        - preamble_us
         - 16.0
         - f32::from(padding.micros());
     if block_ack_us >= budget {
         return 0;
     }
-    // The quotient is positive here, so truncation equals `floor`.
-    let symbols = ((budget - block_ack_us) / SYMBOL_US[row]) as i32;
-    let mut bits = data_bits;
+    // The quotient is positive here, so truncation equals `floor`. A time
+    // budget below 32704 us and symbol duration >= 13.6 us give fewer than
+    // 2405 symbols; the float-to-integer conversion is inside i32's range.
+    let symbols = ((budget - block_ack_us) / symbol_us) as i32;
+    let mut bits: i32 = data_bits;
     if rate.dcm() {
         bits /= 2;
     }
-    ((bits * symbols - 22) >> 3) as u16
+    // bits <= 1560 and symbols < 2405: the product and subtraction fit
+    // i32, even when zero whole symbols leave -22 SERVICE/tail bits.
+    // The signed shift and final u16 cast intentionally retain the vendor
+    // halfword's low 16 bits. A positive sub-symbol budget produces 65533;
+    // clamping that result to zero would change the recovered policy.
+    (bits.wrapping_mul(symbols).wrapping_sub(22) >> 3) as u16
 }
 
 /// [`maximum_unprotected_apep_bytes`] as the portable protection policy's
@@ -189,5 +207,35 @@ mod tests {
         );
         assert_eq!(packet_padding_from_code(2), HePacketPadding::Us16);
         assert_eq!(packet_padding_from_code(3), HePacketPadding::None);
+    }
+
+    #[test]
+    fn partial_symbols_keep_the_signed_halfword_result() {
+        for (mcs, first_positive_threshold, next_budget) in [(0, 4, 26), (9, 3, 387)] {
+            let budget = |units| {
+                maximum_unprotected_apep_bytes(
+                    HeTxopDurationRtsThreshold::new(units).unwrap(),
+                    HePacketPadding::None,
+                    he(mcs),
+                )
+            };
+            assert_eq!(budget(first_positive_threshold - 1), 0);
+            // The remaining time is positive but fits no complete symbol:
+            // (-22 >> 3) modulo 2^16 is 65533.
+            assert_eq!(budget(first_positive_threshold), 65533);
+            assert_eq!(budget(first_positive_threshold + 1), next_budget);
+        }
+    }
+
+    #[test]
+    fn the_maximum_threshold_keeps_the_halfword_modulus() {
+        // 2398 complete symbols at MCS 9 give (2398 * 1560 - 22) >> 3
+        // = 467607 bytes, whose low halfword is 8855.
+        let threshold = HeTxopDurationRtsThreshold::new(1022).unwrap();
+        assert_eq!(
+            maximum_unprotected_apep_bytes(threshold, HePacketPadding::None, he(9)),
+            8855
+        );
+        assert!(HeTxopDurationRtsThreshold::new(1023).is_none());
     }
 }

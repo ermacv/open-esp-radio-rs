@@ -232,6 +232,73 @@ impl Lexer<'_> {
     }
 }
 
+/// The initial inner attributes of a crate root, as lexical tokens. Comments
+/// and whitespace carry no policy; literals remain single opaque tokens so
+/// a quoted attribute cannot masquerade as a lint. Uses the same lexer as
+/// module reachability instead of scanning source spellings with a regex.
+pub(crate) fn root_attributes(source: &str) -> Result<Vec<Vec<String>>> {
+    let source = source.strip_prefix('\u{feff}').unwrap_or(source);
+    let source = if source.starts_with("#!") && !source[2..].trim_start().starts_with('[') {
+        source.split_once('\n').map_or("", |(_, rest)| rest)
+    } else {
+        source
+    };
+    let mut lexer = Lexer {
+        src: source.as_bytes(),
+        at: 0,
+    };
+    let mut attributes = Vec::new();
+    loop {
+        lexer.skip_space();
+        if !lexer.eat(b'#') || !lexer.eat(b'!') {
+            break;
+        }
+        if !lexer.eat(b'[') {
+            return Err("malformed crate attribute".into());
+        }
+        let mut tokens = Vec::new();
+        let mut brackets = 1usize;
+        while brackets != 0 {
+            lexer.skip_space();
+            if lexer.at >= lexer.src.len() {
+                return Err("unterminated crate attribute".into());
+            }
+            match lexer.peek(0) {
+                b'"' => {
+                    let string = lexer.string().ok_or("unterminated attribute literal")?;
+                    tokens.push(format!("{string:?}"));
+                }
+                b'[' => {
+                    brackets += 1;
+                    lexer.at += 1;
+                    tokens.push("[".into());
+                }
+                b']' => {
+                    brackets -= 1;
+                    lexer.at += 1;
+                    if brackets != 0 {
+                        tokens.push("]".into());
+                    }
+                }
+                byte if is_ident_start(byte) => {
+                    let ident = lexer.ident().ok_or("invalid attribute identifier")?;
+                    tokens.push(ident.into());
+                    if matches!(ident, "r" | "br" | "cr") && matches!(lexer.peek(0), b'"' | b'#') {
+                        lexer.skip_raw_string();
+                        tokens.push("<raw literal>".into());
+                    }
+                }
+                byte => {
+                    tokens.push(char::from(byte).to_string());
+                    lexer.at += 1;
+                }
+            }
+        }
+        attributes.push(tokens);
+    }
+    Ok(attributes)
+}
+
 /// The module events of `source`.
 fn scan(source: &str) -> Vec<Event> {
     let mut lexer = Lexer {

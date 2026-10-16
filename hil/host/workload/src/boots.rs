@@ -50,7 +50,7 @@ mod tests {
         let output = Output::new();
         let lab = oer_hil_lab::config::LabConfig::for_test();
         let targets = RefCell::new(Vec::new());
-        let context = Context::new(&lab, Default::default(), &output.0).with_opener(|path| {
+        let context = Context::new(&lab, &output.0).with_opener(|path| {
             let (capture, input, commands) = capture_with_commands_at(path);
             targets
                 .borrow_mut()

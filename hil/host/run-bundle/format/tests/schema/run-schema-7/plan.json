@@ -5,14 +5,14 @@
   "firmware": {
     "source": "replay",
     "source_run_id": "1790000000000-00000001",
-    "image": "correctness",
+    "image": "bluetooth-gatt",
     "build_id": "2222222222222222222222222222222222222222222222222222222222222222",
     "application_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
   },
   "entries": [
     {
       "scenario": "access-point-bidirectional",
-      "image": "correctness",
+      "image": "bluetooth-gatt",
       "repetitions": 1,
       "disposition": "filtered",
       "reason": "excluded by `scenarios: bluetooth-trouble-gatt, bluetooth-trouble-secure-gatt`",
@@ -35,7 +35,7 @@
     },
     {
       "scenario": "access-point-bidirectional-openwrt",
-      "image": "correctness",
+      "image": "bluetooth-gatt",
       "repetitions": 1,
       "disposition": "filtered",
       "reason": "excluded by `scenarios: bluetooth-trouble-gatt, bluetooth-trouble-secure-gatt`",

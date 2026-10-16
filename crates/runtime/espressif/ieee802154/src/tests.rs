@@ -13,6 +13,8 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+use crate::Uninstalled;
+
 use embassy_futures::{block_on, yield_now};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
@@ -32,15 +34,15 @@ use oer_ieee802154::{
     Ieee802154Capabilities, Interface, LinkMetrics, ProbingInitiator, RadioCapabilities,
     RadioFault, RadioState, RestingState, TxMode, TxSecurity, TxStatus,
     owner::{
-        Has, Ieee802154Caps, Ieee802154Client, Ieee802154Clients, Ieee802154Setup,
-        InterfaceResources, Operation, RadioSettings, RecentRssi, SupportedHeaderIes,
-        SupportedTransmit, Transmission,
+        Has, Ieee802154Caps, Ieee802154Client, Ieee802154Clients, Ieee802154Setup, Operation,
+        RadioSettings, RecentRssi, SupportedHeaderIes, SupportedTransmit, Transmission,
     },
 };
-use oer_ieee802154_port::{
-    CancelError, Disabled, Ended, Owner, PortBody, RadioPortClient, RadioPortEvents, run_port,
+use oer_radio_port::{
+    CancelError, Disabled, Ended, Owner, PortBody, PortPhase, RadioPortClient, run_port,
 };
-use oer_radio_port::{EventsLost, Mint, Poisoned, Seat};
+use oer_radio_port::{Child, Root};
+use oer_radio_port::{EventsLost, Poisoned, Seat};
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 
@@ -82,11 +84,8 @@ impl Ieee802154Caps for Single {
 }
 
 impl Ieee802154RuntimeCaps for Single {
-    type Interfaces<'id> = InterfaceResources<'id, 0, PENDING_TABLE_SIZE>;
-
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
-        InterfaceResources::mint::<Self>(mint)
-    }
+    type Interfaces = oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>;
+    type InterfacePath<const I: u8> = Child<Root, 0>;
 }
 
 /// The capabilities of a two-interface multi-PAN runtime.
@@ -100,17 +99,11 @@ impl Ieee802154Caps for Multipan {
 }
 
 impl Ieee802154RuntimeCaps for Multipan {
-    type Interfaces<'id> = (
-        InterfaceResources<'id, 0, PENDING_TABLE_SIZE>,
-        InterfaceResources<'id, 1, PENDING_TABLE_SIZE>,
+    type InterfacePath<const I: u8> = Child<Child<Root, 0>, I>;
+    type Interfaces = (
+        oer_ieee802154::owner::InterfacePool<Self, 0, PENDING_TABLE_SIZE>,
+        oer_ieee802154::owner::InterfacePool<Self, 1, PENDING_TABLE_SIZE>,
     );
-
-    fn interfaces<'id>(mint: &mut Mint<'id>) -> Self::Interfaces<'id> {
-        (
-            InterfaceResources::mint::<Self>(mint),
-            InterfaceResources::mint::<Self>(mint),
-        )
-    }
 }
 
 /// 2006 data frame without an ACK request, as MAC bytes.
@@ -133,7 +126,7 @@ fn channel(number: u8) -> Channel {
 type Runtime<const EVENTS: usize> =
     Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, FixedRandom, EVENTS>;
 
-type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
+type Backend<K, const EVENTS: usize, D = super::backend::NoRoute> = Ieee802154RuntimeBackend<
     'static,
     'static,
     K,
@@ -142,19 +135,25 @@ type Backend<K, const EVENTS: usize> = Ieee802154RuntimeBackend<
     VirtualClock,
     FixedRandom,
     EVENTS,
+    D,
 >;
 
 type Parts = Ieee802154RuntimeParts<'static, Ieee802154LlModel>;
 
-type Resources<'id, K, const EVENTS: usize> =
-    RuntimeResources<'static, 'id, <K as Ieee802154RuntimeCaps>::Interfaces<'id>, Runtime<EVENTS>>;
+type Resources<'id, K, const EVENTS: usize> = RuntimeResources<
+    'static,
+    'id,
+    oer_radio_port::Pools<'id, <K as Ieee802154RuntimeCaps>::Interfaces, Child<Root, 0>>,
+    Runtime<EVENTS>,
+>;
 
-fn parts() -> Parts {
+fn parts<const EVENTS: usize>(runtime: &'static Runtime<EVENTS>) -> Parts {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     Ieee802154RuntimeParts {
         engine: Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default()),
         hardware: Ieee802154LlModel::default(),
+        queue: runtime.take_queue().unwrap(),
     }
 }
 
@@ -177,19 +176,22 @@ fn install<K, const EVENTS: usize>(
 /// A port body written as an async closure.
 struct Body<F>(F);
 
-impl<K, const EVENTS: usize, F> PortBody<Backend<K, EVENTS>> for Body<F>
+impl<K, const EVENTS: usize, D, F> PortBody<Backend<K, EVENTS, D>> for Body<F>
 where
     K: Ieee802154RuntimeCaps,
+    D: super::Ieee802154RouteDetach,
     F: for<'p, 'id> AsyncFnOnce(
-        Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
+        Owner<'p, 'id, Backend<K, EVENTS, D>, Disabled>,
         Resources<'id, K, EVENTS>,
-    ) -> Ended<'id, Backend<K, EVENTS>>,
+    ) -> Ended<'id, Backend<K, EVENTS, D>, ()>,
 {
+    type Output = ();
+
     fn run<'p, 'id>(
         self,
-        owner: Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
+        owner: Owner<'p, 'id, Backend<K, EVENTS, D>, Disabled>,
         resources: Resources<'id, K, EVENTS>,
-    ) -> impl Future<Output = Ended<'id, Backend<K, EVENTS>>> {
+    ) -> impl Future<Output = Ended<'id, Backend<K, EVENTS, D>, ()>> {
         (self.0)(owner, resources)
     }
 }
@@ -200,12 +202,189 @@ fn run<K, const EVENTS: usize>(
     body: impl for<'p, 'id> AsyncFnOnce(
         Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
         Resources<'id, K, EVENTS>,
-    ) -> Ended<'id, Backend<K, EVENTS>>,
+    ) -> Ended<'id, Backend<K, EVENTS>, ()>,
 ) -> Parts
 where
     K: Ieee802154RuntimeCaps,
 {
-    block_on(run_port(backend, Body(body))).expect("the body uninstalls")
+    match run_end(backend, body) {
+        oer_radio_port::PortEnd::Uninstalled {
+            uninstalled: Uninstalled::Reusable(parts),
+            ..
+        } => parts,
+        _ => panic!("the body uninstalls"),
+    }
+}
+
+fn run_end<K, const EVENTS: usize, D>(
+    backend: Backend<K, EVENTS, D>,
+    body: impl for<'p, 'id> AsyncFnOnce(
+        Owner<'p, 'id, Backend<K, EVENTS, D>, Disabled>,
+        Resources<'id, K, EVENTS>,
+    ) -> Ended<'id, Backend<K, EVENTS, D>, ()>,
+) -> oer_radio_port::PortEnd<Backend<K, EVENTS, D>, ()>
+where
+    K: Ieee802154RuntimeCaps,
+    D: super::Ieee802154RouteDetach,
+{
+    block_on(run_port(backend.installed(), Body(body)))
+}
+
+#[test]
+fn poison_waits_for_the_admitted_terminal_before_reporting_drained() {
+    let runtime = runtime::<4>();
+    run(
+        install::<Single, 4>(runtime, parts(runtime)),
+        async |mut owner, resources| {
+            let RuntimeResources {
+                interfaces,
+                mut operation,
+                ..
+            } = resources;
+            let configured = owner.setup().configure(interfaces.interface);
+            let mut owner = enabled_owner(owner.enable().await);
+            {
+                let mut phase = owner.phase();
+                let client = phase.clients.client(&configured);
+                let permit = client.operation(&mut operation[0]).await;
+                let work = client
+                    .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                    .unwrap()
+                    .id();
+                runtime
+                    .fault
+                    .lock(|fault| fault.set(Some(RadioFault::StateLost)));
+                assert!(
+                    poll_once(pin!(phase.events.next_event())).is_pending(),
+                    "poison cannot declare an admitted terminal drained early"
+                );
+                runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
+                assert!(
+                    matches!(ready(phase.events.next_event()), Ok(Ok(Ieee802154PortEvent::TransmitDone { id, .. })) if id == work)
+                );
+                assert!(matches!(
+                    ready(phase.events.next_event()),
+                    Err(oer_radio_port::EventEnd::Drained {
+                        cause: RadioFault::StateLost
+                    })
+                ));
+            }
+            let poisoned = owner
+                .disable(&mut |_| panic!("terminal already delivered"))
+                .await
+                .err()
+                .expect("poisoned");
+            Ended::uninstall(poisoned, (), ())
+        },
+    );
+}
+
+#[test]
+fn event_end_classifies_outstanding_work_and_remains_final() {
+    use oer_radio_port::{EventEnd, PortEnd};
+
+    for quarantined in [false, true] {
+        let runtime = runtime::<4>();
+        let end = run_end(
+            install::<Single, 4>(runtime, parts(runtime)),
+            async |mut owner, resources| {
+                let RuntimeResources {
+                    interfaces,
+                    mut operation,
+                    ..
+                } = resources;
+                let configured = owner.setup().configure(interfaces.interface);
+                let mut owner = enabled_owner(owner.enable().await);
+                let event_end = {
+                    let mut phase = owner.phase();
+                    let client = phase.clients.client(&configured);
+                    let permit = client.operation(&mut operation[0]).await;
+                    let work = client
+                        .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                        .unwrap();
+                    let mut outstanding = Some(work.id());
+                    let end = if quarantined {
+                        runtime
+                            .abandoned
+                            .store(true, core::sync::atomic::Ordering::Release);
+                        // An entered ISR holds installation and event bookkeeping.
+                        // The unconfirmed stream end must touch neither mutex.
+                        runtime.installed.lock(|installed| {
+                            let _entered = installed.borrow_mut();
+                            runtime.events.owed.lock(|owed| {
+                                let _entered = owed.borrow_mut();
+                                ready(phase.events.next_event()).unwrap_err()
+                            })
+                        })
+                    } else {
+                        // Model the role's fault boundary: the operation
+                        // has stopped and its sole report is Fault, not a
+                        // later ordinary completion during disable.
+                        runtime.disable_locked();
+                        let mut stopped = false;
+                        while let Some(event) = runtime.events.take() {
+                            if let Ok(Ieee802154RadioEvent::TransmitDone { id, .. }) = event {
+                                assert_eq!(Some(id), outstanding);
+                                stopped = true;
+                            }
+                        }
+                        assert!(stopped);
+                        assert!(runtime.events.push(Ieee802154RadioEvent::Fault {
+                            id: outstanding,
+                            fault: RadioFault::InvalidEventSequence,
+                        }));
+                        let terminal = ready(phase.events.next_event()).unwrap().unwrap();
+                        assert!(matches!(terminal, Ieee802154PortEvent::TransmitDone {
+                        id, status: TxStatus::HardwareFailure, ..
+                    } if Some(id) == outstanding));
+                        outstanding = None;
+                        ready(phase.events.next_event()).unwrap_err()
+                    };
+                    match end {
+                        EventEnd::Drained { .. } => {
+                            assert!(outstanding.is_none(), "missing terminal violates Drained")
+                        }
+                        EventEnd::Quarantined { .. } => {
+                            assert!(outstanding.is_some(), "the owner remains quarantined")
+                        }
+                    }
+                    for _ in 0..2 {
+                        assert_eq!(ready(phase.events.next_event()), Err(end));
+                    }
+                    end
+                };
+                // Reborrowing a phase cannot reopen an ended stream.
+                assert_eq!(ready(owner.phase().next_event()), Err(event_end));
+                match event_end {
+                    EventEnd::Quarantined { .. } => Ended::fail_stopped(owner.fail_stop(), ()),
+                    EventEnd::Drained { .. } => {
+                        let owner = owner
+                            .disable(&mut |_| panic!("all terminals were delivered"))
+                            .await
+                            .err()
+                            .expect("ordinary fault stays poisoned");
+                        Ended::uninstall(owner, (), ())
+                    }
+                }
+            },
+        );
+        assert!(matches!(
+            (quarantined, end),
+            (
+                false,
+                PortEnd::Uninstalled {
+                    uninstalled: Uninstalled::Reusable(_),
+                    ..
+                }
+            ) | (
+                true,
+                PortEnd::FailStopped {
+                    outcome: oer_radio_port::Abandon::Unconfirmed(_),
+                    ..
+                }
+            )
+        ));
+    }
 }
 
 /// One running phase of a single-interface port, as [`enabled`] lends it.
@@ -214,7 +393,7 @@ struct Phase<'s, 'a, 'id, const EVENTS: usize> {
     events: &'s mut RuntimeEvents<'a, 'id, Runtime<EVENTS>>,
     control: &'s mut RuntimeControl<'a, Runtime<EVENTS>, Single>,
     client: &'s RuntimeClient<'s, 'id, Runtime<EVENTS>, Single, 0>,
-    seat: &'s mut Seat<'id, Operation>,
+    seat: &'s mut Seat<'id, Operation, Child<Root, 1>>,
 }
 
 /// Install a single-interface radio in a new runtime, configure its
@@ -224,14 +403,15 @@ struct Phase<'s, 'a, 'id, const EVENTS: usize> {
 fn enabled<const EVENTS: usize>(
     scenario: impl for<'s, 'a, 'id> AsyncFnOnce(Phase<'s, 'a, 'id, EVENTS>),
 ) -> (&'static Runtime<EVENTS>, Parts, Vec<Ieee802154PortEvent>) {
-    enabled_with(parts(), scenario)
+    let runtime = runtime::<EVENTS>();
+    enabled_with(runtime, parts(runtime), scenario)
 }
 
 fn enabled_with<const EVENTS: usize>(
+    runtime: &'static Runtime<EVENTS>,
     parts: Parts,
     scenario: impl for<'s, 'a, 'id> AsyncFnOnce(Phase<'s, 'a, 'id, EVENTS>),
 ) -> (&'static Runtime<EVENTS>, Parts, Vec<Ieee802154PortEvent>) {
-    let runtime = runtime::<EVENTS>();
     let mut leftovers = Vec::new();
     let parts = run(
         install::<Single, EVENTS>(runtime, parts),
@@ -244,7 +424,8 @@ fn enabled_with<const EVENTS: usize>(
             let configured = owner.setup().configure(interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let mut phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 scenario(Phase {
                     runtime,
@@ -255,8 +436,15 @@ fn enabled_with<const EVENTS: usize>(
                 })
                 .await;
             }
-            let owner = disabled_owner(owner.disable(&mut |event| leftovers.push(event)).await);
-            owner.uninstall(())
+            let owner = disabled_owner(
+                owner
+                    .disable(&mut |event| {
+                        leftovers.push(event);
+                        core::ops::ControlFlow::Continue(())
+                    })
+                    .await,
+            );
+            oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
     (runtime, parts, leftovers)
@@ -265,13 +453,13 @@ fn enabled_with<const EVENTS: usize>(
 /// The enabled owner; a failed enable fail-stops the port and panics.
 fn enabled_owner<'p, 'id, K: Ieee802154RuntimeCaps, const EVENTS: usize>(
     enabled: Result<
-        Owner<'p, 'id, Backend<K, EVENTS>, oer_ieee802154_port::Enabled>,
-        oer_ieee802154_port::Failed<'p, 'id, Backend<K, EVENTS>>,
+        Owner<'p, 'id, Backend<K, EVENTS>, oer_radio_port::Enabled>,
+        oer_radio_port::Failed<'p, 'id, Backend<K, EVENTS>>,
     >,
-) -> Owner<'p, 'id, Backend<K, EVENTS>, oer_ieee802154_port::Enabled> {
+) -> Owner<'p, 'id, Backend<K, EVENTS>, oer_radio_port::Enabled> {
     match enabled {
         Ok(owner) => owner,
-        Err(oer_ieee802154_port::Failed::Poisoned(poisoned)) => {
+        Err(oer_radio_port::Failed::Poisoned(poisoned)) => {
             let cause = poisoned.cause();
             let _ = poisoned.fail_stop();
             panic!("the enable found the port poisoned: {cause:?}");
@@ -287,7 +475,7 @@ fn enabled_owner<'p, 'id, K: Ieee802154RuntimeCaps, const EVENTS: usize>(
 fn disabled_owner<'p, 'id, K: Ieee802154RuntimeCaps, const EVENTS: usize>(
     disabled: Result<
         Owner<'p, 'id, Backend<K, EVENTS>, Disabled>,
-        oer_ieee802154_port::PoisonedOwner<'p, 'id, Backend<K, EVENTS>>,
+        oer_radio_port::PoisonedOwner<'p, 'id, Backend<K, EVENTS>>,
     >,
 ) -> Owner<'p, 'id, Backend<K, EVENTS>, Disabled> {
     match disabled {
@@ -339,19 +527,17 @@ fn transmission(frame: &[u8], mode: TxMode, retries: u8) -> SupportedTransmit<'_
 }
 
 fn received(event: &Ieee802154PortEvent) -> bool {
-    event.interface.is_none() && matches!(event.event, Ieee802154RadioEvent::Received(_))
+    matches!(event, Ieee802154PortEvent::Received(_))
 }
 
 /// A transmission's terminal for interface 0.
 fn transmit_done(id: oer_ieee802154::RequestId, status: TxStatus) -> Ieee802154PortEvent {
-    Ieee802154PortEvent {
-        interface: Some(Interface::PRIMARY),
-        event: Ieee802154RadioEvent::TransmitDone {
-            id,
-            status,
-            acknowledgement: None,
-            security: None,
-        },
+    Ieee802154PortEvent::TransmitDone {
+        interface: Interface::PRIMARY,
+        id,
+        status,
+        acknowledgement: None,
+        security: None,
     }
 }
 
@@ -360,22 +546,18 @@ fn transmit_done(id: oer_ieee802154::RequestId, status: TxStatus) -> Ieee802154P
 #[test]
 fn a_radio_is_installed_once_and_sleeps_once_enabled() {
     let runtime = runtime::<4>();
-    let backend = install::<Single, 4>(runtime, parts());
-    assert!(
-        runtime
-            .install::<Single>(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_err()
-    );
+    let backend = install::<Single, 4>(runtime, parts(runtime));
+    assert!(runtime.take_queue().is_none());
     assert_eq!(state(runtime), RadioState::Disabled);
-    run(backend, async |owner, _| {
+    let reusable = run(backend, async |owner, _| {
         let owner = enabled_owner(owner.enable().await);
         assert_eq!(state(runtime), RadioState::Resting(RestingState::Sleeping));
         let owner = disabled_owner(owner.disable(&mut |_| panic!("nothing ran")).await);
         assert_eq!(state(runtime), RadioState::Disabled);
-        owner.uninstall(())
+        oer_radio_port::Ended::uninstall(owner, (), ())
     });
-    // The uninstalled runtime installs again.
-    let _ = install::<Single, 4>(runtime, parts());
+    // Ordinary teardown returned permission to reuse this queue.
+    let _ = install::<Single, 4>(runtime, reusable);
 }
 
 #[test]
@@ -384,11 +566,7 @@ fn a_received_frame_arrives_as_an_owned_portable_event() {
         ready(phase.client.receive(channel(15))).unwrap();
         let runtime = phase.runtime;
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
-        let Ok(Ieee802154PortEvent {
-            interface: None,
-            event: Ieee802154RadioEvent::Received(frame),
-        }) = next(phase.events)
-        else {
+        let Ok(Ieee802154PortEvent::Received(frame)) = next(phase.events) else {
             panic!("a frame was received");
         };
         assert_eq!(frame.frame.as_bytes(), MAC);
@@ -472,12 +650,13 @@ fn an_overflowing_queue_reports_the_loss_once() {
 fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
     let runtime = runtime::<4>();
     run(
-        install::<Single, 4>(runtime, parts()),
+        install::<Single, 4>(runtime, parts(runtime)),
         async |mut owner, resources| {
             let configured = owner.setup().configure(resources.interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let mut phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 ready(client.receive(channel(11))).unwrap();
                 for _ in 0..3 {
@@ -494,7 +673,7 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
                 assert_eq!(next(&mut phase.events), Err(EventsLost));
                 assert!(matches!(
                     ready(phase.events.next_event()),
-                    Err(Poisoned {
+                    Err(oer_radio_port::EventEnd::Drained {
                         cause: RadioFault::InvalidEventSequence
                     })
                 ));
@@ -503,7 +682,10 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
                     Err(Poisoned { .. })
                 ));
             }
-            let poisoned = match owner.disable(&mut |_| {}).await {
+            let poisoned = match owner
+                .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                .await
+            {
                 Err(poisoned) => poisoned,
                 Ok(owner) => {
                     let _ = owner.fail_stop();
@@ -511,7 +693,7 @@ fn a_fault_reaches_a_queue_full_of_frames_and_poisons_the_port() {
                 }
             };
             assert_eq!(poisoned.cause(), RadioFault::InvalidEventSequence);
-            poisoned.uninstall(())
+            oer_radio_port::Ended::uninstall(poisoned, (), ())
         },
     );
 }
@@ -531,6 +713,136 @@ fn disable_hands_out_the_queued_frames_and_the_next_install_starts_empty() {
     assert!(runtime.events.take().is_none());
 }
 
+struct RejectDisable {
+    runtime: &'static Runtime<8>,
+    reject_at: usize,
+}
+impl PortBody<Backend<Single, 8>> for RejectDisable {
+    type Output = ();
+    async fn run<'p, 'id>(
+        self,
+        mut owner: Owner<'p, 'id, Backend<Single, 8>, Disabled>,
+        resources: Resources<'id, Single, 8>,
+    ) -> Ended<'id, Backend<Single, 8>, ()> {
+        let RuntimeResources {
+            interfaces,
+            mut operation,
+            ..
+        } = resources;
+        let configured = owner.setup().configure(interfaces.interface);
+        let mut owner = enabled_owner(owner.enable().await);
+        {
+            let phase = owner.phase();
+            let client = phase.clients.client(&configured);
+            ready(client.receive(channel(11))).unwrap();
+            for _ in 0..3 {
+                self.runtime
+                    .model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+            }
+            let permit = ready(client.operation(&mut operation[0]));
+            let _work = client
+                .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                .unwrap();
+        }
+        let mut offered = 0;
+        let poisoned = owner
+            .disable(&mut |terminal| {
+                offered += 1;
+                if offered == self.reject_at + 1 {
+                    core::ops::ControlFlow::Break(terminal)
+                } else {
+                    core::ops::ControlFlow::Continue(())
+                }
+            })
+            .await
+            .err()
+            .expect("a rejected terminal poisons the owner");
+        assert_eq!(offered, self.reject_at + 1);
+        assert_eq!(poisoned.cause(), RadioFault::TerminalRejected);
+        Ended::uninstall(poisoned, (), ())
+    }
+}
+
+#[test]
+fn rejecting_first_or_middle_disable_event_quarantines_the_remaining_queue_and_owners() {
+    for reject_at in [0, 1] {
+        let runtime = runtime::<8>();
+        let mut parts = parts(runtime);
+        parts
+            .engine
+            .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
+                Ieee802154CoexConfig::VENDOR,
+                &CoexPtiTable::VENDOR,
+            )));
+        let backend = install::<Single, 8>(runtime, parts);
+        let end = block_on(run_port(
+            backend.installed(),
+            RejectDisable { runtime, reject_at },
+        ));
+        let oer_radio_port::PortEnd::Uninstalled {
+            uninstalled:
+                Uninstalled::TerminalsQuarantined {
+                    parts,
+                    terminals: receipt,
+                },
+            ..
+        } = end
+        else {
+            panic!("stopped hardware is separate from undelivered owners");
+        };
+        drop(receipt);
+        let (engine, hardware) = parts.into_parts();
+        assert_eq!(
+            engine.state(),
+            oer_espressif_ieee802154_engine::engine::Ieee802154State::Disable
+        );
+        assert_eq!((hardware.txrx_pti, hardware.ack_pti), (3, 3));
+        assert!(
+            runtime
+                .installed
+                .lock(|installed| installed.borrow().is_none())
+        );
+        assert!(runtime.events.owed(|owed| matches!(
+            &owed.held, Some(super::HeldEvent::Rejected { terminal }) if received(terminal)
+        )));
+        assert!(
+            runtime.events.take().is_none(),
+            "rejection prevents later delivery"
+        );
+        let mut frames = 0;
+        let mut terminals = 0;
+        while let Ok(entry) = runtime.events.entries.try_receive() {
+            match entry.event {
+                Ieee802154RadioEvent::Received(_) => frames += 1,
+                Ieee802154RadioEvent::TransmitDone {
+                    status: TxStatus::Aborted,
+                    ..
+                } => terminals += 1,
+                Ieee802154RadioEvent::Lifecycle(_) => (),
+                other => panic!("unexpected remaining event: {other:?}"),
+            }
+        }
+        assert_eq!(frames, 2 - reject_at);
+        assert_eq!(terminals, 1);
+        assert!(runtime.take_queue().is_none());
+        // Hardware can move to fresh storage. A fresh claim cannot unlock
+        // the old queue, even when supplied to the wrong runtime explicitly.
+        let fresh = self::runtime::<8>();
+        let fresh_parts =
+            Ieee802154RuntimeParts::new(engine, hardware, fresh.take_queue().unwrap());
+        let Err(fresh_parts) =
+            runtime.install::<Single>(fresh_parts, FixedRandom, Ieee802154PibDefaults::default())
+        else {
+            panic!("a foreign claim cannot reuse the quarantined queue");
+        };
+        assert!(
+            fresh
+                .install::<Single>(fresh_parts, FixedRandom, Ieee802154PibDefaults::default())
+                .is_ok()
+        );
+    }
+}
+
 /// The disable ends the transmission in flight with its aborted terminal,
 /// takes its permit back, and the enabled port that follows admits an
 /// operation at once.
@@ -538,7 +850,7 @@ fn disable_hands_out_the_queued_frames_and_the_next_install_starts_empty() {
 fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
     let runtime = runtime::<4>();
     run(
-        install::<Single, 4>(runtime, parts()),
+        install::<Single, 4>(runtime, parts(runtime)),
         async |mut owner, resources| {
             let RuntimeResources {
                 interfaces,
@@ -548,7 +860,8 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
             let configured = owner.setup().configure(interfaces.interface);
             let mut owner = enabled_owner(owner.enable().await);
             let id = {
-                let phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 let permit = ready(client.operation(&mut operation[0]));
                 client
@@ -557,20 +870,32 @@ fn disable_ends_the_operation_in_flight_and_enable_admits_again() {
                     .id()
             };
             let mut leftovers = Vec::new();
-            let owner = disabled_owner(owner.disable(&mut |event| leftovers.push(event)).await);
+            let owner = disabled_owner(
+                owner
+                    .disable(&mut |event| {
+                        leftovers.push(event);
+                        core::ops::ControlFlow::Continue(())
+                    })
+                    .await,
+            );
             assert_eq!(leftovers, [transmit_done(id, TxStatus::Aborted)]);
             assert_eq!(state(runtime), RadioState::Disabled);
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let client = phase.clients.client(&configured);
                 let permit = ready(client.operation(&mut operation[0]));
                 let _work = client
                     .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
                     .unwrap();
             }
-            let owner = disabled_owner(owner.disable(&mut |_| {}).await);
-            owner.uninstall(())
+            let owner = disabled_owner(
+                owner
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await,
+            );
+            oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
 }
@@ -606,14 +931,15 @@ fn received_frames_leave_the_operation_its_terminal_slot() {
 /// and return to the disabled foundation image when the parts leave.
 #[test]
 fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
-    let mut parts = parts();
+    let runtime = runtime::<4>();
+    let mut parts = parts(runtime);
     parts
         .engine
         .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
             Ieee802154CoexConfig::VENDOR,
             &CoexPtiTable::VENDOR,
         )));
-    let (_, parts, _) = enabled_with::<4>(parts, async |phase| {
+    let (_, parts, _) = enabled_with::<4>(runtime, parts, async |phase| {
         let runtime = phase.runtime;
         runtime.with_model(|hardware| assert_eq!((hardware.txrx_pti, hardware.ack_pti), (1, 8)));
         // A new table snapshot reaches the next scene switch.
@@ -667,10 +993,7 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
         runtime.model_interrupt(None, &[Ieee802154Event::AckTxDone]);
         assert!(matches!(
             next(phase.events),
-            Ok(Ieee802154PortEvent {
-                event: Ieee802154RadioEvent::Received(frame),
-                ..
-            }) if frame.frame.as_bytes() == mac
+            Ok(Ieee802154PortEvent::Received(frame)) if frame.frame.as_bytes() == mac
         ));
     });
 }
@@ -830,6 +1153,7 @@ fn txrx_statistics_are_collected_on_request() {
 fn interface_keys_belong_to_their_interface() {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    let runtime = runtime::<4>();
     let parts = Ieee802154RuntimeParts {
         engine: Ieee802154Engine::new_multipan(
             buffers,
@@ -838,8 +1162,8 @@ fn interface_keys_belong_to_their_interface() {
             Ieee802154Interfaces::new(2).unwrap(),
         ),
         hardware: Ieee802154LlModel::default(),
+        queue: runtime.take_queue().unwrap(),
     };
-    let runtime = runtime::<4>();
     run(
         install::<Multipan, 4>(runtime, parts),
         async |mut owner, resources| {
@@ -851,7 +1175,8 @@ fn interface_keys_belong_to_their_interface() {
             }));
             let mut owner = enabled_owner(owner.enable().await);
             {
-                let phase = owner.split();
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
                 let first = phase.clients.client(&zero);
                 let second = phase.clients.client(&one);
                 second.set_mac_keys(1, [1; 16], [2; 16], [3; 16]);
@@ -871,10 +1196,14 @@ fn interface_keys_belong_to_their_interface() {
                 second.remove_mac_keys();
                 assert_eq!(second.frame_counter(), None);
             }
-            let mut owner = disabled_owner(owner.disable(&mut |_| {}).await);
+            let mut owner = disabled_owner(
+                owner
+                    .disable(&mut |_| core::ops::ControlFlow::Continue(()))
+                    .await,
+            );
             let _ = owner.setup().remove(one);
             let _ = owner.setup().remove(zero);
-            owner.uninstall(())
+            oer_radio_port::Ended::uninstall(owner, (), ())
         },
     );
 }
@@ -1082,4 +1411,368 @@ fn a_fault_beyond_the_reserved_one_never_overruns_the_queue() {
     assert_eq!(queue.take(), Some(Ok(fault())));
     assert_eq!(queue.take(), Some(Err(EventsLost)));
     assert_eq!(queue.take(), None);
+}
+
+#[test]
+fn accounting_violation_during_disable_retains_terminals_but_returns_stopped_hardware() {
+    let runtime = runtime::<8>();
+    let end = run_end(
+        install::<Single, 8>(runtime, parts(runtime)),
+        async |mut owner, resources| {
+            let RuntimeResources {
+                interfaces,
+                mut operation,
+                ..
+            } = resources;
+            let configured = owner.setup().configure(interfaces.interface);
+            let mut owner = enabled_owner(owner.enable().await);
+            {
+                let phase = owner.phase();
+                let client = phase.clients.client(&configured);
+                let permit = client.operation(&mut operation[0]).await;
+                let _work = client
+                    .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                    .unwrap();
+                assert!(runtime.events.push(Ieee802154RadioEvent::EnergyScanDone {
+                    id: oer_ieee802154::RequestId::new(u32::MAX),
+                    energy_dbm: -30,
+                }));
+            }
+            let owner = owner
+                .disable(&mut |_| panic!("foreign identity stops delivery"))
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(owner.cause(), RadioFault::AccountingViolation);
+            Ended::uninstall(owner, (), ())
+        },
+    );
+    let oer_radio_port::PortEnd::Uninstalled {
+        uninstalled: Uninstalled::TerminalsQuarantined { parts, terminals },
+        ..
+    } = end
+    else {
+        panic!("confirmed stop is independent of accounting corruption")
+    };
+    let (engine, _hardware) = parts.into_parts();
+    assert_eq!(
+        engine.state(),
+        oer_espressif_ieee802154_engine::engine::Ieee802154State::Disable
+    );
+    drop(terminals);
+    assert!(
+        runtime
+            .installed
+            .lock(|installed| installed.borrow().is_none())
+    );
+    assert!(
+        runtime
+            .events
+            .owed(|owed| matches!(owed.held, Some(super::HeldEvent::AccountingViolation(_))))
+    );
+    assert!(runtime.events.take().is_none());
+    assert_eq!(
+        runtime.events.entries.len(),
+        1,
+        "the real TX terminal remains retained"
+    );
+    assert!(runtime.take_queue().is_none());
+}
+
+#[test]
+fn a_foreign_terminal_poisons_without_releasing_the_admitted_permit() {
+    use core::cell::Cell;
+    use std::rc::Rc;
+
+    struct RouteOwner(Rc<Cell<usize>>);
+    impl super::Ieee802154RouteDetach for RouteOwner {
+        fn detach(&mut self) {}
+    }
+    impl Drop for RouteOwner {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    let runtime = runtime::<8>();
+    let drops = Rc::new(Cell::new(0));
+    let end = run_end(
+        install::<Single, 8>(runtime, parts(runtime)).with_route(RouteOwner(drops.clone())),
+        async |mut owner, resources| {
+            let RuntimeResources {
+                interfaces,
+                mut operation,
+                ..
+            } = resources;
+            let configured = owner.setup().configure(interfaces.interface);
+            let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
+            {
+                let mut phase_loan = owner.phase();
+                let phase = &mut *phase_loan;
+                let client = phase.clients.client(&configured);
+                let permit = client.operation(&mut operation[0]).await;
+                let token = client
+                    .transmit(permit, transmission(&MAC, TxMode::Direct, 0))
+                    .unwrap();
+                assert!(runtime.events.push(Ieee802154RadioEvent::EnergyScanDone {
+                    id: oer_ieee802154::RequestId::new(u32::MAX),
+                    energy_dbm: -30,
+                }));
+                // A valid terminal behind the corrupt one must also stay
+                // retained: delivery cannot resume with the next identity.
+                assert!(runtime.events.push(Ieee802154RadioEvent::TransmitDone {
+                    id: token.id(),
+                    status: TxStatus::Success,
+                    acknowledgement: None,
+                    security: None,
+                }));
+                assert!(matches!(
+                    ready(phase.events.next_event()),
+                    Err(oer_radio_port::EventEnd::Quarantined {
+                        cause: RadioFault::AccountingViolation
+                    })
+                ));
+                assert!(
+                    !runtime
+                        .abandoned
+                        .load(core::sync::atomic::Ordering::Acquire)
+                );
+                assert_eq!(
+                    runtime.poisoned(),
+                    Err(Poisoned {
+                        cause: RadioFault::AccountingViolation
+                    })
+                );
+                assert_eq!(runtime.events.entries.len(), 1);
+                for _ in 0..2 {
+                    assert!(matches!(
+                        ready(phase.events.next_event()),
+                        Err(oer_radio_port::EventEnd::Quarantined {
+                            cause: RadioFault::AccountingViolation
+                        })
+                    ));
+                }
+                let mut waiting = pin!(client.operation(&mut operation[0]));
+                assert!(
+                    poll_once(waiting.as_mut()).is_pending(),
+                    "a foreign terminal must not release the held permit"
+                );
+            }
+            assert!(matches!(
+                ready(owner.phase().next_event()),
+                Err(oer_radio_port::EventEnd::Quarantined {
+                    cause: RadioFault::AccountingViolation
+                })
+            ));
+            Ended::fail_stopped(owner.fail_stop(), ())
+        },
+    );
+    assert!(matches!(end, oer_radio_port::PortEnd::FailStopped { .. }));
+    assert_eq!(drops.get(), 0);
+    drop(end);
+    assert_eq!(drops.get(), 0, "quarantine never drops the hardware owner");
+    assert!(
+        runtime
+            .installed
+            .lock(|installed| installed.borrow().is_some())
+    );
+    assert_eq!(runtime.events.entries.len(), 1);
+    runtime.events.owed(|owed| assert!(matches!(
+        &owed.held,
+        Some(super::HeldEvent::AccountingViolation(Ieee802154RadioEvent::EnergyScanDone { id, .. }))
+        if *id == oer_ieee802154::RequestId::new(u32::MAX)
+    )));
+}
+
+enum AbandonBody {
+    FailStop,
+    Drop,
+    Wait,
+}
+impl PortBody<Backend<Single, 4>> for AbandonBody {
+    type Output = ();
+    async fn run<'p, 'id>(
+        self,
+        owner: Owner<'p, 'id, Backend<Single, 4>, Disabled>,
+        _: Resources<'id, Single, 4>,
+    ) -> Ended<'id, Backend<Single, 4>, ()> {
+        match self {
+            Self::FailStop => {
+                let proof = owner.fail_stop();
+                assert!(matches!(
+                    proof.outcome(),
+                    oer_radio_port::Abandon::Unconfirmed(_)
+                ));
+                Ended::fail_stopped(proof, ())
+            }
+            Self::Drop => {
+                drop(owner);
+                core::future::pending().await
+            }
+            Self::Wait => {
+                core::future::pending::<()>().await;
+                Ended::uninstall(owner, (), ())
+            }
+        }
+    }
+}
+
+#[test]
+fn abandonment_never_enters_the_lock_held_by_an_isr() {
+    for fail_stop in [false, true] {
+        let runtime = runtime::<4>();
+        let backend = install::<Single, 4>(runtime, parts(runtime));
+        runtime.installed.lock(|installed| {
+            // An entered ISR owns this mutable state. Emergency poisoning,
+            // retirement and quarantined detach must not enter it again.
+            let entered_isr = installed.borrow_mut();
+            let body = if fail_stop {
+                AbandonBody::FailStop
+            } else {
+                AbandonBody::Drop
+            };
+            let end = block_on(run_port(backend.installed(), body));
+            assert!(matches!(
+                (fail_stop, end),
+                (
+                    true,
+                    oer_radio_port::PortEnd::FailStopped { output: (), .. }
+                ) | (false, oer_radio_port::PortEnd::Abandoned { .. })
+            ));
+            assert!(entered_isr.is_some(), "unconfirmed backing stays installed");
+            assert_eq!(
+                runtime.poisoned(),
+                Err(Poisoned {
+                    cause: RadioFault::StateLost
+                })
+            );
+            assert!(runtime.take_queue().is_none());
+        });
+    }
+}
+
+#[test]
+fn cancellation_quarantines_without_entering_the_isr_lock() {
+    let runtime = runtime::<4>();
+    let backend = install::<Single, 4>(runtime, parts(runtime));
+    let mut port = Box::pin(run_port(backend.installed(), AbandonBody::Wait));
+    assert!(
+        port.as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    runtime.installed.lock(|installed| {
+        let entered_isr = installed.borrow_mut();
+        drop(port);
+        assert!(entered_isr.is_some());
+        assert_eq!(
+            runtime.poisoned(),
+            Err(Poisoned {
+                cause: RadioFault::StateLost
+            })
+        );
+    });
+}
+
+#[test]
+fn poisoned_uninstall_keeps_backing_without_taking_the_isr_lock() {
+    let runtime = runtime::<4>();
+    let backend = install::<Single, 4>(runtime, parts(runtime));
+    runtime.installed.lock(|installed| {
+        let entered_isr = installed.borrow_mut();
+        runtime
+            .abandoned
+            .store(true, core::sync::atomic::Ordering::Release);
+        let Uninstalled::Quarantined(receipt) = backend.uninstall_unused() else {
+            panic!("poisoned backing must never become reusable");
+        };
+        drop(receipt);
+        assert!(entered_isr.is_some());
+        assert!(
+            runtime
+                .abandoned
+                .load(core::sync::atomic::Ordering::Acquire)
+        );
+    });
+    assert!(runtime.take_queue().is_none());
+}
+
+/// The runner owns neither the delay nor the transmission. Cancel at every
+/// kind of suspension (idle, backoff and retry), before and after polling;
+/// disabling and uninstalling must still return the admitted operation.
+#[test]
+fn cancelling_driver_at_each_delay_wait_preserves_retire_and_uninstall() {
+    for polls in 0..=4 {
+        for retry in [false, true] {
+            let (runtime, parts, terminals) = enabled::<4>(async |phase| {
+                let runtime = phase.runtime;
+                let mut idle = Box::pin(runtime.run());
+                for _ in 0..polls {
+                    assert!(poll_once(idle.as_mut()).is_pending());
+                }
+                drop(idle);
+
+                let mut frame = MAC;
+                let mode = if retry {
+                    frame[0] |= 0x20;
+                    TxMode::Direct
+                } else {
+                    TxMode::CsmaCa { max_backoffs: 3 }
+                };
+                let permit = ready(phase.client.operation(phase.seat));
+                let _work = phase
+                    .client
+                    .transmit(permit, transmission(&frame, mode, u8::from(retry)))
+                    .unwrap();
+                if retry {
+                    runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
+                    runtime.with_model(|hardware| {
+                        hardware.tx_abort = Ieee802154TxAbortReasonObservation::Named(
+                            Ieee802154TxAbortReason::RxAckTimeout,
+                        );
+                    });
+                    runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
+                }
+                let deadline = runtime.backoff_until.lock(core::cell::Cell::get);
+                assert!(deadline.is_some());
+                let mut delayed = Box::pin(runtime.run());
+                for _ in 0..polls {
+                    assert!(poll_once(delayed.as_mut()).is_pending());
+                }
+                let before_cancel = runtime.backoff_until.lock(core::cell::Cell::get);
+                drop(delayed);
+                // A zero-delay retry may already have progressed in its
+                // first poll; cancellation preserves exactly that progress.
+                assert_eq!(
+                    runtime.backoff_until.lock(core::cell::Cell::get),
+                    before_cancel
+                );
+                if !retry {
+                    assert_eq!(before_cancel, deadline);
+                }
+                // Cancelling the delay must neither forget nor duplicate the
+                // work. Resume once, then cancel again in the following idle.
+                runtime.timer.advance(Duration::from_millis(50)).unwrap();
+                let mut resumed = Box::pin(runtime.run());
+                assert!(poll_once(resumed.as_mut()).is_pending());
+                drop(resumed);
+                assert_eq!(runtime.backoff_until.lock(core::cell::Cell::get), None);
+                assert_eq!(
+                    runtime.with_model(|hardware| hardware.command),
+                    Some(if retry {
+                        Ieee802154LlCommand::TxStart
+                    } else {
+                        Ieee802154LlCommand::CcaTxStart
+                    }),
+                );
+                // Leave work in flight: disable must return its terminal.
+            });
+            assert_eq!(terminals.len(), 1);
+            let backend = install::<Single, 4>(runtime, parts);
+            assert!(matches!(
+                backend.uninstall_unused(),
+                Uninstalled::Reusable(_)
+            ));
+        }
+    }
 }

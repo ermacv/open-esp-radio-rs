@@ -2,38 +2,32 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-//! The vocabulary every radio port shares.
+//! Shared radio capacity, lifecycle and operation contracts.
 //!
-//! A radio port (`docs/architecture.md`, "Radio ports") is the contract
-//! between the portable logic of one radio protocol and the backend that
-//! executes it. Each radio block owns its port's lifecycle (its owner, body,
-//! backend and joined driver: `oer-ieee80211-port`, `oer-ieee802154-port`,
-//! `oer-bluetooth-port`); this package declares only what they share:
-//!
-//! - [`pool`]: capacity as branded tokens: [`branded`] runs an install with
-//!   the [`Mint`] of a fresh brand, which makes its [`Slot`]s, taken
-//!   synchronously, [`Permit`]s, awaited from a [`PermitPool`] in its
-//!   documented order, and [`Seat`]s, the places in a pool's [`Line`] its
-//!   takers wait with.
-//! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
-//!   carrying the backend's cause; every refusal is the inner `Err`.
-//! - [`EventsLost`]: the one loss marker, with its ordering rule.
-//! - [`ClockInfo`]: the resolution of a port's radio clock and its
-//!   [`ClockRelation`] to the image's monotonic time, if one is known.
-//! - [`ClockRelation`], [`RelationSample`], [`Generation`] and [`Stamp`]:
-//!   the one relation between two clock domains and its projection.
-//!
-//! This package owns no state and never waits.
+//! [`run_port`] consumes an [`Installed`] backend and its independent driver.
+//! Its [`Owner`] borrows the backend and consumes each typestate transition.
+//! [`Mint::into_pools`] issues each installation's complete capacity once.
+//! The driver owns only unbranded state: queues containing branded slots and
+//! in-flight work belong in [`PortBackend::Held`], borrowed by the driver.
+//! See [`lifecycle`] for retirement, poisoning and cancellation.
 
 #[cfg(any(test, all(feature = "test-support", not(target_os = "none"))))]
 extern crate std;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
+pub mod lifecycle;
 pub mod pool;
 mod relation;
+mod work;
 
-pub use pool::{Line, Mint, Permit, PermitPool, Seat, Slot, branded};
+pub use lifecycle::*;
+pub use work::*;
+
+pub use pool::{
+    Child, Line, Mint, Permit, PermitPool, PermitSupply, PermitTokens, Permits, PoolBuilder,
+    PoolPath, PoolSet, Pools, Root, Seat, Slot, Slots, branded,
+};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,
@@ -42,6 +36,40 @@ pub use relation::{
 /// The result of a port call: `Ok(Ok(_))` served, `Ok(Err(refusal))`
 /// refused with nothing changed, `Err(Poisoned)` a poisoned backend.
 pub type PortResult<T, R, C> = Result<Result<T, R>, Poisoned<C>>;
+
+/// The final end of an installation's event stream.
+///
+/// This is data, carrying only the backend's cause. It grants no hardware
+/// authority and carries no owners or affine proofs. Undelivered owners stay
+/// in the [`Quarantined`] retained by [`PortEnd`]. Every later
+/// [`PortPhase::next_event`] returns the same variant and cause.
+///
+/// | Backend outcome | Event-stream end |
+/// | --- | --- |
+/// | [`Abandon::Stopped`] or an ordinary fault | `Drained`, after draining all terminals |
+/// | [`Abandon::Unconfirmed`] | `Quarantined`, without waiting or acquiring the ISR's mutex |
+/// | Terminal accounting violation | `Quarantined`, with the admitted owners retained |
+///
+/// Accounting quarantine does not imply [`Abandon::Unconfirmed`]. The
+/// subsequent abandonment can still prove [`Abandon::Stopped`]; delivery
+/// accounting and hardware quiescence are independent outcomes.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EventEnd<C> {
+    /// Every terminal of admitted work has been delivered through
+    /// [`PortPhase::next_event`]. A missing terminal violates the backend
+    /// contract; a body can detect it from its outstanding work.
+    Drained {
+        /// Why the event stream ended.
+        cause: C,
+    },
+    /// Undelivered terminals and their owners remain quarantined in
+    /// [`PortEnd`]. The body must fail-stop without attempting further
+    /// draining or ordinary teardown.
+    Quarantined {
+        /// Why the event stream ended.
+        cause: C,
+    },
+}
 
 /// The backend dropped events it could not hold.
 ///
@@ -60,10 +88,9 @@ pub struct EventsLost;
 
 /// A poisoned backend: its state is unknown and only a reset restores it.
 ///
-/// It is the only outer error of a port call. A port's event consumer
-/// returns it after every event produced before the fault and again at
-/// every later call, so a consumer that awaits events learns of the fault;
-/// every other call returns it at once. `cause` is the backend's own
+/// It is the outer error of commands and clock calls, returned at once.
+/// The event consumer instead reports [`EventEnd`] to distinguish drained
+/// work from quarantined owners. `cause` is the backend's own
 /// account of the fault, which portable code passes on without
 /// interpreting it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

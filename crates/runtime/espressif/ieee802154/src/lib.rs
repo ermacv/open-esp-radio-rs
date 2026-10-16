@@ -29,12 +29,39 @@
 //! place of the first dropped frame.
 //!
 //! A radio fault poisons the port: the events consumer hands out the
-//! failed operation's terminal and the events before it, then `Poisoned`
-//! at every later call.
+//! failed operation's terminal and the events before it, then
+//! `EventEnd::Drained` at every later call. An unconfirmed abandonment
+//! instead ends `Quarantined` before any event-queue or ISR mutex; unread
+//! owners stay in `PortEnd`. Commands still return `Poisoned`.
+//! A foreign terminal ends delivery with `Quarantined` and
+//! [`RadioFault::AccountingViolation`], retaining that terminal, the
+//! remaining queue and the real operation permit. This does not publish
+//! an abandonment outcome; the core subsequently attempts to stop hardware.
 //!
 //! Shared-PHY tracking runs with the MAC receiving, as ESP-IDF's
 //! `phy_common.c` does: the runtime never pauses for it, and an operation
 //! that loses RF ends with its ordinary terminal event.
+//!
+//! Abandonment publishes permanent logical poisoning atomically. It never
+//! enters the mutex that contains the ISR and returns `Unconfirmed`: neither
+//! hardware stopping nor IRQ exclusion is proved. The installation and its
+//! backing remain quarantined until chip reset. `Uninstalled::Reusable`
+//! returns ordinary teardown's owners; `Uninstalled::Quarantined` retains
+//! the poisoned runtime without taking its lock or touching hardware.
+//! A disable sink can return a terminal with `ControlFlow::Break`. The
+//! runtime stops delivery and publishes `TerminalRejected`. Disable has
+//! already stopped TX/RX: it clears every interface's wish and applied RX
+//! state even on rejection. Uninstall restores PTIs and disables the engine,
+//! returning `Uninstalled::TerminalsQuarantined` with [`MacStoppedParts`].
+//! Only undelivered terminals, their queue and pending permits remain in the
+//! shared `Quarantined`; composition releases clocks and PHY normally.
+//!
+//! [`RuntimeQueue`] is an affine claim on one static runtime's event storage.
+//! Claim it once through [`Ieee802154Runtime::take_queue`] and pass it to
+//! [`Ieee802154RuntimeParts::new`]. Ordinary uninstall returns the claim;
+//! terminal quarantine does not. Stopped hardware requires a new runtime
+//! and its fresh queue before another install. A foreign claim cannot unlock
+//! the old queue. No allocation or additional ISR lock is introduced.
 
 #[cfg(test)]
 extern crate std;
@@ -45,6 +72,7 @@ mod trace;
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use embassy_futures::select::{Either, select};
@@ -244,11 +272,76 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
     pub engine: Ieee802154Engine<'storage>,
     /// Register access.
     pub hardware: H,
+    queue: RuntimeQueue,
+}
+
+/// Affine permission to use one runtime's event storage.
+///
+/// Only [`Ieee802154Runtime::take_queue`] creates this permission, once for
+/// each runtime. Ordinary uninstall returns it with the hardware. A rejected
+/// terminal retains it permanently: stopped hardware alone cannot reinstall
+/// the old queue.
+#[must_use = "retain the exclusive queue claim through install and teardown"]
+pub struct RuntimeQueue {
+    claimed: &'static AtomicBool,
+}
+
+impl<'storage, H> Ieee802154RuntimeParts<'storage, H> {
+    /// Combine hardware with exclusive permission to use its runtime queue.
+    pub fn new(engine: Ieee802154Engine<'storage>, hardware: H, queue: RuntimeQueue) -> Self {
+        Self {
+            engine,
+            hardware,
+            queue,
+        }
+    }
+
+    /// Separate the hardware and the permission returned by ordinary teardown.
+    pub fn into_parts(self) -> (Ieee802154Engine<'storage>, H, RuntimeQueue) {
+        (self.engine, self.hardware, self.queue)
+    }
+}
+
+/// Hardware after MAC teardown, without permission to reuse the old queue.
+///
+/// TX/RX have stopped, `mac_deinit` has restored the disabled PTIs and
+/// `engine.disable` has completed. Composition still owns the modem clocks
+/// and shared PHY membership and releases them through its `System::stop`.
+#[must_use = "return stopped MAC owners to composition for clock and PHY release"]
+pub struct MacStoppedParts<'storage, H> {
+    engine: Ieee802154Engine<'storage>,
+    hardware: H,
+}
+
+impl<'storage, H> MacStoppedParts<'storage, H> {
+    /// Return the stopped hardware, without the quarantined queue's permission.
+    pub fn into_parts(self) -> (Ieee802154Engine<'storage>, H) {
+        (self.engine, self.hardware)
+    }
+}
+
+/// Whether teardown returned reusable owners, stopped hardware with retained terminals, or a poisoned installation.
+#[must_use = "retain stopped hardware and every terminal or installation quarantine"]
+pub enum Uninstalled<P, Stopped, S> {
+    /// Ordinary teardown completed and returned its owners.
+    Reusable(P),
+    /// Hardware completed teardown; only undelivered terminals and their
+    /// queue remain quarantined. Reinstallation needs fresh queue storage.
+    TerminalsQuarantined {
+        /// Stopped hardware for composition to release clocks and PHY.
+        parts: Stopped,
+        /// Undelivered terminals; destroying the receipt releases nothing.
+        terminals: oer_radio_port::Quarantined<S>,
+    },
+    /// The installation remains poisoned until chip reset. Destroying this
+    /// receipt neither releases its backing nor performs hardware teardown.
+    Quarantined(oer_radio_port::Quarantined<S>),
 }
 
 struct Installed<'storage, H, R> {
     radio: Ieee802154Radio<'storage, R>,
     hardware: H,
+    queue: RuntimeQueue,
     /// The enhanced-ACK generator while generation is off: it keeps the
     /// header IEs and probing initiators set meanwhile, which go out once
     /// generation is on again.
@@ -270,8 +363,18 @@ struct Owed {
     /// The fault that may end the enabled period, reserved by `enable`;
     /// `disable` gives its slot back.
     fault: bool,
-    /// An event taken after the loss it reported.
-    held: Option<Ieee802154RadioEvent>,
+    /// The front event after a loss, or the terminal a disable sink rejected.
+    held: Option<HeldEvent>,
+}
+
+enum HeldEvent {
+    AfterLoss(Ieee802154RadioEvent),
+    /// A foreign terminal stops delivery without releasing the real permit.
+    AccountingViolation(Ieee802154RadioEvent),
+    /// Kept with the poisoned runtime until chip reset, never re-delivered.
+    Rejected {
+        terminal: Ieee802154PortEvent,
+    },
 }
 
 impl Owed {
@@ -380,15 +483,24 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
 
     fn take(&self) -> Option<Result<Ieee802154RadioEvent, EventsLost>> {
         self.owed(|owed| {
-            if let Some(event) = owed.held.take() {
-                return Some(Ok(event));
+            match owed.held.take() {
+                Some(HeldEvent::AfterLoss(event)) => return Some(Ok(event)),
+                Some(HeldEvent::Rejected { terminal }) => {
+                    owed.held = Some(HeldEvent::Rejected { terminal });
+                    return None;
+                }
+                Some(HeldEvent::AccountingViolation(event)) => {
+                    owed.held = Some(HeldEvent::AccountingViolation(event));
+                    return None;
+                }
+                None => (),
             }
             match self.entries.try_receive() {
                 Ok(Entry {
                     lost_before: true,
                     event,
                 }) => {
-                    owed.held = Some(event);
+                    owed.held = Some(HeldEvent::AfterLoss(event));
                     Some(Err(EventsLost))
                 }
                 Ok(Entry { event, .. }) => Some(Ok(event)),
@@ -434,6 +546,7 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize
     timer: T,
     installed: Mutex<M, RefCell<Option<Installed<'storage, H, R>>>>,
     events: EventQueue<M, EVENTS>,
+    queue_claimed: AtomicBool,
     /// When the running backoff or retry delay ends.
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
     /// Raised when a delay starts, so an awaiting consumer rearms.
@@ -442,6 +555,8 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize
     next_id: Mutex<M, Cell<u32>>,
     /// The radio fault that poisoned the port.
     fault: Mutex<M, Cell<Option<RadioFault>>>,
+    /// Permanent logical poisoning; emergency entry never takes the ISR lock.
+    abandoned: AtomicBool,
 }
 
 impl<
@@ -478,10 +593,12 @@ impl<
             timer,
             installed: Mutex::new(RefCell::new(None)),
             events: EventQueue::new(),
+            queue_claimed: AtomicBool::new(false),
             backoff_until: Mutex::new(Cell::new(None)),
             backoff_started: Signal::new(),
             next_id: Mutex::new(Cell::new(1)),
             fault: Mutex::new(Cell::new(None)),
+            abandoned: AtomicBool::new(false),
         }
     }
 
@@ -490,6 +607,20 @@ impl<
     /// OpenThread's `otPlatRadioGetNow`.
     pub const fn clock(&self) -> &T {
         &self.timer
+    }
+
+    /// Claim this runtime's event storage exactly once.
+    ///
+    /// Keep the returned permission with the hardware across ordinary
+    /// uninstall/install cycles. If terminals are quarantined, use a new
+    /// runtime and its fresh queue; this runtime never issues another claim.
+    pub fn take_queue(&'static self) -> Option<RuntimeQueue> {
+        self.queue_claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| RuntimeQueue {
+                claimed: &self.queue_claimed,
+            })
     }
 
     /// Start the timer of a transmission's backoff or retry delay, if one is
@@ -514,32 +645,43 @@ impl<
     ///
     /// Returns the installed radio as the port's backend, with the
     /// capabilities marker `K` its composition names; the composition hands
-    /// it to `run_port`, whose end returns the engine and the hardware.
+    /// it to `run_port`, whose end returns reusable owners or quarantine.
+    /// Both the runtime and DMA backing have static storage so cancellation
+    /// and forgotten owners cannot release hardware-reachable memory.
     ///
     /// # Errors
     ///
-    /// Returns the parts unchanged if a radio is already installed.
+    /// Returns the parts unchanged if a radio is already installed or the
+    /// queue claim belongs to another runtime.
     #[allow(
         clippy::result_large_err,
         clippy::type_complexity,
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
     pub fn install<K>(
-        &self,
+        &'static self,
         mut parts: Ieee802154RuntimeParts<'storage, H>,
         random: R,
         defaults: Ieee802154PibDefaults,
     ) -> Result<
-        Ieee802154RuntimeBackend<'_, 'storage, K, M, H, T, R, EVENTS>,
+        Ieee802154RuntimeBackend<'static, 'storage, K, M, H, T, R, EVENTS>,
         Ieee802154RuntimeParts<'storage, H>,
-    > {
+    >
+    where
+        'storage: 'static,
+    {
+        if self.abandoned.load(Ordering::Acquire)
+            || !core::ptr::eq(parts.queue.claimed, &self.queue_claimed)
+        {
+            return Err(parts);
+        }
         #[allow(
             clippy::result_large_err,
             reason = "the no-alloc runtime returns the unconsumed owners by value"
         )]
         let install = |installed: &RefCell<Option<Installed<'storage, H, R>>>| {
             let mut installed = installed.borrow_mut();
-            if installed.is_some() {
+            if self.abandoned.load(Ordering::Acquire) || installed.is_some() {
                 return Err(parts);
             }
             parts.engine.enable();
@@ -547,6 +689,7 @@ impl<
             *installed = Some(Installed {
                 radio: Ieee802154Radio::new(parts.engine, random),
                 hardware: parts.hardware,
+                queue: parts.queue,
                 parked_ack: None,
             });
             Ok(())
@@ -616,13 +759,30 @@ impl<
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
     /// stop the operation in flight, return the MAC's coexistence PTIs to
     /// the disabled foundation image, and disable and return the engine and
-    /// hardware. The port's stream ends here: its undelivered events and
-    /// the terminals it owed are discarded, so the next port starts empty.
-    fn uninstall(&self) -> Ieee802154RuntimeParts<'storage, H> {
-        let parts = self.installed.lock(|installed| {
+    /// hardware. Ordinary teardown clears the ended port's stream, so the
+    /// next install starts empty. Rejected terminals retain only their queue
+    /// and return stopped MAC owners. Corrupt terminal accounting also
+    /// retains the queue; it does not revoke a completed hardware stop.
+    /// Unconfirmed abandonment retains the complete installation instead.
+    fn uninstall(
+        &self,
+    ) -> Uninstalled<Ieee802154RuntimeParts<'storage, H>, MacStoppedParts<'storage, H>, &Self> {
+        if self.abandoned.load(Ordering::Acquire) {
+            // An ISR may still own the engine's lock. Leave both engine and
+            // hardware installed; no quarantine path may take that lock.
+            return Uninstalled::Quarantined(oer_radio_port::Quarantined::new(self));
+        }
+        let retained_terminals = self.events.owed(|owed| {
+            matches!(
+                owed.held,
+                Some(HeldEvent::Rejected { .. } | HeldEvent::AccountingViolation(_))
+            )
+        });
+        let (engine, hardware, queue) = self.installed.lock(|installed| {
             let Installed {
                 mut radio,
                 mut hardware,
+                queue,
                 ..
             } = installed.borrow_mut().take().expect(INSTALLED);
             let mut sink = QueueSink {
@@ -633,11 +793,20 @@ impl<
             let mut engine = radio.into_engine();
             engine.mac_deinit(&mut hardware);
             engine.disable();
-            Ieee802154RuntimeParts { engine, hardware }
+            (engine, hardware, queue)
         });
-        self.events.clear();
         self.backoff_until.lock(|backoff| backoff.set(None));
-        parts
+        if retained_terminals {
+            // Permission to reuse this queue is retained with its unread
+            // owners. Neither dropping this claim nor the receipt clears it.
+            drop(oer_radio_port::Quarantined::new(queue));
+            return Uninstalled::TerminalsQuarantined {
+                parts: MacStoppedParts { engine, hardware },
+                terminals: oer_radio_port::Quarantined::new(self),
+            };
+        }
+        self.events.clear();
+        Uninstalled::Reusable(Ieee802154RuntimeParts::new(engine, hardware, queue))
     }
 
     /// Apply one portable setting to the installed radio.

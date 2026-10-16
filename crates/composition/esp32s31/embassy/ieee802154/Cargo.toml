@@ -14,7 +14,6 @@ oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-espressif-ieee802154-engine = { path = "../../../../hardware/espressif/ieee802154/engine" }
 oer-espressif-ieee802154-runtime = { path = "../../../../runtime/espressif/ieee802154" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
-oer-ieee802154-port = { path = "../../../../protocols/ieee802154/port" }
 oer-radio-port = { path = "../../../../radio/port" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
 oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
@@ -25,6 +24,11 @@ oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 oer-esp32s31-ieee802154-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/ieee802154", features = ["esp32s31"] }
 oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
+
+[dev-dependencies]
+embassy-futures = "0.1.2"
+oer-espressif-ieee802154-runtime = { path = "../../../../runtime/espressif/ieee802154", features = ["model"] }
+oer-time-virtual = { path = "../../../../adapters/virtual/time" }
 
 [lints]
 workspace = true

@@ -19,5 +19,4 @@ Final memory profiles, static claims, IRQ binding and whole-radio lifecycles
 belong to [integration](../../composition/esp32s31/embassy/). Portable Wi-Fi
 execution primitives (monitor handoffs, task shutdown, station network
 ownership) are runtime code in [`runtime/ieee80211`](../../runtime/ieee80211/),
-not executor bindings. The radio adapter depends on the executor-free `oer-radio` service;
-the service never depends on an adapter. The [driver map](../../README.md) defines the ownership direction.
+not executor bindings. An executor-free service never depends on an adapter. The [driver map](../../README.md) defines the ownership direction.

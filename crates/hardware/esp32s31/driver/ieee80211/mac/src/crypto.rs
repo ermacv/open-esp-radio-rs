@@ -12,7 +12,7 @@ use oer_esp32s31_hal::{
 };
 
 use oer_espressif_ieee80211_policy::ccmp::TX_PACKET_NUMBER_STEP;
-use oer_ieee80211_mac::ccmp::{CcmpKeyId, CcmpTxPacketNumber as PacketNumberAllocator};
+use oer_ieee80211_mac::ccmp::{CcmpKeyId, CcmpTxPacketNumber as PacketNumberAllocator, GroupKeyId};
 
 use subtle::ConstantTimeEq;
 
@@ -26,7 +26,6 @@ const STA_GROUP_HARDWARE_INDEX: u8 = 1;
 pub const AP_PAIRWISE_HARDWARE_INDEX_BASE: u8 = 8;
 pub const AP_PAIRWISE_SLOT_COUNT: u8 = 15;
 const AP_GROUP_HARDWARE_INDEX_BASE: u8 = 1;
-const MAX_WPA2_GTK_ID: u8 = 3;
 const CCMP_KEY_BYTES: usize = 16;
 
 /// Exhaustion of one key's finite 48-bit CCMP transmit packet-number space.
@@ -58,6 +57,12 @@ impl CcmpTxPacketNumber {
 
 /// Finite hardware authority for the two open STA CCMP slots.
 pub trait CcmpKeyHardware {
+    /// Apply the immutable interface association decision before key publication.
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    );
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -81,6 +86,13 @@ pub trait CcmpKeyHardware {
 }
 
 impl CcmpKeyHardware for WifiMacHal<'_> {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        WifiMacHal::configure_ccmp_association(self, interface, mode);
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -109,6 +121,14 @@ impl CcmpKeyHardware for WifiMacHal<'_> {
 }
 
 impl CcmpKeyHardware for RadioRuntimeOwner {
+    fn configure_ccmp_association(
+        &mut self,
+        interface: oer_esp32s31_hal::types::MacInterface,
+        mode: oer_esp32s31_hal::types::MacSppMode,
+    ) {
+        self.wifi_mac_hal()
+            .configure_ccmp_association(interface, mode);
+    }
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
@@ -157,7 +177,7 @@ pub enum CryptoKeyError {
 /// Fail-closed result of replacing the one occupied STA group slot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaGroupCcmpReplaceError {
-    /// Validation failed before the old entry was touched.
+    /// The backend refused replacement before the old entry was touched.
     InvalidReplacement(CryptoKeyError),
     /// The new publication failed and the exact old key was restored.
     ReplacementRolledBack(CryptoKeyError),
@@ -185,7 +205,7 @@ pub struct StaPairwiseCcmpSlot {
 /// promoted production backend.
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct StaGroupCcmpSlot {
-    key_id: u8,
+    key_id: GroupKeyId,
     installed: bool,
 }
 
@@ -196,22 +216,19 @@ pub struct StaGroupCcmpSlot {
 /// replacement cannot truthfully restore the old hardware epoch.
 #[must_use = "GTK material must remain owned until replacement or teardown"]
 pub struct StaGroupCcmpKeyMaterial {
-    key_id: u8,
+    key_id: GroupKeyId,
     temporal_key: [u8; CCMP_KEY_BYTES],
 }
 
 impl StaGroupCcmpKeyMaterial {
-    pub fn new(key_id: u8, temporal_key: [u8; CCMP_KEY_BYTES]) -> Result<Self, CryptoKeyError> {
-        if key_id > MAX_WPA2_GTK_ID {
-            return Err(CryptoKeyError::InvalidGroupKeyId);
-        }
-        Ok(Self {
+    pub fn new(key_id: GroupKeyId, temporal_key: [u8; CCMP_KEY_BYTES]) -> Self {
+        Self {
             key_id,
             temporal_key,
-        })
+        }
     }
 
-    pub const fn key_id(&self) -> u8 {
+    pub const fn key_id(&self) -> GroupKeyId {
         self.key_id
     }
 
@@ -237,11 +254,42 @@ pub struct ApPairwiseCcmpSlot {
     tx_packet_number: CcmpTxPacketNumber,
 }
 
+/// A GTK wire ID supported by the S31 AP layout (1 through 3).
+///
+/// Zero belongs to the station's hardware group slot and cannot be selected
+/// for an AP installation. Validate this restriction before calling hardware.
+///
+/// ```
+/// use oer_esp32s31_ieee80211_mac::crypto::ApGroupKeyId;
+/// assert!(ApGroupKeyId::new(0).is_none());
+/// assert_eq!(ApGroupKeyId::new(1).map(ApGroupKeyId::get), Some(1));
+/// assert_eq!(ApGroupKeyId::new(3).map(ApGroupKeyId::get), Some(3));
+/// assert!(ApGroupKeyId::new(4).is_none());
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApGroupKeyId(GroupKeyId);
+
+impl ApGroupKeyId {
+    pub const fn new(key_id: u8) -> Option<Self> {
+        match GroupKeyId::new(key_id) {
+            Some(id) if id.get() != 0 => Some(Self(id)),
+            _ => None,
+        }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0.get()
+    }
+
+    pub const fn group_key_id(self) -> GroupKeyId {
+        self.0
+    }
+}
+
 /// Authority for the one group key exposed by an AP service epoch.
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct ApGroupCcmpSlot {
-    key_id: u8,
-    tx_key_id: CcmpKeyId,
+    key_id: ApGroupKeyId,
     hardware_index: u8,
     tx_packet_number: CcmpTxPacketNumber,
 }
@@ -264,7 +312,7 @@ impl StaGroupCcmpSlot {
         STA_GROUP_HARDWARE_INDEX
     }
 
-    pub const fn key_id(&self) -> u8 {
+    pub const fn key_id(&self) -> GroupKeyId {
         self.key_id
     }
 
@@ -328,12 +376,13 @@ impl ApGroupCcmpSlot {
         self.hardware_index
     }
 
-    pub const fn key_id(&self) -> u8 {
+    pub const fn key_id(&self) -> ApGroupKeyId {
         self.key_id
     }
 
     pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
-        self.tx_packet_number.next_header(self.tx_key_id)
+        self.tx_packet_number
+            .next_header(self.key_id.group_key_id().key_id())
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -405,17 +454,31 @@ pub fn install_sta_pairwise_ccmp<H: CcmpKeyHardware>(
 /// ESP32-S31 exposes one active station group slot regardless of the logical
 /// RSN key ID. The logical ID is still encoded in the hardware control word,
 /// exactly as in the reviewed promoted CCMP installation path.
+///
+/// ```compile_fail,E0308
+/// use oer_esp32s31_ieee80211_mac::crypto::{CcmpKeyHardware, install_sta_group_ccmp};
+/// fn install<H: CcmpKeyHardware>(hardware: &mut H) {
+///     let _ = install_sta_group_ccmp(hardware, 4_u8, &[0; 16]);
+/// }
+/// ```
+///
+/// ```
+/// use oer_esp32s31_ieee80211_mac::crypto::{CcmpKeyHardware, install_sta_group_ccmp};
+/// use oer_ieee80211_mac::ccmp::GroupKeyId;
+/// fn install<H: CcmpKeyHardware>(hardware: &mut H, key_id: GroupKeyId) {
+///     let _ = install_sta_group_ccmp(hardware, key_id, &[0; 16]);
+/// }
+/// ```
 pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
-    key_id: u8,
+    key_id: GroupKeyId,
     temporal_key: &[u8; CCMP_KEY_BYTES],
 ) -> Result<StaGroupCcmpSlot, CryptoKeyError> {
-    if key_id > MAX_WPA2_GTK_ID {
-        return Err(CryptoKeyError::InvalidGroupKeyId);
-    }
     match hardware.install_sta_ccmp_entry(
         STA_GROUP_HARDWARE_INDEX,
-        MacCcmpKeyIdentity::Group { key_id },
+        MacCcmpKeyIdentity::Group {
+            key_id: key_id.get(),
+        },
         temporal_key,
     ) {
         MacKeyInstallOutcome::Installed => {}
@@ -467,20 +530,36 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
 }
 
 /// Install one AP GTK. Vendor AP group slots map directly to `1 + key_id`;
-/// the first service provisions key id one and therefore owns slot 2.
+/// the first service provisions key id one and therefore owns slot 2. Key
+/// id 0 would take entry 1, the station group key's: this S31 AP layout
+/// refuses it. This is a hardware layout restriction; GTK wire ID zero is
+/// valid for RSN and the station's dedicated group slot accepts it.
+///
+/// ```compile_fail,E0308
+/// use oer_esp32s31_ieee80211_mac::crypto::{CcmpKeyHardware, install_ap_group_ccmp};
+/// use oer_ieee80211_mac::ccmp::GroupKeyId;
+/// fn install<H: CcmpKeyHardware>(hardware: &mut H, key_id: GroupKeyId) {
+///     let _ = install_ap_group_ccmp(hardware, key_id, &[0; 16]);
+/// }
+/// ```
+///
+/// ```
+/// use oer_esp32s31_ieee80211_mac::crypto::{ApGroupKeyId, CcmpKeyHardware, install_ap_group_ccmp};
+/// fn install<H: CcmpKeyHardware>(hardware: &mut H, key_id: ApGroupKeyId) {
+///     let _ = install_ap_group_ccmp(hardware, key_id, &[0; 16]);
+/// }
+/// ```
 pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
-    key_id: u8,
+    key_id: ApGroupKeyId,
     temporal_key: &[u8; CCMP_KEY_BYTES],
 ) -> Result<ApGroupCcmpSlot, CryptoKeyError> {
-    let tx_key_id = match CcmpKeyId::new(key_id) {
-        Some(tx_key_id) if key_id <= MAX_WPA2_GTK_ID => tx_key_id,
-        _ => return Err(CryptoKeyError::InvalidGroupKeyId),
-    };
-    let hardware_index = AP_GROUP_HARDWARE_INDEX_BASE + key_id;
+    let hardware_index = AP_GROUP_HARDWARE_INDEX_BASE + key_id.get();
     match hardware.install_ap_ccmp_entry(
         hardware_index,
-        MacCcmpKeyIdentity::Group { key_id },
+        MacCcmpKeyIdentity::Group {
+            key_id: key_id.get(),
+        },
         temporal_key,
     ) {
         MacKeyInstallOutcome::Installed => {}
@@ -489,7 +568,6 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     }
     Ok(ApGroupCcmpSlot {
         key_id,
-        tx_key_id,
         hardware_index,
         tx_packet_number: CcmpTxPacketNumber::new(),
     })
@@ -505,12 +583,9 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
 pub fn replace_sta_group_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
     slot: &mut StaGroupCcmpSlot,
-    key_id: u8,
+    key_id: GroupKeyId,
     temporal_key: &[u8; CCMP_KEY_BYTES],
 ) -> Result<(), CryptoKeyError> {
-    if key_id > MAX_WPA2_GTK_ID {
-        return Err(CryptoKeyError::InvalidGroupKeyId);
-    }
     if slot.installed {
         hardware.clear_ccmp_entry(STA_GROUP_HARDWARE_INDEX);
         slot.installed = false;
@@ -536,11 +611,6 @@ pub fn replace_sta_group_ccmp_with_rollback<H: CcmpKeyHardware>(
     current: &StaGroupCcmpKeyMaterial,
     replacement: &StaGroupCcmpKeyMaterial,
 ) -> Result<(), StaGroupCcmpReplaceError> {
-    if replacement.key_id > MAX_WPA2_GTK_ID {
-        return Err(StaGroupCcmpReplaceError::InvalidReplacement(
-            CryptoKeyError::InvalidGroupKeyId,
-        ));
-    }
     if !slot.installed || slot.key_id != current.key_id {
         return Err(StaGroupCcmpReplaceError::CurrentMaterialMismatch);
     }

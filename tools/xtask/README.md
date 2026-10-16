@@ -64,6 +64,11 @@ Host-side policy over the source tree and the Cargo graph.
 | `cargo xtask check network` | Resolve isolated network consumers and audit their dependency boundaries; CI compiles the profiles |
 | `cargo xtask check feature-sets` | Test every root-workspace package with each feature set its `open-radio.test-feature-sets` declares; `check changed` does the same for the packages it tests |
 
+The UI gate compiles a misuse and its positive twin for each target. Each
+error must match its code and annotated source boundary. For an inline-const
+check defined in a dependency, E0080 is matched to rustc's instantiation note
+at the caller; unrelated errors and notes do not satisfy the contract.
+
 ## Firmware builds and image checks
 
 The PHY library's target build. Images are not xtask's: `cargo fw build`
@@ -114,7 +119,7 @@ Every runner works over a change's reach or over the whole tree. Each CI job
 tier TIER --job JOB`, on a branch with `--checks` naming what its change
 reaches; a test holds the workflows to the registry, so no
 workflow lists checks of its own. A check without a trigger runs only with
-its whole tier: the final image builds, every image class, the examples'
+its whole tier: the boot smoke image build, every image class, the examples'
 builds, the conformance check (it needs clang and the Sail model), Blobray's
 whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
 the probes and the host stands. The session start hook
@@ -304,8 +309,7 @@ selected host packages. Host packages are every package of the root
 workspace and host or portable packages of the others. When the change
 reaches a package that builds only for a chip, or a chip or family package
 whose chip-target `cfg` code the host skips, `images-type-check`
-type-checks the two final HIL images (`performance`, `correctness`) and
-every other image class whose runtime compiles such a package, by the
+type-checks every image class whose runtime compiles such a package, by the
 class's Cargo graph (`cargo tree` with its features for the chip target),
 since the host checks never compile that code. The gate names the full-tier
 checks the change selects and leaves them to CI. Both commands print the
@@ -354,10 +358,9 @@ performs no hardware operations.
 Every image is built by the one image pipeline,
 [`oer-image`](../image/pipeline/README.md): `build firmware` with the examples' spec,
 `check firmware` and `compare images` through `oer-hil-image`'s class specs.
-A full `check firmware` of `performance` or `correctness` then builds the
-Blobray audit host in `tools/blobray/target` and runs the final radio target
-audit on the class's runtime ELF: a call into the vendor radio ROM fails the
-class. Encoding uses the `espflash` library, so no build needs the `espflash`
+The Blobray audit of a product image's calls into the vendor radio ROM was
+removed with the last image it audited (#762); it returns with the first
+product image, and the forbidden ROM ranges stay in `chip.toml`. Encoding uses the `espflash` library, so no build needs the `espflash`
 executable. This gate does not run on hardware or measure runtime stack
 high-water.
 
@@ -392,8 +395,7 @@ optional explicit local limit for vendor probe builds.
 
 Standalone firmware builds keep a Cargo cache per example and copy their ELFs
 and images into a unique `target/firmware/esp32s31-<example>/build-<id>/`
-bundle. Station and AP link the owned Xarxa/Embassy stack, their default
-feature; see the [implementation guide](../../docs/network-implementations.md).
+bundle.
 
 Firmware builds never modify a committed `Cargo.lock`. Each build copies the
 workspace catalog into its own cache and resolves through Cargo's
@@ -421,6 +423,27 @@ network state. Linux process ownership uses explicit process groups.
 Unsupported hosts return an error when the required ownership backend is
 unavailable.
 
-The full `images-correctness` job also builds `boot-smoke` for every staged HIL target,
+The full `images` job builds `boot-smoke` for every staged HIL target,
 including C5, through the same coverage, placement and stack gates as a run.
-Radio final images additionally receive Blobray's forbidden-ROM audit.
+
+## Contract diagnostics
+
+`cargo xtask check ui` compiles every case in `tests/ui.toml` twice, with the
+same dependency features and target: its valid use, then the misuse selected
+by `ui_reject`. A `// ui-error: E0123` annotation marks the expected error's
+source line. The check reads rustc JSON diagnostics and rejects a different
+error code, a different location, extra errors, a successful misuse, or a
+broken positive twin. Stable rustdoc's `compile_fail,E0123` does not check
+the code; those examples remain documentation, not this evidence.
+
+For a rustc diagnostic without a code, `// ui-error: null exact message`
+requires both `code: null` and that complete message at the marked line.
+Repeat the annotation on that line for each expected diagnostic; the check
+does not accept fewer or more errors at the same boundary.
+
+Cargo supplies exact library artifact paths for each declared target and
+feature set; the runner never selects an rlib by globbing a shared cache.
+Both host and RV32 use the pinned stable toolchain. The `ui` registry check
+runs in the fast gate and the `host` CI job. New cases belong beside the
+contract they exercise and have explicit entries in the catalog and tidy's
+uncompiled-source list.

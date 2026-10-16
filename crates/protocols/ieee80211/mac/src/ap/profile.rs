@@ -2,11 +2,20 @@
 //!
 //! Fixed record capacities preserve the implemented beacon/association format.
 //! The chip profile chooses values; these types validate and encode them.
+//! WMM advertisements use the extension's wire codec and the same typed
+//! category selector as received parameter sets.
 
 use crate::{
-    extensions::wmm::WmmAcParameters, ht::HtLocalCapabilities, qos::WmmAccessCategory,
+    extensions::wmm::{
+        WMM_NIBBLE_MAX, WMM_PARAMETER_ELEMENT_LEN, WmmAcParameters, encode_wmm_parameter_element,
+    },
+    ht::HtLocalCapabilities,
+    qos::WmmAccessCategory,
     security::LinkProtection,
 };
+
+const BASIC_RATE_BIT: u8 = 0x80;
+const PRIVACY_CAPABILITY: u16 = 0x0010;
 
 /// The Supported Rates and Extended Supported Rates records of this AP.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,7 +45,7 @@ impl LegacyRates {
         self.supported
             .iter()
             .chain(self.extended.iter())
-            .any(|encoded| encoded & 0x7f == rate_500kbps)
+            .any(|encoded| encoded & !BASIC_RATE_BIT == rate_500kbps)
     }
 }
 
@@ -49,60 +58,43 @@ pub struct WmmParameters {
 }
 
 impl WmmParameters {
+    /// The parameters, when each field fits its four bits: `None`
+    /// otherwise. A `const` caller checks them at build.
     pub const fn new(
         parameter_set_count: u8,
         uapsd: bool,
         access_categories: [WmmAcParameters; 4],
-    ) -> Self {
-        assert!(parameter_set_count <= 15);
+    ) -> Option<Self> {
+        if parameter_set_count > WMM_NIBBLE_MAX {
+            return None;
+        }
         let mut index = 0;
         while index < access_categories.len() {
             let category = access_categories[index];
-            assert!(category.aifsn <= 15 && category.ecw_min <= 15 && category.ecw_max <= 15);
+            if category.aifsn > WMM_NIBBLE_MAX
+                || category.ecw_min > WMM_NIBBLE_MAX
+                || category.ecw_max > WMM_NIBBLE_MAX
+            {
+                return None;
+            }
             index += 1;
         }
-        Self {
+        Some(Self {
             parameter_set_count,
             uapsd,
             access_categories,
-        }
+        })
     }
 
     /// The advertised parameters of `category`, which the access point's
     /// own transmissions also follow.
     pub const fn access_category(self, category: WmmAccessCategory) -> WmmAcParameters {
-        self.access_categories[category as usize]
+        *category.select(&self.access_categories)
     }
 
     /// Encode a complete vendor-specific WMM Parameter Element.
-    pub const fn element(self) -> [u8; 26] {
-        let mut element = [0; 26];
-        element[0] = 221;
-        element[1] = 24;
-        element[3] = 0x50;
-        element[4] = 0xf2;
-        element[5] = 2;
-        element[6] = 1;
-        element[7] = 1;
-        element[8] = self.parameter_set_count | if self.uapsd { 0x80 } else { 0 };
-        let mut index = 0;
-        while index < self.access_categories.len() {
-            let category = self.access_categories[index];
-            let offset = 10 + index * 4;
-            element[offset] = ((index as u8) << 5)
-                | if category.admission_control_mandatory {
-                    0x10
-                } else {
-                    0
-                }
-                | category.aifsn;
-            element[offset + 1] = (category.ecw_max << 4) | category.ecw_min;
-            let txop = category.txop_limit_units_32_us.to_le_bytes();
-            element[offset + 2] = txop[0];
-            element[offset + 3] = txop[1];
-            index += 1;
-        }
-        element
+    pub const fn element(self) -> [u8; WMM_PARAMETER_ELEMENT_LEN] {
+        encode_wmm_parameter_element(self.parameter_set_count, self.uapsd, self.access_categories)
     }
 }
 
@@ -122,21 +114,24 @@ impl Advertisement {
         ht: HtLocalCapabilities,
         wmm: WmmParameters,
         capability_information: u16,
-    ) -> Self {
-        assert!(capability_information & 0x0010 == 0);
-        Self {
+    ) -> Option<Self> {
+        // Privacy belongs to the security mode: `None` when it is set.
+        if capability_information & PRIVACY_CAPABILITY != 0 {
+            return None;
+        }
+        Some(Self {
             legacy_rates,
             ht,
             wmm,
             capability_information,
-        }
+        })
     }
 
     pub const fn capabilities(&self, security: LinkProtection) -> u16 {
         self.capability_information
             | match security {
                 LinkProtection::Open => 0,
-                LinkProtection::Ccmp => 0x0010,
+                LinkProtection::Ccmp => PRIVACY_CAPABILITY,
             }
     }
 }

@@ -15,6 +15,7 @@
 use core::marker::PhantomData;
 
 mod affine_spsc;
+mod indexed_custody;
 mod pinned_tx;
 mod rx_external_handoff;
 mod rx_handoff;
@@ -25,6 +26,7 @@ pub use affine_spsc::{
     AffineSpscReceiver, AffineSpscSendPermit, AffineSpscSender, AffineSpscTryReceiveError,
     AffineSpscTrySendError, UniqueQueueIndex,
 };
+pub use indexed_custody::{CustodyDomain, IndexedCustody, RetainedName};
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
     PinnedDmaTxPoolHandle, PinnedDmaTxRadioLease, ReturningStableDmaBacking,

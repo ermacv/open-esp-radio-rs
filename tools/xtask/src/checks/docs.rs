@@ -113,25 +113,28 @@ pub fn capabilities(ctx: &Checkout, changed: &[PathBuf]) -> Result<()> {
     process::run(&mut command)
 }
 
-/// Validate every qualification program and evaluate its tracked HIL and
-/// derived vendor evidence (`cargo qualification validate` and `evaluate`).
+/// Validate every qualification program against the derived vendor
+/// evidence, then check the evidence archive pin and the runs tracked records
+/// cite against it (`cargo qualification validate` and `check references`).
+/// The gate reads no HIL runs: they are in the private evidence archive,
+/// which `cargo qualification evaluate --archive` reads where it is
+/// reachable (#761, owner decision 6225000924).
 pub fn programs(ctx: &Checkout) -> Result<()> {
     let binary = qualification_binary(ctx)?;
     for group in catalog_groups(ctx, &oer_repo::Repo::from_git(&ctx.root)?)? {
         for program in group.programs {
-            for action in ["validate", "evaluate"] {
-                qualification_command(
-                    ctx,
-                    &binary,
-                    [
-                        action.into(),
-                        "--manifest".into(),
-                        program.clone().into_os_string(),
-                    ],
-                )?;
-            }
+            qualification_command(
+                ctx,
+                &binary,
+                [
+                    "validate".into(),
+                    "--manifest".into(),
+                    program.into_os_string(),
+                ],
+            )?;
         }
     }
+    qualification_command(ctx, &binary, ["check".into(), "references".into()])?;
     Ok(())
 }
 

@@ -9,11 +9,47 @@ mod measurement;
 mod observer;
 mod procedure;
 mod provenance;
-pub(crate) mod shard;
 mod snapshot;
 mod subject;
 
 pub(crate) use decision::{EvidenceDecision, EvidenceStatus, ObservationCounts};
+
+/// Whether a failure to read runs is the environment's: a cancellation, or
+/// an I/O failure of the store or the checkout. A file a bundle lacks
+/// (`NotFound`, however it is read) and content that is not UTF-8 or JSON are
+/// the bundle's.
+pub(crate) fn environment_error(error: &(dyn std::error::Error + 'static)) -> bool {
+    oer_process::is_cancelled(error)
+        || error.downcast_ref::<std::io::Error>().is_some_and(|io| {
+            !matches!(
+                io.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidData
+            )
+        })
+}
+
+/// A failure to read one unpublished run as `verdict` reports it: the
+/// environment's ([`environment_error`]) stays one, any other is the
+/// bundle's, which is not valid.
+pub(crate) fn bundle_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::Error> {
+    if environment_error(&*error) {
+        error
+    } else {
+        Box::new(crate::verdict::Invalid(error.to_string()))
+    }
+}
+
+/// The runs an evaluation reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum HilRuns<'a> {
+    /// None: the obligations stay missing.
+    None,
+    /// The runs of a verified copy of the pinned evidence archive version:
+    /// evidence.
+    Archive(&'a oer_hil_evidence_archive::Copy),
+    /// One run bundle, for `verdict`: never evidence, never published.
+    Unpublished(&'a Path),
+}
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -95,8 +131,9 @@ impl ScenarioCatalog {
         {
             return Err("HIL scenario catalog must be a contained relative path".into());
         }
+        // An I/O failure of the catalog stays one (the environment's).
         let documents = oer_hil_scenario_catalog::documents(&root.canonicalize()?.join(catalog))
-            .map_err(|error| error.to_string())?;
+            .map_err(crate::boxed)?;
         let mut repetitions = BTreeMap::new();
         let mut roles = BTreeMap::new();
         let mut definitions = BTreeMap::new();
@@ -207,9 +244,6 @@ pub(crate) struct HilEvidenceSummary {
     pub(crate) passing: usize,
     pub(crate) current_source_producer: usize,
     pub(crate) qualifying: usize,
-    /// Tracked evidence shards, and those whose sources match the checkout.
-    pub(crate) shards: usize,
-    pub(crate) current_shards: usize,
     pub(crate) sealed_attempts: usize,
     pub(crate) evaluator_dirty: bool,
     /// Published runs whose bundle or seals fail validation, with the
@@ -267,6 +301,18 @@ struct Unit {
     seal: PathBuf,
 }
 
+/// Whether the run's plan replays firmware. A plan that cannot be read
+/// stays an I/O failure: the environment's, not the bundle's.
+fn plan_replays_firmware(bundle: &RunBundle) -> Result<bool> {
+    Ok(matches!(
+        bundle
+            .plan()
+            .map_err(crate::boxed)?
+            .and_then(|plan| plan.firmware),
+        Some(PlannedFirmware::Replay { .. })
+    ))
+}
+
 /// Validates one run directory's manifest, seals and integrity through the
 /// run bundle's reader, every sealed file hashed again; an error means the
 /// published bundle cannot be trusted as evidence.
@@ -293,7 +339,7 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
             },
         );
     }
-    let Some(bundle) = RunBundle::open(run_directory).map_err(|error| error.to_string())? else {
+    let Some(bundle) = RunBundle::open(run_directory).map_err(crate::boxed)? else {
         return Ok(LoadedRun::Unpublished);
     };
     let manifest = bundle.manifest();
@@ -311,8 +357,8 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
     if manifest.target != target {
         return Ok(LoadedRun::OtherChip);
     }
-    bundle.validate().map_err(|error| error.to_string())?;
-    let attempts = bundle.attempts().map_err(|error| error.to_string())?;
+    bundle.validate().map_err(crate::boxed)?;
+    let attempts = bundle.attempts().map_err(crate::boxed)?;
     let independently_sealed = attempts.is_some();
     let units = if let Some(attempts) = attempts {
         let mut units = Vec::new();
@@ -322,7 +368,7 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
             // it. An explicit one must be the image the seal fixed.
             let document = bundle
                 .scenario_document(&result.scenario)
-                .map_err(|error| error.to_string())?;
+                .map_err(crate::boxed)?;
             if document
                 .pointer("/wifi/image")
                 .is_some_and(|declared| declared.as_str() != Some(result.image.id()))
@@ -342,20 +388,17 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
         if manifest.state == RunState::Running {
             return Ok(LoadedRun::NotEvidence);
         }
-        bundle.integrity().map_err(|error| error.to_string())?;
+        bundle.integrity().map_err(crate::boxed)?;
         if manifest.state != RunState::Completed {
             return Ok(LoadedRun::NotEvidence);
         }
-        let suite = bundle
-            .suite()
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| {
-                format!(
-                    "completed HIL run has no suite: {}",
-                    run_directory.display()
-                )
-            })?;
-        validate_suite(&suite, manifest).map_err(|error| error.to_string())?;
+        let suite = bundle.suite().map_err(crate::boxed)?.ok_or_else(|| {
+            format!(
+                "completed HIL run has no suite: {}",
+                run_directory.display()
+            )
+        })?;
+        validate_suite(&suite, manifest).map_err(crate::boxed)?;
         vec![Unit {
             manifest: manifest.clone(),
             suite,
@@ -389,15 +432,6 @@ struct ScenarioEvidence {
     failure: Option<serde_json::Value>,
     repetition_failures: Vec<Option<serde_json::Value>>,
     run_directory: Option<PathBuf>,
-    /// The executed scenario document of an observation recorded in a
-    /// tracked shard, which has no run directory to read it from.
-    procedure_document: Option<serde_json::Value>,
-    /// An observation from a tracked shard whose recorded sources, including
-    /// the observer's, match the checkout.
-    source_bound: bool,
-    /// Its build binds its sources in every respect but one: the checkout's
-    /// tree changed since its snapshot.
-    stale_snapshot: bool,
 }
 
 impl ScenarioEvidence {
@@ -454,9 +488,6 @@ impl HilEvidenceIndex {
                             exclusions: Vec::new(),
                             repetitions: *repetitions,
                             measurements: vec![Vec::new(); *repetitions],
-                            procedure_document: None,
-                            source_bound: false,
-                            stale_snapshot: false,
                         }],
                     )
                 })
@@ -468,47 +499,58 @@ impl HilEvidenceIndex {
         }
     }
 
-    /// Run bundles below `runs`, and the tracked shards below `evidence`
-    /// whose sources match the checkout.
+    /// The run bundles `runs` names. The evaluator never scans the run store
+    /// (#761 Q7, owner decision 6225298347).
+    pub(crate) fn from_runs(
+        root: &Path,
+        runs: HilRuns<'_>,
+        target: &str,
+        repository: &RepositoryState,
+    ) -> Result<Self> {
+        match runs {
+            HilRuns::Archive(archive) => {
+                Self::load_runs(root, &archive.runs(), target, repository, None)
+            }
+            HilRuns::Unpublished(run) => {
+                let name = run
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or_else(|| format!("{} names no run directory", run.display()))?;
+                let directory = run
+                    .parent()
+                    .ok_or_else(|| format!("{} lies in no runs directory", run.display()))?;
+                if !run.is_dir() {
+                    return Err(format!("no run bundle at {}", run.display()).into());
+                }
+                // A run of another chip than `target`'s is read as none.
+                let only = BTreeSet::from([name.to_owned()]);
+                Self::load_runs(root, directory, target, repository, Some(&only))
+                    .map_err(bundle_error)
+            }
+            HilRuns::None => Ok(Self {
+                summary: HilEvidenceSummary {
+                    evaluator_dirty: repository.dirty,
+                    ..HilEvidenceSummary::default()
+                },
+                ..Self::default()
+            }),
+        }
+    }
+
+    /// The run bundles in `runs`, relative to `root` unless absolute: the
+    /// fixtures' run directories.
+    #[cfg(test)]
     pub(crate) fn load(
         root: &Path,
         runs: &Path,
-        evidence: &Path,
         target: &str,
         repository: &RepositoryState,
     ) -> Result<Self> {
-        Self::load_selected(root, runs, evidence, target, repository, None)
+        Self::load_runs(root, &root.join(runs), target, repository, None)
     }
 
-    /// [`Self::load`] reading only the run bundles named in `only`, when set.
-    pub(crate) fn load_selected(
-        root: &Path,
-        runs: &Path,
-        evidence: &Path,
-        target: &str,
-        repository: &RepositoryState,
-        only: Option<&BTreeSet<String>>,
-    ) -> Result<Self> {
-        let mut index = Self::load_runs(root, runs, target, repository, only)?;
-        for (shard, current) in shard::load(root, evidence, target)? {
-            index.summary.shards += 1;
-            if !current {
-                continue;
-            }
-            index.summary.current_shards += 1;
-            let observation = shard.observation();
-            let observations = index
-                .scenarios
-                .entry(shard.scenario().to_owned())
-                .or_default();
-            if observations.iter().any(|o| o.run_id == observation.run_id) {
-                continue;
-            }
-            observations.push(observation);
-        }
-        Ok(index)
-    }
-
+    /// The run bundles in `runs`, a path as given (callers resolve it
+    /// against the root once); with `only`, of those runs alone.
     fn load_runs(
         root: &Path,
         runs: &Path,
@@ -517,10 +559,9 @@ impl HilEvidenceIndex {
         only: Option<&BTreeSet<String>>,
     ) -> Result<Self> {
         let current_observer = observer::Current::load(root);
-        // The checkout's run directory, which `cargo hil` links to the store
-        // shared by every checkout of this user. The evaluator reads only
-        // this path: a temporary or foreign root never pulls in that store.
-        let mut directories = vec![root.join(runs)];
+        // Only this directory: a temporary or foreign root never pulls in
+        // the run store.
+        let mut directories = vec![runs.to_path_buf()];
         directories.retain(|directory| directory.exists());
         if directories.is_empty() {
             return Ok(Self {
@@ -568,6 +609,7 @@ impl HilEvidenceIndex {
             ..HilEvidenceSummary::default()
         };
         for entry in entries {
+            oer_process::check_cancelled().map_err(crate::boxed)?;
             if !entry.file_type()?.is_dir() {
                 return Err(format!(
                     "HIL runs directory contains a non-directory entry: {}",
@@ -611,6 +653,8 @@ impl HilEvidenceIndex {
                     }
                     (bundle, units)
                 }
+                // The store failing to be read is no invalid bundle.
+                Err(error) if environment_error(&*error) => return Err(error),
                 Err(error) => {
                     summary.bundles += 1;
                     summary.invalid.push(InvalidRun {
@@ -633,13 +677,7 @@ impl HilEvidenceIndex {
                     summary.passing += 1;
                 }
             }
-            let plan_replays_firmware = matches!(
-                bundle
-                    .plan()
-                    .map_err(|error| error.to_string())?
-                    .and_then(|plan| plan.firmware),
-                Some(PlannedFirmware::Replay { .. })
-            );
+            let plan_replays_firmware = plan_replays_firmware(&bundle)?;
             for Unit {
                 manifest,
                 suite,
@@ -681,7 +719,6 @@ impl HilEvidenceIndex {
                 if exclusions.is_empty() && binding == provenance::Binding::StaleSnapshot {
                     exclusions.push(decision::Exclusion::SnapshotDiffersFromCheckout);
                 }
-                let stale_snapshot = binding == provenance::Binding::StaleSnapshot;
                 if exclusions.is_empty() {
                     current_producer = true;
                 }
@@ -693,7 +730,7 @@ impl HilEvidenceIndex {
                     let completion_seal = Some(CompletionSeal {
                         sha256: crate::digests()
                             .sha256_file(&run_directory.join(&seal))
-                            .map_err(|error| error.to_string())?,
+                            .map_err(crate::boxed)?,
                         path: seal.clone(),
                     });
                     let subject = Some(subject::ObservationSubject::load(
@@ -747,9 +784,6 @@ impl HilEvidenceIndex {
                                         .collect::<std::result::Result<Vec<_>, _>>()
                                 })
                                 .collect::<std::result::Result<_, _>>()?,
-                            procedure_document: None,
-                            source_bound: false,
-                            stale_snapshot,
                         });
                     let observations = scenarios.get_mut(&scenario_id).unwrap();
                     let position = (scenario_id, observations.len() - 1);
@@ -758,11 +792,9 @@ impl HilEvidenceIndex {
                         observation
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
-                    } else if !observation.exclusions.is_empty() && only.is_none() {
+                    } else if !observation.exclusions.is_empty() {
                         // Already excluded: no observer makes it apply, and
-                        // assessing one reads its build. Only runs named for
-                        // recording are assessed whatever else excludes
-                        // them, since a stale snapshot may still be recorded.
+                        // assessing one reads its build.
                     } else if let Some(reference) = observation
                         .subject
                         .as_ref()
@@ -867,11 +899,6 @@ use oer_hil_schema::run::{Outcome, RunState};
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     oer_hil_run_bundle_format::run::validation::read_json(path)
-        .map_err(|error| error.to_string().into())
-}
-
-fn read_optional_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
-    oer_hil_run_bundle_format::run::validation::read_optional_json(path)
         .map_err(|error| error.to_string().into())
 }
 

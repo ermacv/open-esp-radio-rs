@@ -45,12 +45,19 @@ struct HilInputsReport {
     current_source_producer: usize,
     qualifying: usize,
     sealed_attempts: usize,
-    shards: usize,
-    current_shards: usize,
+    /// The evidence archive version whose verified copy was read; none when
+    /// the evaluation read no runs.
+    archive: Option<ArchiveReport>,
     evaluator_dirty: bool,
     invalid: Vec<crate::hil::InvalidRun>,
     /// Runs of another schema, by schema.
     unsupported: std::collections::BTreeMap<u64, usize>,
+}
+
+#[derive(Serialize)]
+struct ArchiveReport {
+    version: String,
+    path: std::path::PathBuf,
 }
 
 #[derive(Serialize)]
@@ -118,7 +125,7 @@ fn summary(qualification: &Qualification) -> Summary {
 
 fn report(qualification: &Qualification) -> Report<'_> {
     Report {
-        schema: 4,
+        schema: 5,
         target: &qualification.target,
         repository_commit: &qualification.repository.commit,
         repository_dirty: qualification.repository.dirty,
@@ -136,8 +143,14 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 current_source_producer: qualification.evidence_inputs.hil.current_source_producer,
                 qualifying: qualification.evidence_inputs.hil.qualifying,
                 sealed_attempts: qualification.evidence_inputs.hil.sealed_attempts,
-                shards: qualification.evidence_inputs.hil.shards,
-                current_shards: qualification.evidence_inputs.hil.current_shards,
+                archive: qualification
+                    .evidence_inputs
+                    .hil_archive
+                    .as_ref()
+                    .map(|archive| ArchiveReport {
+                        version: archive.version.clone(),
+                        path: archive.path.clone(),
+                    }),
                 invalid: qualification.evidence_inputs.hil.invalid.clone(),
                 unsupported: qualification.evidence_inputs.hil.unsupported.clone(),
                 observer_configuration_problem: qualification
@@ -188,15 +201,10 @@ pub(crate) fn absent_lines(absent: &[crate::model::AbsentDirectory]) -> Vec<Stri
         .iter()
         .map(|directory| {
             format!(
-                "EVIDENCE-DIR\t{}\tkind={}\tpath={}\t{}=0",
+                "EVIDENCE-DIR\t{}\tkind={}\tpath={}\tshards=0",
                 directory.state,
                 directory.kind,
                 directory.path.display(),
-                if directory.kind == "hil-runs" {
-                    "bundles"
-                } else {
-                    "shards"
-                }
             )
         })
         .collect()
@@ -204,7 +212,7 @@ pub(crate) fn absent_lines(absent: &[crate::model::AbsentDirectory]) -> Vec<Stri
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\thil-invalid-unsupported={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-archive={}\thil-invalid-unsupported={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs
@@ -217,8 +225,11 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.current_source_producer,
         qualification.evidence_inputs.hil.qualifying,
         qualification.evidence_inputs.hil.sealed_attempts,
-        qualification.evidence_inputs.hil.shards,
-        qualification.evidence_inputs.hil.current_shards,
+        qualification
+            .evidence_inputs
+            .hil_archive
+            .as_ref()
+            .map_or("none", |archive| archive.version.as_str()),
         qualification
             .evidence_inputs
             .hil

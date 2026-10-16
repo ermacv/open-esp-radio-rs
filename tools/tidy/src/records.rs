@@ -1,7 +1,7 @@
 //! Repository paths named by tracked qualification and evidence records.
 //!
 //! The keys mirror the record schemas of the qualification evaluator
-//! (`qualification/evaluator/src/model*`, `hil/shard.rs`):
+//! (`qualification/evaluator/src/model*`):
 //!
 //! - program manifests (`qualification/targets/**.toml`): `catalogs`, and
 //!   `[hil] catalog`;
@@ -9,17 +9,13 @@
 //!   `[validation] hil-catalog`, capability `vendor-anchors`,
 //!   `source-document`, `documents`, `source-paths`,
 //!   `[development] knowledge` and host-test `manifest`/`source`; every
-//!   `packages` entry names a package of the repository;
-//! - HIL evidence shards (each directory a program names as its HIL
-//!   `evidence`): `sources[].path`.
+//!   `packages` entry names a package of the repository.
 //!
-//! Output directories (`[hil] evidence`, `[hil] runs`) are where tools write
-//! and need not exist. Vendor evidence shards are derived data below
-//! `target/` that nothing tracks.
+//! Vendor evidence shards are derived data below `target/` that nothing
+//! tracks; HIL evidence is in the evidence archive the repository pins.
 
 use std::collections::BTreeSet;
 
-use serde_json::Value as Json;
 use toml::{Table, Value};
 
 use oer_repo::manifest::strings;
@@ -45,9 +41,6 @@ const SCOPED_PATH_KEYS: &[(&str, &str)] = &[
     ("host-tests", "manifest"),
     ("host-tests", "source"),
 ];
-
-/// Output directory keys a program names, holding evidence shards.
-const EVIDENCE_DIRECTORIES: &[(&str, &str)] = &[("hil", "evidence")];
 
 struct Walk<'a> {
     context: &'a Context<'a>,
@@ -112,7 +105,6 @@ pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
         .iter()
         .map(|package| package.name.as_str())
         .collect();
-    let mut evidence = BTreeSet::new();
     let mut problems = vec![];
     for file in context.repo.files().filter(|file| is_record(file)) {
         let table: Table = context
@@ -128,42 +120,6 @@ pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
         };
         walk.table("", &table);
         problems.extend(walk.problems);
-        if file.starts_with("qualification/targets/") {
-            for (section, key) in EVIDENCE_DIRECTORIES {
-                if let Some(directory) = table
-                    .get(*section)
-                    .and_then(Value::as_table)
-                    .and_then(|section| section.get(*key))
-                    .and_then(Value::as_str)
-                {
-                    evidence.extend(
-                        context
-                            .repo
-                            .below(directory)
-                            .filter(|file| file.ends_with(".json"))
-                            .map(str::to_owned),
-                    );
-                }
-            }
-        }
-    }
-    for shard in &evidence {
-        let value: Json = serde_json::from_str(&context.repo.read(shard)?)
-            .map_err(|error| format!("{shard}: invalid JSON: {error}"))?;
-        for source in value
-            .get("sources")
-            .and_then(Json::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let Some(path) = source.get("path").and_then(Json::as_str) else {
-                problems.push(format!("{shard}: a `sources` entry has no path"));
-                continue;
-            };
-            if !context.repo.exists(path) {
-                problems.push(format!("{shard}: source {path} does not exist"));
-            }
-        }
     }
     problems.sort();
     Ok(problems)
@@ -190,7 +146,7 @@ mod tests {
             ),
             (
                 "qualification/targets/t.toml",
-                "catalogs = [\"qualification/catalog/c.toml\"]\n[hil]\ncatalog = \"docs\"\nruns = \"target/runs\"\n",
+                "catalogs = [\"qualification/catalog/c.toml\"]\n[hil]\ncatalog = \"docs\"\n",
             ),
         ]);
         assert!(found.is_empty(), "{found:?}");
@@ -210,24 +166,6 @@ mod tests {
                 "qualification/catalog/c.toml: `packages` names unknown package oer-gone",
                 "qualification/catalog/c.toml: `source` names missing x/src/lib.rs",
             ]
-        );
-    }
-
-    #[test]
-    fn evidence_shards_bound_to_missing_sources_fail() {
-        let shard =
-            r#"{"sources": [{"path": "a.rs", "sha256": "0"}, {"path": "gone.rs", "sha256": "0"}]}"#;
-        let found = run(&[
-            ("a.rs", ""),
-            ("hil/evidence/chip/h.json", shard),
-            (
-                "qualification/targets/t.toml",
-                "[hil]\nevidence = \"hil/evidence/chip\"\n",
-            ),
-        ]);
-        assert_eq!(
-            found,
-            ["hil/evidence/chip/h.json: source gone.rs does not exist",]
         );
     }
 }

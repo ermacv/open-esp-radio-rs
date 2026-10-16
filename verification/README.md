@@ -17,7 +17,7 @@ chip calibration relations and comparisons in `hil/phy/`.
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
 | L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo verification evidence` computes their derived index into `target/verification/esp32s31/evidence` |
-| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose runs `cargo qualification hil-evidence` records as shards to `hil/evidence/<chip>/`, the [ESP32-S31 calibration comparison](../hil/phy/esp32s31/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
+| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose cited runs the pinned evidence archive holds, the [ESP32-S31 calibration comparison](../hil/phy/esp32s31/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 
 ```text
@@ -117,12 +117,11 @@ submodules replaced by the pinned archives, and the
 [calibration cross-check](../hil/phy/esp32s31/calibration/README.md) compares
 its cold calibration with production's on the same board through the
 tracking scenario's reviewed relation. No HIL scenario captures both sides
-now; the scenarios return with the HIL architecture of #761. A qualifying
-observation is recorded as a tracked shard bound to its firmware and observer
-sources. The only path from
+now; the scenarios return with the HIL architecture of #761. A run that
+evidence cites enters the pinned HIL evidence archive. The only path from
 comparison or HIL evidence to product readiness is the independent
 [verification and qualification contract](../docs/verification-and-qualification.md).
 
 Private inputs never enter the repository: `_oracles/` and fetched artifacts
 stay ignored, and checked configuration never names machine-local paths.
-Generated analysis stays in ignored outputs except the evidence shards.
+Generated analysis stays in ignored outputs.

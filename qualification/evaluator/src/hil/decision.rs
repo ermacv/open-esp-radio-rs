@@ -26,39 +26,6 @@ pub(crate) enum Exclusion {
     SnapshotDiffersFromCheckout,
 }
 
-impl Exclusion {
-    /// Whether the exclusion comes only from comparing the whole tree: the
-    /// run's commit or its snapshot differ from the checkout. An observation
-    /// whose build binds its sources otherwise ([`ScenarioEvidence`]'s
-    /// `stale_snapshot`) is still recordable when every source its shard
-    /// binds matches its snapshot. A dirty producer, a replay, an unbound
-    /// build, a procedure or an observer mismatch never is.
-    pub(crate) fn is_tree_binding(&self) -> bool {
-        matches!(
-            self,
-            Self::DifferentCommit | Self::SnapshotDiffersFromCheckout | Self::EvaluatorDirty
-        )
-    }
-
-    /// The exclusion's kebab-case identifier.
-    pub(crate) fn id(&self) -> &'static str {
-        match self {
-            Self::EvaluatorDirty => "evaluator-dirty",
-            Self::ProducerDirty => "producer-dirty",
-            Self::DifferentCommit => "different-commit",
-            Self::ReplaySubjectNotBound => "replay-subject-not-bound",
-            Self::SourceBindingNotEstablished => "source-binding-not-established",
-            Self::ProcedureMismatch => "procedure-mismatch",
-            Self::ObserverIdentityNotEstablished => "observer-identity-not-established",
-            Self::ObserverGraphNotProjectable => "observer-graph-not-projectable",
-            Self::CurrentObserverConfigurationUnavailable => {
-                "current-observer-configuration-unavailable"
-            }
-            Self::SnapshotDiffersFromCheckout => "snapshot-differs-from-checkout",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum EvidenceStatus {

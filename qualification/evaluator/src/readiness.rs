@@ -183,11 +183,13 @@ pub(crate) fn render(drops: &[Regression]) -> String {
     text
 }
 
-/// Evaluate every program below `root`, write its JSON report into `out`,
+/// Evaluate every program below `root`, with the HIL runs of `archive`,
+/// write its JSON report into `out`,
 /// and compare each with its report in `base` when that holds one; the
 /// drops found, also written to `drops_file` as a table when there are any.
 pub(crate) fn run(
     root: &Path,
+    archive: Option<&oer_hil_evidence_archive::Copy>,
     out: &Path,
     base: Option<&Path>,
     drops_file: Option<&Path>,
@@ -195,7 +197,7 @@ pub(crate) fn run(
     let programs = model::program_paths(root)?;
     let mut reports = vec![];
     for program in &programs {
-        let qualification = Qualification::load_and_evaluate(&root.join(program), root)?;
+        let qualification = Qualification::load_and_evaluate(&root.join(program), root, archive)?;
         let name = report_name(program)?;
         crate::report::write_json(&qualification, &out.join(&name))?;
         reports.push((program.display().to_string(), name));

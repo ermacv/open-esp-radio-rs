@@ -5,7 +5,9 @@ mod inventory;
 mod model;
 mod planning;
 mod readiness;
+mod references;
 mod report;
+mod verdict;
 
 use std::{env, error::Error, path::PathBuf, process::ExitCode, sync::OnceLock};
 
@@ -14,6 +16,34 @@ use oer_durable::digests::DigestCache;
 use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// `error` behind `context`, still an I/O failure when it was one (content
+/// that is not UTF-8 is not one), so that
+/// `check references` and `verdict` tell the environment's failures (exit
+/// 3) from a broken rule or bundle (exit 1).
+fn with_context(
+    error: impl Into<Box<dyn Error>>,
+    context: impl std::fmt::Display,
+) -> Box<dyn Error> {
+    let error = error.into();
+    // `InvalidData` is a file read whole whose content is not UTF-8: the
+    // file is broken, not its reading.
+    match error
+        .downcast_ref::<std::io::Error>()
+        .filter(|io| io.kind() != std::io::ErrorKind::InvalidData)
+    {
+        Some(io) => Box::new(std::io::Error::new(
+            io.kind(),
+            format!("{context}: {error}"),
+        )),
+        None => format!("{context}: {error}").into(),
+    }
+}
+
+/// An error of a library whose errors are `Send + Sync`, as this binary's.
+fn boxed(error: Box<dyn Error + Send + Sync>) -> Box<dyn Error> {
+    error
+}
 
 /// The SHA-256 digests of evidence files, remembered across evaluations.
 ///
@@ -40,7 +70,7 @@ fn digests() -> &'static DigestCache {
     })
 }
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ... | --pending] [--root PATH]\n       cargo qualification readiness --out DIRECTORY [--base DIRECTORY] [--drops PATH] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nreadiness evaluates every program into one JSON report each in --out and, against the reports of an earlier evaluation in --base, lists every capability whose readiness dropped, as a table in --drops.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH [--archive DIR] | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--archive DIR] [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification validate --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification evaluate --manifest PATH [--archive DIR] [--root PATH] [--json-report PATH]\n       cargo qualification check references [--candidate FILE] [--root PATH]\n       cargo qualification verdict --run PATH [--root PATH]\n       cargo qualification readiness --out DIRECTORY [--archive DIR] [--base DIRECTORY] [--drops PATH] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\n--archive DIR reads HIL runs only from DIR, a copy of the evidence archive version qualification/evidence/archive.toml pins (`cargo hil archive fetch`), verified when opened; without it no HIL run is read. validate never reads runs.\ncheck references checks offline, without the archive, the pin, that every run a tracked record cites is in the pinned version with the same SHA-256 (rule 2), that the version holds no run nothing cites (rule 1), and every program's catalogs; with --candidate, rules 1 and 2 hold for the runs of FILE (a references file or a version's manifest.json) instead of the pinned version, as `cargo hil archive pack` and `publish` check before creating anything; exit status 1 when one is not, 2 for a usage error, 3 when the check itself failed, 130 on Ctrl-C.\nverdict judges one run bundle against the HIL requirements of every program with the same evaluator, for work on the stand; its output is marked not published and not evidence, and status, next, plan, readiness and evaluate never read it; exit status 1 when the run does not meet a requirement it observed, observed none a program requires, is of no program's chip or its bundle is not valid, 2 for a usage error, 3 when the command itself failed, 130 on Ctrl-C.\nreadiness evaluates every program into one JSON report each in --out and, against the reports of an earlier evaluation in --base, lists every capability whose readiness dropped, as a table in --drops.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -52,18 +82,20 @@ enum Command {
     CatalogCheck,
     CatalogRender,
     CatalogAnchors,
-    HilEvidence,
+    CheckReferences,
+    Verdict,
     Readiness,
 }
 
 impl Command {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Status,
         Self::Next,
         Self::Plan,
         Self::Validate,
         Self::Evaluate,
-        Self::HilEvidence,
+        Self::CheckReferences,
+        Self::Verdict,
         Self::Readiness,
         Self::CatalogCheck,
         Self::CatalogRender,
@@ -78,7 +110,8 @@ impl Command {
             Self::Plan => &["plan"],
             Self::Validate => &["validate"],
             Self::Evaluate => &["evaluate"],
-            Self::HilEvidence => &["hil-evidence"],
+            Self::CheckReferences => &["check", "references"],
+            Self::Verdict => &["verdict"],
             Self::Readiness => &["readiness"],
             Self::CatalogCheck => &["catalog", "check"],
             Self::CatalogRender => &["catalog", "render"],
@@ -89,11 +122,11 @@ impl Command {
     /// Every option the command accepts: the parser rejects the others, and
     /// `__command-tree` prints these for the documentation check.
     fn options(self) -> &'static [&'static str] {
-        const REPORTS: &[&str] = &["--manifest", "--root", "--json-report"];
         match self {
             Self::Status => &[
                 "--manifest",
                 "--catalog",
+                "--archive",
                 "--capability",
                 "--details",
                 "--root",
@@ -102,14 +135,23 @@ impl Command {
             Self::Next => &[
                 "--manifest",
                 "--catalog",
+                "--archive",
                 "--capability",
                 "--root",
                 "--json-report",
             ],
-            Self::Plan => &["--manifest", "--capability", "--root", "--json-report"],
-            Self::Validate | Self::Evaluate => REPORTS,
-            Self::HilEvidence => &["--manifest", "--hil-target", "--run", "--pending", "--root"],
-            Self::Readiness => &["--out", "--base", "--drops", "--root"],
+            Self::Plan => &[
+                "--manifest",
+                "--archive",
+                "--capability",
+                "--root",
+                "--json-report",
+            ],
+            Self::Validate => &["--manifest", "--root", "--json-report"],
+            Self::Evaluate => &["--manifest", "--archive", "--root", "--json-report"],
+            Self::CheckReferences => &["--candidate", "--root"],
+            Self::Verdict => &["--run", "--root"],
+            Self::Readiness => &["--out", "--archive", "--base", "--drops", "--root"],
             Self::CatalogCheck => &["--manifest", "--catalog", "--root"],
             Self::CatalogRender => &["--manifest", "--catalog", "--out", "--root"],
             Self::CatalogAnchors => &["--catalog", "--changed", "--root"],
@@ -124,12 +166,12 @@ impl Command {
         }) {
             return Ok(command);
         }
-        if first != "catalog" {
+        if first != "catalog" && first != "check" {
             return Err(format!("unknown qualification command {first:?}").into());
         }
         match arguments.get(1) {
-            None => Err("missing catalog operation".into()),
-            Some(operation) => Err(format!("unknown catalog operation {operation:?}").into()),
+            None => Err(format!("missing {first} operation").into()),
+            Some(operation) => Err(format!("unknown {first} operation {operation:?}").into()),
         }
     }
 }
@@ -188,13 +230,14 @@ struct Arguments {
     output_directory: Option<PathBuf>,
     capability: Option<String>,
     details: bool,
-    /// `hil-evidence`: the HIL target whose programs name the run and
-    /// evidence directories, instead of one `--manifest`.
-    hil_target: Option<String>,
-    /// `hil-evidence --run`: record only these runs' observations.
-    runs: Vec<String>,
-    /// `hil-evidence --pending`: record the checkout's pending runs.
-    pending: bool,
+    /// `--archive`: the verified copy of the pinned evidence archive version
+    /// whose runs are the HIL evidence.
+    archive: Option<PathBuf>,
+    /// `verdict --run`: the run bundle to judge.
+    run: Option<PathBuf>,
+    /// `check references --candidate`: the runs of a version about to be
+    /// packed or published, checked instead of the pinned version.
+    candidate: Option<PathBuf>,
     /// `catalog anchors --changed`: repository-relative files an edit touched.
     changed: Vec<PathBuf>,
     /// `readiness --base`: the reports of an earlier evaluation.
@@ -222,9 +265,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut output_directory = None;
     let mut capability = None;
     let mut details = false;
-    let mut hil_target = None;
-    let mut runs = Vec::new();
-    let mut pending = false;
+    let mut archive = None;
+    let mut run = None;
+    let mut candidate = None;
     let mut changed = Vec::new();
     let mut base = None;
     let mut drops = None;
@@ -259,29 +302,22 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     return Err("duplicate --capability".into());
                 }
             }
-            "--run" => {
-                let value = arguments
-                    .get(index + 1)
-                    .ok_or("--run requires a run ID")?
-                    .clone();
-                index += 2;
-                runs.push(value);
-            }
-            "--pending" => {
-                if pending {
-                    return Err("duplicate --pending".into());
+            "--candidate" => {
+                let value = take_value(&arguments, &mut index, "--candidate")?;
+                if candidate.replace(value).is_some() {
+                    return Err("duplicate --candidate".into());
                 }
-                pending = true;
-                index += 1;
             }
-            "--hil-target" => {
-                let value = arguments
-                    .get(index + 1)
-                    .ok_or("--hil-target requires a value")?
-                    .clone();
-                index += 2;
-                if hil_target.replace(value).is_some() {
-                    return Err("duplicate --hil-target".into());
+            "--run" => {
+                let value = take_value(&arguments, &mut index, "--run")?;
+                if run.replace(value).is_some() {
+                    return Err("duplicate --run".into());
+                }
+            }
+            "--archive" => {
+                let value = take_value(&arguments, &mut index, "--archive")?;
+                if archive.replace(value).is_some() {
+                    return Err("duplicate --archive".into());
                 }
             }
             "--changed" => {
@@ -346,11 +382,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         {
             return Err("command requires exactly one of --manifest or --catalog".into());
         }
-        Command::HilEvidence if manifest.is_some() == hil_target.is_some() => {
-            return Err("hil-evidence requires exactly one of --manifest or --hil-target".into());
+        Command::Verdict if run.is_none() => {
+            return Err("verdict requires --run".into());
         }
-        Command::HilEvidence if pending && !runs.is_empty() => {
-            return Err("hil-evidence takes --run or --pending, not both".into());
+        Command::Status | Command::Next if archive.is_some() && manifest.is_none() => {
+            return Err("--archive requires --manifest".into());
         }
         Command::Plan | Command::Validate | Command::Evaluate if manifest.is_none() => {
             return Err("missing --manifest".into());
@@ -366,9 +402,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         output_directory,
         capability,
         details,
-        hil_target,
-        runs,
-        pending,
+        archive,
+        run,
+        candidate,
         changed,
         base,
         drops,
@@ -382,7 +418,19 @@ fn execute(arguments: Arguments) -> Result<()> {
     ) {
         let map = if let Some(manifest) = &arguments.manifest {
             let path = arguments.root.join(manifest);
-            let program = Qualification::load_and_evaluate(&path, &arguments.root)?;
+            let archive = archive_copy(&arguments.root, arguments.archive.as_deref())?;
+            let input = archive_input(
+                archive
+                    .as_ref()
+                    .map(|copy| copy.manifest().version().to_string()),
+            );
+            if input_on_stderr(arguments.command) {
+                eprintln!("{input}");
+            } else {
+                println!("{input}");
+            }
+            let program =
+                Qualification::load_and_evaluate(&path, &arguments.root, archive.as_ref())?;
             engineering::ProjectMap::from_program(&program, arguments.capability.as_deref())?
         } else {
             let catalog = CatalogView::load(&arguments.root, &arguments.catalogs)?;
@@ -416,8 +464,10 @@ fn execute(arguments: Arguments) -> Result<()> {
             .drops
             .as_deref()
             .map(|p| readiness::rooted(root, p));
+        let archive = archive_copy(root, arguments.archive.as_deref())?;
         readiness::run(
             root,
+            archive.as_ref(),
             &readiness::rooted(root, out),
             base.as_deref(),
             drops.as_deref(),
@@ -452,14 +502,12 @@ fn execute(arguments: Arguments) -> Result<()> {
         );
         return Ok(());
     }
-    if let Some(target) = &arguments.hil_target {
-        let manifest = model::hil_program(&arguments.root, target)?;
-        return record_hil_evidence(
-            &arguments.root.join(manifest),
-            &arguments.root,
-            &arguments.runs,
-            arguments.pending,
-        );
+    if arguments.command == Command::CheckReferences {
+        return references::run(&arguments.root, arguments.candidate.as_deref());
+    }
+    if arguments.command == Command::Verdict {
+        let run = arguments.run.as_deref().ok_or("verdict requires --run")?;
+        return verdict::run(&arguments.root, run);
     }
     let manifest = arguments.manifest.as_ref().ok_or("missing --manifest")?;
     let manifest_path = if manifest.is_absolute() {
@@ -467,14 +515,6 @@ fn execute(arguments: Arguments) -> Result<()> {
     } else {
         arguments.root.join(manifest)
     };
-    if arguments.command == Command::HilEvidence {
-        return record_hil_evidence(
-            &manifest_path,
-            &arguments.root,
-            &arguments.runs,
-            arguments.pending,
-        );
-    }
     if arguments.command == Command::CatalogCheck {
         let catalog = CatalogView::load_for_program(&arguments.root, &manifest_path)?;
         println!(
@@ -486,7 +526,9 @@ fn execute(arguments: Arguments) -> Result<()> {
         );
         return Ok(());
     }
-    let qualification = Qualification::load_and_evaluate(&manifest_path, &arguments.root)?;
+    let archive = archive_copy(&arguments.root, arguments.archive.as_deref())?;
+    let qualification =
+        Qualification::load_and_evaluate(&manifest_path, &arguments.root, archive.as_ref())?;
     if matches!(
         arguments.command,
         Command::CatalogCheck | Command::CatalogRender
@@ -520,61 +562,38 @@ fn execute(arguments: Arguments) -> Result<()> {
     Ok(())
 }
 
-/// Record the qualifying observations of the program's runs as tracked
-/// shards: of `runs`, of the checkout's pending runs with `pending`, or else
-/// of every run. The evaluator reads the runs itself; a pending run it
-/// observed leaves the pending list, a pending run of another chip stays.
-fn record_hil_evidence(
-    manifest: &std::path::Path,
+/// The line that says which archive version an evaluation read, `none`
+/// when it read no HIL run.
+fn archive_input(version: Option<String>) -> String {
+    format!(
+        "INPUT\thil-archive={}",
+        version.as_deref().unwrap_or("none")
+    )
+}
+
+/// Whether the command prints [`archive_input`] on stderr: `plan`, whose
+/// stdout is its JSON.
+fn input_on_stderr(command: Command) -> bool {
+    command == Command::Plan
+}
+
+/// The copy at `directory` (relative to `root` unless absolute) of the
+/// evidence archive version the repository pins, verified against the pin;
+/// none without a directory.
+fn archive_copy(
     root: &std::path::Path,
-    runs: &[String],
-    pending: bool,
-) -> Result<()> {
-    use oer_hil_run_bundle_format::pending as pending_list;
-    let runs = if pending {
-        let listed = pending_list::load(root)
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .map(|entry| entry.run)
-            .collect::<std::collections::BTreeSet<_>>();
-        if listed.is_empty() {
-            println!("HIL-EVIDENCE\tshards=0\tpending=0");
-            return Ok(());
-        }
-        Some(listed)
-    } else {
-        (!runs.is_empty()).then(|| {
-            runs.iter()
-                .cloned()
-                .collect::<std::collections::BTreeSet<_>>()
-        })
+    directory: Option<&std::path::Path>,
+) -> Result<Option<oer_hil_evidence_archive::Copy>> {
+    let Some(directory) = directory else {
+        return Ok(None);
     };
-    let evidence = Qualification::record_hil_evidence(manifest, root, runs.as_ref())?;
-    println!("HIL-EVIDENCE\tshards={}", evidence.recorded.len());
-    for scenario in &evidence.recorded {
-        println!("HIL-SHARD\t{scenario}");
-    }
-    if pending {
-        let observed = evidence
-            .verdicts
-            .iter()
-            .filter(|(_, _, verdict)| verdict.id() != "not-found")
-            .map(|(run, _, _)| run.clone())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        pending_list::forget(root, &observed).map_err(|error| error.to_string())?;
-    }
-    // One line per scenario of each requested run: what became of it and why.
-    for (run, scenario, verdict) in &evidence.verdicts {
-        println!(
-            "HIL-EVIDENCE-RUN\t{run}\t{}\t{}\t{}",
-            if scenario.is_empty() { "-" } else { scenario },
-            verdict.id(),
-            verdict.detail()
-        );
-    }
-    Ok(())
+    let pin = root.join(oer_hil_evidence_archive::PIN);
+    let pinned = oer_hil_evidence_archive::Pin::load(&pin)
+        .map_err(boxed)?
+        .ok_or_else(|| format!("{} pins no evidence archive version", pin.display()))?;
+    let copy = oer_hil_evidence_archive::Copy::open(&root.join(directory), pinned.manifest())
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
+    Ok(Some(copy))
 }
 
 fn is_help(arguments: &[String]) -> bool {
@@ -592,20 +611,30 @@ fn main() -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    // Recorded shards enter the repository; hash every file they bind: the
-    // unauthenticated cache must not vouch for them.
-    if raw_arguments
-        .first()
-        .is_some_and(|command| command == "hil-evidence")
-    {
-        digests().disable();
-    }
+    // `check references` and `verdict` follow the CLI exit codes of #783,
+    // where a usage error is 2.
+    let usage_status = ExitCode::from(usage_status(&raw_arguments));
     let arguments = match parse_arguments(raw_arguments) {
         Ok(arguments) => arguments,
         Err(error) => {
             eprintln!("{USAGE}\nerror: {error}");
-            return ExitCode::FAILURE;
+            return usage_status;
         }
+    };
+    let command = arguments.command;
+    // `check references` and `verdict` stop on Ctrl-C at their next step
+    // and exit 130 (#783); the other commands keep the default signal
+    // handling until `oer-cli`.
+    let _signals = match command {
+        Command::CheckReferences | Command::Verdict => match oer_process::install_signal_handlers()
+        {
+            Ok(guard) => Some(guard),
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::from(3);
+            }
+        },
+        _ => None,
     };
     let result = execute(arguments);
     digests().save();
@@ -613,8 +642,42 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
-            ExitCode::FAILURE
+            // `check references` and `verdict` follow the CLI exit codes of
+            // #783: 1 a broken rule, an unmet requirement or nothing to
+            // judge, 3 the command itself failed, 130 cancelled.
+            if !matches!(command, Command::CheckReferences | Command::Verdict) {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::from(exit_status(&*error, oer_process::cancellation_requested()))
+            }
         }
+    }
+}
+
+/// The exit status of a usage error: 2 for `check` and `verdict`, which
+/// follow #783 (an unknown `check` operation included), 1 for the others.
+fn usage_status(arguments: &[String]) -> u8 {
+    match Command::find(arguments) {
+        Ok(Command::CheckReferences | Command::Verdict) => 2,
+        Err(_) if matches!(arguments.first().map(String::as_str), Some("check")) => 2,
+        _ => 1,
+    }
+}
+
+/// The exit status of a failed `check references` or `verdict` (#783).
+/// After Ctrl-C (`cancelled`) every failure is the cancellation's, even one
+/// a tool reported only as text, such as a git query it interrupted.
+fn exit_status(error: &(dyn Error + 'static), cancelled: bool) -> u8 {
+    if cancelled || oer_process::is_cancelled(error) {
+        130
+    } else if error.is::<oer_hil_evidence_archive::Refused>()
+        || error.is::<verdict::Unmet>()
+        || error.is::<verdict::Invalid>()
+        || error.is::<verdict::Unjudged>()
+    {
+        1
+    } else {
+        3
     }
 }
 

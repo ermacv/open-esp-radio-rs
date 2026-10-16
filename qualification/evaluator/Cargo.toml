@@ -10,6 +10,7 @@ description = "Fail-closed qualification evaluator for the open radio driver"
 
 [dependencies]
 oer-hil-run-bundle-format = { path = "../../hil/host/run-bundle/format" }
+oer-hil-evidence-archive = { path = "../../hil/host/evidence-archive" }
 oer-hil-scenario-catalog = { path = "../../hil/host/scenario/catalog" }
 oer-command-tree = { path = "../../tools/command-tree" }
 oer-hil-schema = { path = "../../hil/schema" }

@@ -12,9 +12,20 @@ use std::{
     path::{Component, Path},
 };
 
+/// The JSON document at `path`, typed.
+///
+/// A file that is absent is a message, a bundle missing it; any other failure
+/// to read it stays an I/O error, so a reader can tell a broken store from a
+/// broken bundle.
 pub fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let bytes = fs::read(path)
-        .map_err(|error| format!("cannot read HIL evidence `{}`: {error}", path.display()))?;
+    let bytes = fs::read(path).map_err(|error| -> Box<dyn std::error::Error + Send + Sync> {
+        let message = format!("cannot read HIL evidence `{}`: {error}", path.display());
+        if error.kind() == std::io::ErrorKind::NotFound {
+            message.into()
+        } else {
+            Box::new(std::io::Error::new(error.kind(), message))
+        }
+    })?;
     serde_json::from_slice(&bytes)
         .map_err(|error| format!("cannot parse HIL evidence `{}`: {error}", path.display()).into())
 }

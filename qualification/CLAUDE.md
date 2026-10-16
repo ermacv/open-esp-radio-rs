@@ -7,9 +7,10 @@ never decide it. Reference: [README](README.md).
 | Path | Owns |
 | --- | --- |
 | `catalog/<chip>/*.toml` | Canonical capability declarations, source facts and inventories |
-| `targets/<chip>/*.toml` | Programs: selected capabilities, HIL requirements, evidence directories |
+| `targets/<chip>/*.toml` | Programs: selected capabilities, HIL requirements |
 | `evaluator/` | `oer-qualification`, the evaluator behind `cargo qualification` |
-| `evidence-shard/` | Root-workspace shared vendor and HIL evidence shard format, validation, currency and reader/writer ([README](evidence-shard/README.md)) |
+| `evidence-shard/` | Root-workspace vendor evidence shard format, validation, currency and reader/writer ([README](evidence-shard/README.md)) |
+| `evidence/archive.toml` | The pin of the HIL evidence archive version qualification reads (`cargo hil archive publish` writes it; `cargo qualification check references` checks it offline) |
 
 ## Rules
 
@@ -30,7 +31,8 @@ never decide it. Reference: [README](README.md).
 
 ## Commands (in the background)
 
-- `cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --capability <id>`
+- `rm -rf target/hil/evidence-archive && cargo hil archive fetch --out target/hil/evidence-archive` (network; `fetch` never writes over a copy), then `cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --archive target/hil/evidence-archive --capability <id>`; without `--archive` no HIL run is read (`INPUT hil-archive=none`) and no HIL obligation is satisfied
+- `cargo qualification check references`: the pin and the cited runs, offline
 - `cargo qualification validate --manifest qualification/targets/<chip>/<program>.toml`
 - `cargo xtask check capabilities` and `cargo xtask check docs` after catalog changes.
 

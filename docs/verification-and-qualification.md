@@ -232,11 +232,14 @@ derives:
 
 ## HIL evidence path
 
-Qualification reads sealed run bundles from the shared run store and tracked
-HIL evidence shards (`hil/evidence/<target>`), which `cargo qualification
-hil-evidence` writes explicitly from qualifying runs; running a scenario never writes tracked
-files. The [qualification reference](../qualification/README.md) describes the
-shard binding. Qualification manifests name exact scenario requirements rather
+Qualification reads sealed run bundles only from a verified copy of the
+evidence archive version `evidence/archive.toml` in `qualification/` pins (`cargo
+qualification evaluate --archive DIR`, after `cargo hil archive fetch`), never
+from the run store; running a scenario never writes tracked files. The gate
+reads no runs: `cargo qualification check references` checks the pin and the
+runs tracked records cite offline. The
+[qualification reference](../qualification/README.md#evidence-ownership)
+describes the archive. Qualification manifests name exact scenario requirements rather
 than dated narrative files:
 
 ```toml
@@ -322,6 +325,7 @@ cargo verification evidence --chip esp32s31
 
 cargo qualification evaluate \
   --manifest qualification/targets/<chip>/<program>.toml \
+  --archive target/hil/evidence-archive \
   --json-report target/qualification/<program>.json
 ```
 

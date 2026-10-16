@@ -15,7 +15,6 @@ required-capabilities = ["base-phy", "wifi-channel"]
 [hil]
 target = "test-radio"
 catalog = "scenarios"
-runs = "runs"
 "#;
 
 const BASE_PHY: &str = r#"
@@ -208,7 +207,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             hil: Default::default(),
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
-            hil_runs: PathBuf::from("runs"),
+            hil_archive: None,
             absent: Vec::new(),
         },
         capabilities: evaluated,
@@ -530,7 +529,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
                 hil: Default::default(),
                 vendor_evidence_index: PathBuf::from("vendor.json"),
                 hil_catalog: PathBuf::from("scenarios"),
-                hil_runs: PathBuf::from("runs"),
+                hil_archive: None,
                 absent: Vec::new(),
             },
             capabilities: result,
@@ -578,7 +577,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
             hil: Default::default(),
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
-            hil_runs: PathBuf::from("runs"),
+            hil_archive: None,
             absent: Vec::new(),
         },
         capabilities: evaluated,
@@ -1086,4 +1085,41 @@ fn explicit_catalog_closure_follows_new_dependencies_without_relaxing_exact_prog
         )
         .is_err()
     );
+}
+
+/// A checkout whose packages cannot be read (here `git ls-files` fails on
+/// a `.git` that is no repository) fails the check (exit 3), never a
+/// catalog rule (exit 1).
+#[test]
+fn unreadable_workspace_packages_are_the_environments() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join(".git"), "").unwrap();
+    let error = match workspace::WorkspacePackages::load(root.path()) {
+        Ok(_) => panic!("git ls-files cannot list a broken checkout"),
+        Err(error) => error,
+    };
+    assert!(error.is::<std::io::Error>(), "{error}");
+}
+
+/// A referenced path that does not exist breaks a rule; one that cannot be
+/// inspected is the environment's.
+#[cfg(unix)]
+#[test]
+fn an_uninspectable_reference_is_the_environments() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let missing =
+        validate_regular_reference(root.path(), Path::new("a/b.md"), "document").unwrap_err();
+    assert!(!missing.is::<std::io::Error>(), "{missing}");
+    let closed = root.path().join("a");
+    fs::create_dir(&closed).unwrap();
+    fs::write(closed.join("b.md"), "").unwrap();
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o000)).unwrap();
+    let traversable = fs::metadata(closed.join("b.md")).is_ok();
+    let result = validate_regular_reference(root.path(), Path::new("a/b.md"), "document");
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o755)).unwrap();
+    if !traversable {
+        let error = result.unwrap_err();
+        assert!(error.is::<std::io::Error>(), "{error}");
+    }
 }

@@ -1,9 +1,9 @@
 # oer-vendor-evidence-shard
 
-The shared evidence shard format used by the qualification evaluator and
-verification producers. It belongs to the root workspace in `qualification/`,
-whose evaluator records HIL observations as shards and reads both vendor and
-HIL evidence.
+The vendor evidence shard format that verification producers write and the
+qualification evaluator reads. It belongs to the root workspace in
+`qualification/`. HIL evidence is not sharded: it is the runs of the pinned
+evidence archive ([`oer-hil-evidence-archive`](../../hil/host/evidence-archive/README.md)).
 
 - `index`: the shard schema, validation, source and coverage-decision currency,
   and the cross-scenario views of a whole evidence directory.

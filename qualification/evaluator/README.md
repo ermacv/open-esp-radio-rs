@@ -7,18 +7,18 @@ in [qualification](../README.md). Its package name is
 
 | Operation | Result |
 | --- | --- |
-| `status (--catalog PATH ... \| --manifest PATH) [--capability ID] [--json-report PATH]` | Show declarations or saved observations, owners, knowledge links, limits and next work without an aggregate gate |
-| `next (--catalog PATH ... \| --manifest PATH) [--capability ID] [--json-report PATH]` | Explain work candidates in the same map; never execute checks or infer cross-image evidence transfer |
-| `plan --manifest PATH [--capability ID]` | Emit evidence-aware HIL selection; focused dependencies remain context and do not expand execution |
-| `validate --manifest PATH` | Reject malformed or inconsistent inputs; a valid incomplete program may pass |
-| `evaluate --manifest PATH` | Derive readiness axes and optionally write `--json-report PATH` |
-| `gate --manifest PATH` | Fail unless every required capability and dependency is ready |
+| `status (--catalog PATH ... \| --manifest PATH [--archive DIR]) [--capability ID] [--json-report PATH]` | Show declarations or saved observations, owners, knowledge links, limits and next work without an aggregate gate |
+| `next (--catalog PATH ... \| --manifest PATH [--archive DIR]) [--capability ID] [--json-report PATH]` | Explain work candidates in the same map; never execute checks or infer cross-image evidence transfer |
+| `plan --manifest PATH [--archive DIR] [--capability ID]` | Emit evidence-aware HIL selection; focused dependencies remain context and do not expand execution |
+| `validate --manifest PATH` | Reject malformed or inconsistent inputs, reading no HIL run; a valid incomplete program may pass |
+| `evaluate --manifest PATH [--archive DIR]` | Derive readiness axes and optionally write `--json-report PATH`; HIL evidence only from `--archive`, a copy of the pinned evidence archive version verified against `evidence/archive.toml` in `qualification/` when opened |
+| `check references` | Offline, without the archive: the pin hashes to its version, every run a tracked record cites is in it with the same SHA-256 (rule 2), it holds no run nothing cites (rule 1), and every program's catalogs load; with `--candidate FILE` rules 1 and 2 hold for FILE's runs (a references file or a version's `manifest.json`) instead, as `cargo hil archive pack` and `publish` check before creating anything; exit 1 when one is not, 2 for a usage error, 3 when the check failed, 130 on Ctrl-C |
+| `verdict --run PATH` | Judge one run bundle against the HIL requirements of every program with the same evaluator, for work on the stand; marked not published and not evidence, never read by another command; exit 1 when the run does not meet a requirement it observed, observed none a program requires, is of no program's chip or its bundle is not valid (with the reason), 2 for a usage error, 3 when the command failed, 130 on Ctrl-C |
 | `catalog check --catalog PATH` | Statically validate every catalog declaration without evidence outputs or HIL runs |
 | `catalog check --manifest PATH` | Statically validate catalogs, program selection, dependency closure and the declared required-set policy without evidence outputs |
 | `catalog render --catalog PATH --out DIRECTORY` | Write deterministic static domain and declaration views |
 | `catalog render --manifest PATH --out DIRECTORY` | Write static views plus a separate evaluator-derived program view |
 | `catalog anchors --catalog PATH ... [--changed FILE ...]` | Check the `// CAPABILITY:` code anchors against every loaded catalog entry and list the entries anchored in changed files ([code anchors](../README.md#code-anchors)) |
-| `hil-evidence (--manifest PATH \| --hil-target TARGET) [--run ID ...]` | Record the qualifying HIL observations of the program's runs as tracked shards bound to their firmware and observer sources |
 
 Schema-4 programs declare implementation, host and async status. Vendor/HIL
 status is derived from independently checked external evidence. Declarations

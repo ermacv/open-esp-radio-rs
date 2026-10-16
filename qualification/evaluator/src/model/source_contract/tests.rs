@@ -102,3 +102,28 @@ fn source_composition_cannot_promote_or_block_readiness() {
         assert!(!capability.proof_ready());
     }
 }
+
+/// A source path that does not exist breaks the rule; one that cannot be
+/// inspected is the environment's (`check references` exit 3).
+#[cfg(unix)]
+#[test]
+fn an_uninspectable_source_path_is_the_environments() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let closed = root.path().join("a");
+    std::fs::create_dir(&closed).unwrap();
+    std::fs::write(closed.join("b.rs"), "").unwrap();
+    let mut entry = contract();
+    entry.source_paths = vec![PathBuf::from("a/missing.rs")];
+    let missing = validate(std::slice::from_ref(&entry), root.path()).unwrap_err();
+    assert!(!missing.is::<std::io::Error>(), "{missing}");
+    entry.source_paths = vec![PathBuf::from("a/b.rs")];
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let traversable = std::fs::metadata(closed.join("b.rs")).is_ok();
+    let result = validate(std::slice::from_ref(&entry), root.path());
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if !traversable {
+        let error = result.unwrap_err();
+        assert!(error.is::<std::io::Error>(), "{error}");
+    }
+}

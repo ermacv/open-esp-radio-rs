@@ -625,33 +625,33 @@ fn an_absent_evidence_directory_is_reported_and_supports_nothing() {
     let fixture = fixture_root("absent-directories");
     let root = &fixture.0;
     fs::create_dir_all(root.join("verification/chip/evidence")).unwrap();
-    fs::create_dir_all(root.join("target/hil/chip")).unwrap();
-    // A checkout's runs link before its first run points nowhere.
+    fs::create_dir_all(root.join("target/verification")).unwrap();
+    // A link to a directory not created yet points nowhere.
     std::os::unix::fs::symlink(
         root.join("store/never-created"),
-        root.join("target/hil/chip/runs"),
+        root.join("target/verification/linked"),
     )
     .unwrap();
     let absent = absent_directories(
         root,
         &[
             ("vendor-evidence", Path::new("verification/chip/evidence")),
-            ("hil-evidence", Path::new("hil/evidence/chip")),
-            ("hil-runs", Path::new("target/hil/chip/runs")),
-            ("hil-evidence", Path::new("")),
+            ("vendor-evidence", Path::new("verification/other/evidence")),
+            ("vendor-evidence", Path::new("target/verification/linked")),
+            ("vendor-evidence", Path::new("")),
         ],
     );
     assert_eq!(
         absent,
         [
             AbsentDirectory {
-                kind: "hil-evidence",
-                path: PathBuf::from("hil/evidence/chip"),
+                kind: "vendor-evidence",
+                path: PathBuf::from("verification/other/evidence"),
                 state: "absent",
             },
             AbsentDirectory {
-                kind: "hil-runs",
-                path: PathBuf::from("target/hil/chip/runs"),
+                kind: "vendor-evidence",
+                path: PathBuf::from("target/verification/linked"),
                 state: "absent",
             },
         ]
@@ -659,8 +659,8 @@ fn an_absent_evidence_directory_is_reported_and_supports_nothing() {
     assert_eq!(
         crate::report::absent_lines(&absent),
         [
-            "EVIDENCE-DIR\tabsent\tkind=hil-evidence\tpath=hil/evidence/chip\tshards=0",
-            "EVIDENCE-DIR\tabsent\tkind=hil-runs\tpath=target/hil/chip/runs\tbundles=0",
+            "EVIDENCE-DIR\tabsent\tkind=vendor-evidence\tpath=verification/other/evidence\tshards=0",
+            "EVIDENCE-DIR\tabsent\tkind=vendor-evidence\tpath=target/verification/linked\tshards=0",
         ]
     );
     // A stale derived vendor index is reported as such and holds nothing.
@@ -682,4 +682,49 @@ fn an_absent_evidence_directory_is_reported_and_supports_nothing() {
         source: "source".into(),
         symbol: "symbol".into(),
     }));
+}
+
+/// A vendor anchor that does not exist breaks a rule; one that cannot be
+/// inspected is the environment's (`check references` exit 3).
+#[cfg(unix)]
+#[test]
+fn an_uninspectable_vendor_anchor_is_the_environments() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let closed = root.path().join("a");
+    fs::create_dir(&closed).unwrap();
+    fs::write(closed.join("b.c"), "").unwrap();
+    let missing =
+        validate_vendor_anchors("radio", &[PathBuf::from("a/missing.c")], root.path()).unwrap_err();
+    assert!(!crate::hil::environment_error(&*missing), "{missing}");
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o000)).unwrap();
+    let traversable = fs::metadata(closed.join("b.c")).is_ok();
+    let result = validate_vendor_anchors("radio", &[PathBuf::from("a/b.c")], root.path());
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o755)).unwrap();
+    if !traversable {
+        let error = result.unwrap_err();
+        assert!(crate::hil::environment_error(&*error), "{error}");
+    }
+}
+
+/// A HIL scenario catalog that cannot be read is the environment's; one
+/// that does not exist breaks a rule.
+#[cfg(unix)]
+#[test]
+fn an_unreadable_scenario_catalog_is_the_environments() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let missing =
+        crate::hil::ScenarioCatalog::load(root.path(), Path::new("scenarios")).unwrap_err();
+    assert!(!crate::hil::environment_error(&*missing), "{missing}");
+    let catalog = root.path().join("scenarios");
+    fs::create_dir(&catalog).unwrap();
+    fs::set_permissions(&catalog, fs::Permissions::from_mode(0o000)).unwrap();
+    let readable = fs::read_dir(&catalog).is_ok();
+    let result = crate::hil::ScenarioCatalog::load(root.path(), Path::new("scenarios"));
+    fs::set_permissions(&catalog, fs::Permissions::from_mode(0o755)).unwrap();
+    if !readable {
+        let error = result.unwrap_err();
+        assert!(crate::hil::environment_error(&*error), "{error}");
+    }
 }

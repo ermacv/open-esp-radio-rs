@@ -141,7 +141,9 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
             || lock.sha256
                 != crate::digests()
                     .sha256_file(&lock_path)
-                    .map_err(|error| error.to_string())?
+                    // An I/O failure of the checkout stays one: `verdict`
+                    // reports it as the environment's, not the bundle's.
+                    .map_err(crate::boxed)?
         {
             return Ok(Binding::Unavailable);
         }

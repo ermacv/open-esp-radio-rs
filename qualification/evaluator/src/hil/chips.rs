@@ -9,12 +9,9 @@ use super::*;
 
 /// One chip's HIL image inputs, as repository-relative paths.
 pub(crate) struct ChipFirmware {
-    pub(crate) rust_target: String,
     /// `(workspace manifest, package)` of the HIL agent first, then of a
     /// staged boot's bootstrap.
     pub(crate) packages: Vec<(PathBuf, String)>,
-    /// Workspace manifests, lock files and the policies the build reads.
-    pub(crate) build_files: Vec<PathBuf>,
     /// The chip's HIL agent and platform directories.
     pub(crate) directories: Vec<PathBuf>,
 }
@@ -35,21 +32,8 @@ pub(crate) fn all(root: &Path) -> Result<Vec<ChipFirmware>> {
         for (workspace, package) in profile.hil_image_packages(root) {
             packages.push((relative(workspace)?.join("Cargo.toml"), package));
         }
-        let build_files = [
-            agent.join("Cargo.toml"),
-            agent.join("Cargo.lock"),
-            agent.join("stack.toml"),
-            platform.join("Cargo.toml"),
-            platform.join("Cargo.lock"),
-            platform.join("partitions/applications.csv"),
-        ]
-        .into_iter()
-        .filter(|path| root.join(path).is_file())
-        .collect();
         chips.push(ChipFirmware {
-            rust_target: profile.rust_target.clone(),
             packages,
-            build_files,
             directories: vec![agent, platform],
         });
     }

@@ -183,7 +183,7 @@ impl std::error::Error for PlanError {}
 const NAMED: usize = 3;
 
 /// The plan's inputs besides the scenarios.
-pub struct Stand<'a> {
+pub struct PlanInputs<'a> {
     pub profile: &'a StandProfile,
     pub offer: &'a StandOffer,
     pub costs: &'a StandCosts,
@@ -191,7 +191,7 @@ pub struct Stand<'a> {
 }
 
 /// Plans `scenarios` for `tier`.
-pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan, PlanError> {
+pub fn plan(tier: Tier, scenarios: &[Planned], inputs: &PlanInputs<'_>) -> Result<Plan, PlanError> {
     // An empty tier uses no stand span.
     if scenarios.is_empty() {
         return Ok(Plan {
@@ -204,7 +204,7 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
     let refusals: Vec<_> = scenarios
         .iter()
         .filter_map(|planned| {
-            let unmet = planned.resources.unmet(stand.offer);
+            let unmet = planned.resources.unmet(inputs.offer);
             (!unmet.is_empty()).then(|| (planned.id.clone(), unmet))
         })
         .collect();
@@ -214,7 +214,7 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
 
     let mut provisional = Vec::new();
     let mut cost = |span: &SpanName| -> Result<u64, PlanError> {
-        let resolved = stand
+        let resolved = inputs
             .profile
             .budget(span)
             .map_err(|error| PlanError::Wait {
@@ -224,9 +224,9 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
         provisional.extend(resolved.provisional);
         Ok(resolved.micros)
     };
-    let build_micros = cost(&stand.costs.build)?;
-    let flash_micros = cost(&stand.costs.flash)?;
-    let boot_micros = cost(&stand.costs.boot)?;
+    let build_micros = cost(&inputs.costs.build)?;
+    let flash_micros = cost(&inputs.costs.flash)?;
+    let boot_micros = cost(&inputs.costs.boot)?;
 
     // Images in first-use order: a scenario joins the first image of its
     // chip whose composition it shares, or either side needs none.
@@ -252,7 +252,7 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
         for planned in members {
             let id = || Some(planned.id.clone());
             let overflow = |_| PlanError::Overflow { scenario: id() };
-            let estimate = (planned.estimate)(stand.profile).map_err(|error| PlanError::Wait {
+            let estimate = (planned.estimate)(inputs.profile).map_err(|error| PlanError::Wait {
                 scenario: id(),
                 error,
             })?;
@@ -262,7 +262,7 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
             sizes.push((planned.id.clone(), own));
             let with = sum([leased, own]).map_err(overflow)?;
             if !current.is_empty()
-                && stand.lease.margin.apply(with).map_err(overflow)? > stand.lease.cap_micros
+                && inputs.lease.margin.apply(with).map_err(overflow)? > inputs.lease.cap_micros
             {
                 let closed = segment(
                     &image,
@@ -270,7 +270,7 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
                     builds,
                     build_micros,
                     leased,
-                    stand.lease,
+                    inputs.lease,
                 )
                 .map_err(overflow)?;
                 segments.push(closed);
@@ -278,19 +278,19 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
                 leased = flash_micros;
             }
             let leased_with = sum([leased, own]).map_err(overflow)?;
-            let lease_micros = stand.lease.margin.apply(leased_with).map_err(overflow)?;
-            if lease_micros > stand.lease.cap_micros {
+            let lease_micros = inputs.lease.margin.apply(leased_with).map_err(overflow)?;
+            if lease_micros > inputs.lease.cap_micros {
                 return Err(PlanError::Unsplittable {
                     scenario: planned.id.clone(),
                     lease_micros,
-                    cap_micros: stand.lease.cap_micros,
+                    cap_micros: inputs.lease.cap_micros,
                 });
             }
             current.push(planned.id.clone());
             leased = leased_with;
         }
         if !current.is_empty() {
-            let last = segment(&image, current, builds, build_micros, leased, stand.lease)
+            let last = segment(&image, current, builds, build_micros, leased, inputs.lease)
                 .map_err(|_| PlanError::Overflow { scenario: None })?;
             segments.push(last);
         }
@@ -534,7 +534,7 @@ mod tests {
         plan(
             tier,
             scenarios,
-            &Stand {
+            &PlanInputs {
                 profile,
                 offer: &offer,
                 costs: &costs,

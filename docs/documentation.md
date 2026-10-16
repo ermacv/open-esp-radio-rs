@@ -14,9 +14,8 @@ changes.
 | Directory or crate `README.md` | That component's purpose, inputs, outputs, dependencies and operating instructions |
 | Rust module and item docs | API semantics, ownership, errors, cancellation, panic and safety conditions |
 | Chip `FEATURES.md` | Navigation to current implementation scope, limitations and generated capability views; not a hand-maintained readiness matrix |
-| `examples/` | Buildable application examples and their board/configuration requirements |
 | `qualification/catalog/` and source declarations | Canonical capability identities, dependencies and source facts |
-| `qualification/targets/` | Programs that select required capabilities and evidence policy for an evaluation target |
+| `qualification/targets/<chip>/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
 | `docs/book.toml` and `docs/SUMMARY.md` | mdBook configuration and guide order; documents elsewhere remain with their owners |
 | Root and directory `CLAUDE.md` | Agent rules and navigation: always-relevant rules at the root; a directory's layout, local rules and commands; links to the owner documents instead of restating them |

@@ -37,8 +37,7 @@ hil/
 │   ├── arbiter/       leases, claims, balances, lock files, job tickets, the board journal
 │   ├── fixture/       finite Linux helpers and their contract
 │   ├── fixture-install/ root-executed fixture installation
-│   ├── linux-net/     privileged Linux AP/monitor fixture
-│   └── linux-bluetooth/ privileged Linux Bluetooth fixture
+│   └── linux-net/     privileged Linux AP/monitor fixture
 ├── peers/             ESP-IDF reference peer images (esp32c5)
 ├── bootloaders/       second-stage bootloader per chip
 ├── agent/            chip-independent HIL agent logic

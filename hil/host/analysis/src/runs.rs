@@ -111,9 +111,6 @@ pub fn list_line(run: &Run) -> String {
     )
 }
 
-/// Trace events `why` shows per failed repetition.
-const TRACE_EVENTS_SHOWN: usize = 64;
-
 /// A log line with control and replacement characters of raw binary output
 /// shown as `·`.
 fn printable(line: &str) -> String {
@@ -279,17 +276,6 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
                 ));
                 for line in &lines[lines.len().saturating_sub(tail_lines)..] {
                     text.push_str(&format!("        | {}\n", printable(line)));
-                }
-            }
-            // The target's own trace of what led there, when it had one.
-            if let Ok(trace) = fs::read_to_string(directory.join("post-mortem/trace.txt")) {
-                let mut lines = trace.lines();
-                let heading = lines.next().unwrap_or_default().trim_start_matches("# ");
-                let events = lines.collect::<Vec<_>>();
-                let shown = TRACE_EVENTS_SHOWN.min(events.len());
-                text.push_str(&format!("      trace ({heading}), last {shown} events:\n"));
-                for line in &events[events.len() - shown..] {
-                    text.push_str(&format!("        | {line}\n"));
                 }
             }
         }

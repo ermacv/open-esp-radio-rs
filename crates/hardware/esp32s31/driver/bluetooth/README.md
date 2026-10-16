@@ -68,7 +68,7 @@ encoding the controller-SRAM fields.
 
 ## Bring-up and teardown order
 
-The removed composition (`crates/composition/esp32s31/embassy/bluetooth`,
+The removed composition (`composition/esp32s31/embassy/bluetooth`,
 `src/system.rs` at tag `legacy-radio-2026-10-16`) ran the typed primitives of
 this crate in the vendor order of
 [`bt.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/controller/esp32s31/bt.c),

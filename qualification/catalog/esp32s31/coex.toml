@@ -198,7 +198,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Executable phase transitions"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. The radio runtime's `RadioSystem::run_coex_schedule` delivers these steps on its phase timer and publishes the notified phases. The Wi-Fi station's power agent consumes its phases; the Bluetooth Controller, like the vendor BLE Controller, does not react to phases."
+scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. No runtime delivers these steps since #770 (the former `RadioSystem::run_coex_schedule`, tag `legacy-radio-2026-10-16`). The Wi-Fi station's power agent consumes its phases; the Bluetooth Controller, like the vendor BLE Controller, does not react to phases."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheme-selection"

@@ -6,14 +6,14 @@ hil-catalog = "hil/scenarios"
 
 [[source-facts]]
 id = "bluetooth-initial-phy-handoff"
-status = "partial"
+status = "implemented"
 level = "lower-primitive"
 
 [source-facts.source-contract]
 id = "bluetooth-initial-phy-handoff"
 composition = "production"
 scope = "Common radio power and Bluetooth module clocks through the shared radio arbiter, arbiter-owned PHY registration or RF wake, then Bluetooth-client and BTBB membership with initial tracking at once under the arbiter lease when due at the join"
-limits = "The PHY client and driver steps remain; the shared radio arbiter and the Bluetooth composition that ran them went in #770 (tag `legacy-radio-2026-10-16`), so nothing composes the handoff now. It retained fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
+limits = "The PHY client and driver steps remain; the shared radio arbiter and the Bluetooth composition that ran them went in #770 (tag `legacy-radio-2026-10-16`), so nothing composes the handoff now; #771 (the shared radio system) brings a composer back. It retained fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
@@ -21,14 +21,14 @@ source-paths = [
 
 [[source-facts]]
 id = "bluetooth-idle-phy-maintenance"
-status = "partial"
+status = "implemented"
 level = "lower-primitive"
 
 [source-facts.source-contract]
 id = "bluetooth-idle-phy-maintenance"
 composition = "production"
 scope = "Run due shared-PHY tracking while the idle Bluetooth Controller is a PHY client, as the vendor does: a periodic tracking timer runs the tracking transaction under the PHY lock and grant protection without stopping the Controller's HCI, role or interrupt epochs"
-limits = "The tracking transaction remains; the radio system whose timer ran it went in #770 (tag `legacy-radio-2026-10-16`). Thermal and RF qualification remain separate"
+limits = "The tracking transaction remains; the radio system whose timer ran it went in #770 (tag `legacy-radio-2026-10-16`), and #771 brings a composer back. Thermal and RF qualification remain separate"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
@@ -36,14 +36,14 @@ source-paths = [
 
 [[source-facts]]
 id = "bluetooth-periodic-phy-maintenance"
-status = "partial"
+status = "implemented"
 level = "lower-primitive"
 
 [source-facts.source-contract]
 id = "bluetooth-periodic-phy-maintenance"
 composition = "production"
 scope = "Periodic shared-PHY tracking throughout the Bluetooth Controller lifetime as ESP-IDF's phy_track_pll timer does, without pausing advertising, scanning, connection or Direct Test Mode events"
-limits = "The tracking transaction remains; the radio system whose timer ran it went in #770 (tag `legacy-radio-2026-10-16`). Tracking does not wait for a gap between Bluetooth events; the vendor admission relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
+limits = "The tracking transaction remains; the radio system whose timer ran it went in #770 (tag `legacy-radio-2026-10-16`), and #771 brings a composer back. Tracking does not wait for a gap between Bluetooth events; the vendor admission relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
 ]

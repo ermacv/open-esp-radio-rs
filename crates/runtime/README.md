@@ -1,13 +1,9 @@
 # Radio execution
 
-`esp32s31/bluetooth` (`oer-esp32s31-bluetooth-runtime`) contains
-concrete radio execution as executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
-chip-independent Wi-Fi execution primitives (the station service, the
-lower-MAC owner glue, monitor handoffs), which no chip runtime uses yet, and `bluetooth`
-(`oer-bluetooth-runtime`) the service loop that joins the in-process HCI
-transport, the portable LE Controller core and any `LeRadioBackend`, which
-the protocol package `oer-bluetooth-radio` declares, as the body of the
-backend's port. Directory boundaries describe the execution
+`ieee80211` (`oer-ieee80211-runtime`) holds the chip-independent Wi-Fi
+execution primitives (the station service, the lower-MAC owner glue,
+monitor handoffs), which no chip runtime uses yet. No Bluetooth LE or
+IEEE 802.15.4 runtime exists since #770 (tag `legacy-radio-2026-10-16`). Directory boundaries describe the execution
 responsibility of each package.
 
 ## Execution and time contract
@@ -58,7 +54,7 @@ Owned timers follow the owner graph: each runtime carries the clock of its
 own deadlines. The platform executor/time ABI remains in
 [adapters](../adapters/embassy/README.md).
 
-The [integration layer](../composition/esp32s31/embassy/) chooses memory budgets,
+A chip composition (none exists since #770) chooses memory budgets,
 claims static resources and owns protocol lifecycle composition within the
 [documented capability boundaries](../hardware/esp32s31/driver/FEATURES.md).
 No product composition depends on a second runtime owner hidden in a task or

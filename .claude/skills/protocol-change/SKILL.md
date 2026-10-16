@@ -1,6 +1,6 @@
 ---
 name: protocol-change
-description: Use when changing or adding portable protocol logic or a radio port in this repository — crates/protocols/ (IEEE 802.11 MAC/STA/AP/RSN, lower/upper MAC, Bluetooth LE/HCI, IEEE 802.15.4), crates/services/, crates/radio/, crates/time/, or the Clock/Timer, LeRadioBackend, the IEEE 802.15.4 owner shape or LowerMacBackend contracts. Not for chip register or driver work (driver-or-hardware-change).
+description: Use when changing or adding portable protocol logic or a radio port in this repository — crates/protocols/ (IEEE 802.11 MAC/STA/AP/RSN, lower/upper MAC, Bluetooth LE/HCI, IEEE 802.15.4), crates/services/, crates/radio/, crates/time/, or the Clock/Timer, the IEEE 802.15.4 owner shape or LowerMacBackend contracts. Not for chip register or driver work (driver-or-hardware-change).
 ---
 
 # Change a protocol, service or radio port
@@ -28,7 +28,7 @@ Find the owning package in the
    [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 4. **Change every caller.** No compatibility aliases or shims: update every
    backend, service, runtime and composition that uses the changed type in
-   the same change (grep the type name across `crates/`, `hil/`, `examples/`).
+   the same change (grep the type name across `crates/`, `hil/`).
 5. **Names.** Follow [protocol naming](../../../docs/protocol-naming.md):
    `ieee80211` in package and module names, `Wifi*` only in the facade.
 6. **Test.** A focused test beside the module for each behavior: a host model

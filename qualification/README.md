@@ -255,14 +255,6 @@ manifest rendering, `validate` or `evaluate`, and it does not read
 vendor evidence or HIL runs. Its ignored static views live below
 `target/docs/catalogs/` and carry no readiness verdict.
 
-The Bluetooth LE program includes legacy and extended roles, connected PHY and
-control procedures, security/privacy, periodic advertising and PAwR, Direction
-Finding, ISO in both connected and broadcast roles, LE Audio and the named LE
-Host integrations. It also requires capacity admission, power lifecycle and
-coexistence. Each new scope retains explicit incomplete axes until its own
-production composition and evidence exist. The chip's
-[feature inventory](../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#qualification-scope-mapping)
-maps these requirements to current source boundaries.
 
 ### Validate and evaluate a program
 
@@ -444,7 +436,7 @@ every prerequisite scenario.
 A HIL requirement names a scenario of the program's HIL catalog, and the
 programs decide each scenario's [role](../hil/scenarios/README.md#roles):
 validating a program fails while a scenario declared `qualification` is
-referenced by no program of `qualification/targets`. A requirement on an
+referenced by no program. A requirement on an
 `investigation` scenario, such as one on a diagnostic image, is never
 satisfied: its decision is marked `investigation`, it derives the HIL gap
 `requirement-names-investigation-scenario`, and its next work is to re-home
@@ -713,7 +705,7 @@ cargo qualification readiness --out target/qualification/readiness \
   --base target/qualification/previous --drops target/qualification/drops.md
 ```
 
-evaluates every program below `qualification/targets` into one JSON report
+evaluates every program (`qualification/targets/<chip>/<program>.toml`) into one JSON report
 each (`<chip>-<program>.json`) in `--out`, and compares each with its report
 in `--base`, the reports of an earlier evaluation. A capability's readiness
 drops when one of its axes was terminal and is no longer, or when it was

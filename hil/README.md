@@ -17,7 +17,6 @@ decision.
 | Preview or install Linux fixture software | [Canonical fixture installation](host/fixtures.md#linux-fixture-software-installation) | Dry-run is offline; installation uses interactive privilege but no RF |
 | Build or understand target firmware | [ESP32-S31 target](targets/esp32s31/README.md) | Build-only sections are separate from flash/run sections |
 | Install or operate the Linux network fixture | [`linux-net`](host/linux-net/) and its checked helper interface | Requires explicit host setup and, for installation, privileges |
-| Install or operate the Bluetooth fixture | [Linux Bluetooth setup](host/linux-bluetooth/README.md) | May reset or reconfigure the selected adapter |
 | Evaluate readiness | [Qualification](../qualification/README.md) | Reads declared programs and eligible sealed evidence independently |
 
 The typed scenario model that replaces the scenario documents lives in

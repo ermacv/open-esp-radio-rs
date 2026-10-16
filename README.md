@@ -40,10 +40,9 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | Make a first contribution | [Host tutorial](docs/first-contribution.md), [contribution guide](CONTRIBUTING.md) |
 | Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
-| Build a radio application | [Thread example](examples/esp32s31/thread/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
-| Assess a selected BLE or IEEE 802.15.4 scope | [Qualification programs](qualification/README.md) |
+| Assess a selected scope | [Qualification programs](qualification/README.md) |
 | Check source and dependency policy | [Repository tooling](tools/xtask/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
 | Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
@@ -56,7 +55,6 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | --- | --- |
 | `crates/` | Shipping protocol, chip, adapter, runtime and integration code |
 | `platform/` | Shared board boot, staged entry and memory placement |
-| `examples/` | Application/board composition and API examples |
 | `hil/` | Hardware protocol, runner, fixtures, scenarios and test images |
 | `qualification/` | Engineering map, capability programs and independent evaluation |
 | `registers/` | Reviewed hardware descriptions and PAC publication inputs |

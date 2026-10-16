@@ -16,7 +16,6 @@ commands belong to each component's README and Rust documentation.
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
 | [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
-| [Examples](../examples/esp32s31/thread/README.md) | Board/application composition and API usage | Own credentials, stack and sockets; do not depend on the HIL harness |
 
 A directory identifies an owner. A Cargo workspace identifies a joint build
 and lockfile boundary. They need not coincide, and a logical module does not
@@ -529,8 +528,7 @@ tokens ([Radio ports](#radio-ports)).
 
 A shared contract is a crate or trait that more than one block depends on.
 Each block guide skill lists its own under "Shared contracts"; today they
-include `oer-radio-port`, the permit pool, `oer-time`, the shared radio
-system, PHY, coexistence, the HAL split, the PAC and `registers/`. It takes only what at least two blocks have proven in code; a
+include `oer-radio-port`, the permit pool, `oer-time`, PHY, coexistence, the HAL split, the PAC and `registers/`. It takes only what at least two blocks have proven in code; a
 need of one block stays in that block until a second one has it. A change
 starts from a prototype in the block that needs it, showing the case the
 current contract fails, and lands before the blocks that depend on it build
@@ -587,11 +585,10 @@ earlier events and returns its uninstall request. `PortBody::Output` is
 chosen outside the fresh installation brand; branded owners cannot escape
 through it. `PortEnd` returns uninstalled owners and output, fail-stopped
 output, or abandonment without a body result.
-[`LeRadioBackend`](../crates/protocols/bluetooth/le/radio/src/port.rs)
-is the Bluetooth LE backend, over `oer-radio-port`; the
-[owner shape](../crates/protocols/ieee802154/src/owner.rs) of the
-IEEE 802.15.4 port, over `oer-radio-port`, is what the Espressif
-runtime's backend implements and the OpenThread adapter consumes; and the
+The [owner shape](../crates/protocols/ieee802154/src/owner.rs) of the
+IEEE 802.15.4 port is over `oer-radio-port`, and no backend implements it
+since #770 (tag `legacy-radio-2026-10-16`); the Bluetooth LE port is to be
+rebuilt in the lower-MAC shape (#563 decision 8); and the
 [lower-MAC port](../crates/protocols/ieee80211/lower-mac/README.md) is the
 Wi-Fi one, over `oer-radio-port`, carrying the portable `Channel` and
 `PhyRate` values of `oer-ieee80211-mac`. The vocabulary they share (the
@@ -646,13 +643,12 @@ the phase's work, with their bodies, to the sink and returns the disabled
 owner once every permit is back. A client's submission returns its admitted
 work as a token the backend mints, holding the client that admitted it;
 the work ends only through that client (`work.cancel()`). No call refuses for a state the caller controls
-([Ownership and refusals](#ownership-and-refusals)). The Bluetooth LE
-backend (`LeRadioBackend`), the IEEE 802.11 lower-MAC port
-(`LowerMacBackend`) and the IEEE 802.15.4 owner shape are built on `Owner`
-and `PortBody`.
+([Ownership and refusals](#ownership-and-refusals)). The IEEE 802.11
+lower-MAC port (`LowerMacBackend`) and the IEEE 802.15.4 owner shape are
+built on `Owner` and `PortBody`.
 
 **Correlation identities.** Each port keeps its own 32-bit identity type
-(`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be
+(`TxId`, `RequestId`), so a completion of one port cannot be
 taken for another's work; each implements `oer_radio_port::Correlation`,
 the top 256 raw values are reserved for work the backend submits itself,
 and a caller's `CorrelationIds` allocator wraps before them.
@@ -661,8 +657,7 @@ and a caller's `CorrelationIds` allocator wraps before them.
 that share a port share it through a router that owns the stream and
 dispatches each event by its identity. Taking an
 event only dequeues it. Timed work a backend performs in software (the
-802.15.4 CSMA-CA backoffs and retry delays, the Wi-Fi publication watchdog,
-the Bluetooth LE scheduler) runs in its backend's driver
+Wi-Fi publication watchdog) runs in its backend's driver
 (`PortBackend::drive`),
 which `run_port` joins with the port's body; the driver owns the radio and
 its hardware by value and serves the port's requests as messages.
@@ -733,7 +728,6 @@ interpreting it.
 | --- | --- | --- |
 | IEEE 802.11 lower-MAC owner shape | the owner's `enable` (with the retune a channel change needs) / `disable(sink)` transitions; an admitted attempt has no cancellation and ends only in its terminal, which returns its ticket and buffers | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock; no ESP32-S31 backend implements the port yet |
 | IEEE 802.15.4 owner shape | the owner's `enable` / `disable(sink)` transitions and the interface client's `Work::cancel`; the one operation permit returns with its terminal | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
-| `LeRadioBackend` | the owner's bounded `enable` / `disable(sink)` transitions and the phase client's `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the
 portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`
@@ -768,11 +762,10 @@ completion and return. A protocol policy may request an operation without
 owning the PAC; conversely, the concrete actor owns the hardware epoch without
 becoming the authority for protocol semantics.
 
-Applications start from the public facade or the final chip composition. The
-shared radio composition (`oer::systems::esp32s31::embassy::radio`) starts the
-radio once with its periodic tasks, and each protocol composition joins it
-with its partition. Developers of a lower subsystem start from its defining
-crate and owner types.
+Applications start from the public facade. No chip composition exists since
+#770 (tag `legacy-radio-2026-10-16`); a new one starts the shared radio once
+and joins each protocol with its partition. Developers of a lower subsystem
+start from its defining crate and owner types.
 This is why internal crates depend on specific lower contracts and never route
 their dependencies back through `oer`.
 
@@ -806,10 +799,9 @@ rules; adding a chip does not make those hardware checks applicable to it.
 types; `oer-radio-port` owns the radio port lifecycle. The facade may depend on
 a selected composition, never the reverse. PAC access remains an explicit restricted dependency.
 
-`composition/` names the source ownership layer; `oer::systems` is its public
-namespace. Facade features select portable protocols, concrete chip backends
-and final Embassy compositions independently. Exporting a composition does not
-claim hardware qualification; component capability limits still apply.
+Facade features select portable protocols and concrete chip backends
+independently. Exporting a backend does not claim hardware qualification;
+component capability limits still apply.
 
 Internal radio packages use the `oer-` prefix and identify their domain and,
 where required, chip: `oer-memory`, `oer-ieee80211-sta`, `oer-esp32s31-hal`.

@@ -3,8 +3,7 @@
 The canonical ESP32-S31 Bluetooth source inventory is
 [`qualification/catalog/esp32s31/bluetooth.toml`](../../../../../qualification/catalog/esp32s31/bluetooth.toml).
 It contains the complete LE and Classic source rows, Host-only scopes,
-qualification mappings, external source references, ownership contract and
-peripheral timing limits. Source status does not imply RF delivery,
+external source references, ownership contract and peripheral timing limits. Source status does not imply RF delivery,
 interoperability or qualification readiness.
 
 Render from the repository root. The catalog imports its shared-PHY and
@@ -17,32 +16,18 @@ cargo qualification catalog render \
 ```
 
 The generated `domain-inventory.md` and `capability-catalog.md` are ignored
-views. The
-[Bluetooth LE qualification program](../../../../../qualification/targets/esp32s31/bluetooth-le.toml)
-selects the same declarations through the sole qualification evaluator. Classic
-BR/EDR remains source inventory outside that LE gate.
+views. No Bluetooth qualification program exists since #770 (tag
+`legacy-radio-2026-10-16`). Classic BR/EDR remains source inventory.
 
 See the [whole-radio capability map](../FEATURES.md) for shared ownership and
 the [PHY consumer boundary](../../phy/FEATURES.md#protocol-consumer-composition)
 for cross-protocol composition limits.
 
-## Product programs
+## Product catalog
 
-[Peripheral/ACL](../../../../../qualification/targets/esp32s31/bluetooth-peripheral-acl.toml)
-and [secure peripheral GATT](../../../../../qualification/targets/esp32s31/bluetooth-secure-gatt.toml)
-select the narrower product criteria in the
-[product catalog](../../../../../qualification/catalog/esp32s31/bluetooth-products.toml).
-The secure program includes the peripheral lifecycle through dependencies.
-The complete LE program above retains its wider requirements. Both products
-run on the production Controller composition; their remaining implementation
-gaps and missing hardware evidence are listed in the product catalog.
-
-## Qualification scope mapping
-
-The canonical catalog section `bluetooth-qualification-scope-mapping` retains
-every LE mapping and the explicit projection of the shared
-`bluetooth-initial-phy-handoff` fact. Broader Controller scopes remain
-independent of that implemented lower handoff.
+The [product catalog](../../../../../qualification/catalog/esp32s31/bluetooth-products.toml)
+keeps the narrower peripheral/ACL criteria; no program selects them and no
+production Controller composition exists since #770.
 
 ## Legacy advertising and scanning
 

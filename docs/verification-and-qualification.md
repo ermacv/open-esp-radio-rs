@@ -241,7 +241,7 @@ than dated narrative files:
 
 ```toml
 hil-requirements = [
-  { scenario = "bluetooth-dtm-peer", minimum-repetitions = 1 },
+  { scenario = "system-watchdog", minimum-repetitions = 1 },
 ]
 ```
 
@@ -321,8 +321,8 @@ checkpoint. They are not prerequisites for reading project status.
 cargo verification evidence --chip esp32s31
 
 cargo qualification evaluate \
-  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
-  --json-report target/qualification/bluetooth-le.json
+  --manifest qualification/targets/<chip>/<program>.toml \
+  --json-report target/qualification/<program>.json
 ```
 
 `validate` is the normal source-tree consistency check.

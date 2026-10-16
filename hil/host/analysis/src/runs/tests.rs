@@ -17,7 +17,7 @@ use oer_hil_schema::image::ImageClass;
 use super::*;
 
 /// A completed run `id` below `runs` of one scenario `s` that passed or
-/// failed, with its console, and when it failed a USB event and a trace;
+/// failed, with its console, and when it failed a USB event;
 /// `replay` names the run whose firmware it replayed.
 pub(crate) fn bundle(runs: &Path, id: &str, started: u64, passed: bool, replay: Option<&str>) {
     let directory = runs.join(id);
@@ -105,18 +105,10 @@ pub(crate) fn bundle(runs: &Path, id: &str, started: u64, passed: bool, replay: 
             br#"[{"operation":"restore-ap","duration_millis":3,"failure":"ssh lost"}]"#,
         )
         .unwrap();
+        fs::create_dir_all(repetition.join("post-mortem")).unwrap();
         fs::write(
             repetition.join("observations.json"),
             br#"{"schema":1,"claim":{"result":"station delivers UDP","not_proven":["air"]},"observations":[{"name":"rx","value":{}},{"name":"phy-tracking","value":{}}]}"#,
-        )
-        .unwrap();
-        fs::create_dir_all(repetition.join("post-mortem")).unwrap();
-        let events = (0..70)
-            .map(|index| format!("{index:>12} us  event-{index}\n"))
-            .collect::<String>();
-        fs::write(
-            repetition.join("post-mortem/trace.txt"),
-            format!("# 70 entries; of the current boot\n{events}"),
         )
         .unwrap();
     }
@@ -168,15 +160,6 @@ fn runs_are_found_explained_and_compared() {
         why.contains("host usb 3-8 disconnected (device number 19) at +12.345 s of the run"),
         "{why}"
     );
-    assert!(
-        why.contains("trace (70 entries; of the current boot), last 64 events"),
-        "{why}"
-    );
-    assert!(
-        why.contains("event-69") && why.contains("event-6\n"),
-        "{why}"
-    );
-    assert!(!why.contains("event-5\n"), "{why}");
     assert!(!why.contains("| boot"), "{why}");
     let shown = show(&runs[1]);
     let run = fs::canonicalize(store.run("2000-r2")).unwrap();

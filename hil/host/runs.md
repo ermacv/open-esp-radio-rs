@@ -69,11 +69,7 @@ A
 reset the runner did not cause (neither USB Serial/JTAG nor JTAG) makes it
 `unexpected-reset` with the reset reason and code. Both name the last
 checkpoints the ended boot passed. The exchange and the workload's own
-failure are kept in the repetition's `post-mortem/`. When the image keeps an
-[event trace](../protocol/diagnostics.md#event-trace), the runner pages it
-out into `post-mortem/trace.json`, raw, and `post-mortem/trace.txt`, decoded
-oldest first, then lets the target record again; `runs why` shows the
-trace's last events.
+failure are kept in the repetition's `post-mortem/`.
 
 A traffic session that ends without passing names its first failed check in
 its `network::Finished` message (a typed `SessionFailure`: no datagrams, no terminal

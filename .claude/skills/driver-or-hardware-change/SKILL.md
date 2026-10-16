@@ -1,6 +1,6 @@
 ---
 name: driver-or-hardware-change
-description: Use when changing chip hardware code in this repository — crates/hardware/ (ESP32-S31/C5 PAC, HAL, PHY, calibration, Wi-Fi/Bluetooth/802.15.4 drivers, DMA), crates/roles/, crates/runtime/esp32s31/, esp-hal adapters, unsafe code, MMIO access, register models under registers/, or recovered vendor tables and coefficients.
+description: Use when changing chip hardware code in this repository — crates/hardware/ (ESP32-S31/C5 PAC, HAL, PHY, calibration, Wi-Fi/Bluetooth/802.15.4 drivers, DMA), esp-hal adapters, unsafe code, MMIO access, register models under registers/, or recovered vendor tables and coefficients.
 ---
 
 # Change a driver or hardware access

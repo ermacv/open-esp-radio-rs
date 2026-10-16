@@ -12,9 +12,10 @@
 //! lane-isolation result.
 //!
 //! Every instance's waits are sized by its contract's ceilings, which no
-//! backend may exceed (#761, owner decisions 6221891573 and 6223045367), and the plan adds each instance's boot to Hello from the
-//! stand profile, so no scenario can leave it out. The plan labels every
-//! provisional stand span it used.
+//! backend may exceed (#761, owner decisions 6221891573 and 6223045367),
+//! and the plan adds each instance's boot to Hello from the stand profile,
+//! so no scenario can leave it out. The plan labels every provisional
+//! stand span it used.
 
 use core::fmt;
 

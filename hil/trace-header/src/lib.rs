@@ -166,4 +166,21 @@ mod tests {
         let bytes = postcard::to_allocvec(&a).unwrap();
         assert_eq!(postcard::from_bytes::<TraceHeader<u64>>(&bytes).unwrap(), a);
     }
+
+    /// The header's schema is the protocol's: its bounds' own schema, then
+    /// the clock domain.
+    #[cfg(feature = "wire")]
+    #[test]
+    fn the_wire_schema_names_the_header_and_its_parts() {
+        use postcard_schema::{Schema, schema::DataModelType};
+        let schema = TraceHeader::<u64>::SCHEMA;
+        assert_eq!(schema.name, "TraceHeader");
+        let DataModelType::Struct(fields) = schema.ty else {
+            panic!("a struct")
+        };
+        let names: [&str; 2] = [fields[0].name, fields[1].name];
+        assert_eq!(names, ["bounds", "clock"]);
+        assert_eq!(fields[0].ty, u64::SCHEMA);
+        assert_eq!(fields[1].ty, ClockDomain::SCHEMA);
+    }
 }

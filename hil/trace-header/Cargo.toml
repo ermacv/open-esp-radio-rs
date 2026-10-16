@@ -29,5 +29,6 @@ host-layer = "foundation"
 host-app = "formats"
 host-boundary = "format"
 hil = "observation"
+test-feature-sets = ["wire"]
 
 [package.metadata.docs.rs]

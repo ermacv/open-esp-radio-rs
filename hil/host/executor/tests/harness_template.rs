@@ -29,17 +29,19 @@ use oer_hil_model::{
     Spec, StandProfile, Subject, TargetCapabilities, Verdict, Wait, WaitError, name,
 };
 use oer_hil_trace_header::{Clock, ClockDomain, Restart, RunHeaderError, TraceHeader, check_run};
-use port::{BoundField, Bounds, CEILINGS, Case, Trace, Violation, verify};
+use port::{BoundField, Bounds, CEILINGS, Case, S31_BOUNDS, Trace, Violation, verify};
 use serde::{Deserialize, Serialize};
 
-/// The port's conformance crate: `no_std`, `oer-time`, and `serde` under
-/// its `wire` feature; no HIL. A port crate writes each wire derive as
+/// The port's conformance crate: `no_std`, `oer-time`, and `serde` and
+/// `postcard-schema` under its `wire` feature; no HIL. A port crate writes
+/// each wire derive as
 /// `cfg_attr(feature = "wire", derive(Serialize, Deserialize, Schema))`;
 /// here the test always needs the wire form, so the derives are plain.
 mod port {
     use alloc::vec::Vec;
 
     use oer_time::Duration;
+    use postcard_schema::Schema;
     use serde::{Deserialize, Serialize};
 
     /// A duration a port crate writes as a constant; a scenario crate
@@ -54,14 +56,14 @@ mod port {
 
     /// The port's bounds, by name, as the `oer_time::Duration` constants
     /// its protocols already use.
-    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Schema, Serialize)]
     pub struct Bounds {
         /// Submission to terminal.
         pub terminal: Duration,
     }
 
     /// One of the port's bounds, by name.
-    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Schema, Serialize)]
     pub enum BoundField {
         Terminal,
     }
@@ -82,7 +84,9 @@ mod port {
         terminal: micros(1_000),
     };
 
-    #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+    #[derive(
+        Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Schema, Serialize,
+    )]
     pub enum Case {
         OneFrame,
         CloseGate,
@@ -98,7 +102,7 @@ mod port {
     }
 
     /// Identities read from the real returned owners, in order.
-    #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Schema, Serialize)]
     pub struct Trace {
         pub submitted: Vec<u8>,
         pub terminals: Vec<u8>,
@@ -106,7 +110,7 @@ mod port {
         pub latency: Duration,
     }
 
-    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Schema, Serialize)]
     pub enum Violation {
         Missing,
         Order,
@@ -128,6 +132,7 @@ mod port {
     /// The port's harness: the backend's actual bounds and the case's
     /// trace.
     pub trait Harness {
+        #[allow(async_fn_in_trait)]
         async fn exercise(&mut self, case: Case) -> Result<(Bounds, Trace), HarnessError>;
     }
 
@@ -496,8 +501,6 @@ fn verdict_on_stand(instance: &Instance<TxConformance>, reports: Vec<Vec<u8>>) -
         .verdict
 }
 
-use port::S31_BOUNDS;
-
 #[test]
 fn the_model_passes_its_own_suite_restart_included() {
     let all = instance(vec![Case::OneFrame, Case::AfterRestart, Case::CloseGate]);
@@ -641,4 +644,20 @@ fn a_stored_trace_is_judged_again_without_a_run() {
         TxConformance::verdict(&postcard::from_bytes(&stored).unwrap(), &()),
         outcome.verdict
     );
+}
+
+#[test]
+fn a_report_has_the_wire_schema_the_protocol_locks() {
+    use postcard_schema::{Schema, schema::DataModelType};
+    let DataModelType::Struct(fields) = Bounds::SCHEMA.ty else {
+        panic!("a struct")
+    };
+    assert_eq!(fields[0].name, "terminal");
+    // `oer_time::Duration` is its microseconds on the wire (`oer-time/schema`).
+    assert_eq!(fields[0].ty, u64::SCHEMA);
+    let DataModelType::Tuple(parts) = <Report as Schema>::SCHEMA.ty else {
+        panic!("a tuple")
+    };
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[1], TraceHeader::<Bounds>::SCHEMA);
 }

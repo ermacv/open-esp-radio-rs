@@ -15,6 +15,8 @@
 //!   port's result in the `oer-hil-trace-header` header, turn a failure
 //!   into `Infrastructure`, and send or decode `(case, header, trace)`.
 
+extern crate alloc;
+
 use core::num::NonZeroU32;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -35,6 +37,8 @@ use serde::{Deserialize, Serialize};
 /// `cfg_attr(feature = "wire", derive(Serialize, Deserialize, Schema))`;
 /// here the test always needs the wire form, so the derives are plain.
 mod port {
+    use alloc::vec::Vec;
+
     use oer_time::Duration;
     use serde::{Deserialize, Serialize};
 
@@ -119,7 +123,7 @@ mod port {
         }
     }
 
-    impl std::error::Error for HarnessError {}
+    impl core::error::Error for HarnessError {}
 
     /// The port's harness: the backend's actual bounds and the case's
     /// trace.

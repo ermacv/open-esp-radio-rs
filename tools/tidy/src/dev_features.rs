@@ -109,4 +109,53 @@ mod tests {
         let through_another = "[features]\nlab = [\"test-support\"]\ntest-support = []\n";
         assert_eq!(run_with(through_another, "").len(), 1);
     }
+
+    #[test]
+    fn optional_forwards_renamed_target_and_inherited_dependencies_are_refused() {
+        let optional = "[features]\ntests = [\"oer-hil-executor?/test-support\"]\n\n[dependencies]\noer-hil-executor = { path = \"../executor\", optional = true }\n";
+        assert_eq!(run(optional).len(), 1, "a `?/` forward");
+        let renamed = "[dependencies]\nexec = { package = \"oer-hil-executor\", path = \"../executor\", features = [\"test-support\"] }\n";
+        assert_eq!(run(renamed).len(), 1, "a renamed dependency");
+        let renamed_forward = "[features]\ntests = [\"exec/test-support\"]\n\n[dependencies]\nexec = { package = \"oer-hil-executor\", path = \"../executor\" }\n";
+        assert_eq!(
+            run(renamed_forward).len(),
+            1,
+            "a forward through a renamed dependency"
+        );
+        let target = "[target.'cfg(unix)'.dependencies]\noer-hil-executor = { path = \"../executor\", features = [\"test-support\"] }\n";
+        assert_eq!(run(target).len(), 1, "a target table");
+        let target_dev = "[target.'cfg(unix)'.dev-dependencies]\noer-hil-executor = { path = \"../executor\", features = [\"test-support\"] }\n";
+        assert_eq!(
+            run(target_dev),
+            Vec::<String>::new(),
+            "a target dev-dependency may"
+        );
+    }
+
+    #[test]
+    fn a_feature_enabled_through_workspace_inheritance_is_refused() {
+        let problems = problems(
+            &[
+                (
+                    "Cargo.toml",
+                    "[workspace]\nresolver = \"3\"\nmembers = [\"executor\", \"user\"]\n\n[workspace.dependencies]\noer-hil-executor = { path = \"executor\", features = [\"test-support\"] }\n",
+                ),
+                (
+                    "executor/Cargo.toml",
+                    &manifest("oer-hil-executor", "[features]\ntest-support = []\n"),
+                ),
+                ("executor/src/lib.rs", ""),
+                (
+                    "user/Cargo.toml",
+                    &manifest(
+                        "oer-user",
+                        "[dependencies]\noer-hil-executor = { workspace = true }\n",
+                    ),
+                ),
+                ("user/src/lib.rs", ""),
+            ],
+            check,
+        );
+        assert_eq!(problems.len(), 1, "{problems:?}");
+    }
 }

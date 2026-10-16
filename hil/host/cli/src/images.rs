@@ -21,8 +21,7 @@ pub enum ImagesCli {
     /// Build HIL image classes with their link-time audits, reporting every
     /// class: all of them with `--all`, each `--class`, or the classes a
     /// change reaches (`--reaching`, `--changed`); `--list` prints every class
-    /// with the runtime features it builds with. A built final image (none is
-    /// declared now) also passes Blobray's target audit.
+    /// with the runtime features it builds with.
     #[command(group(clap::ArgGroup::new("selection").required(true).args(["all", "classes", "list", "reaching"])))]
     Check {
         #[arg(long)]
@@ -31,8 +30,8 @@ pub enum ImagesCli {
         list: bool,
         #[arg(long = "class")]
         classes: Vec<ImageClass>,
-        /// Packages with changed chip code: the final images and every class
-        /// whose image compiles one of them.
+        /// Packages with changed chip code: every class whose image compiles
+        /// one of them.
         #[arg(long, value_delimiter = ',')]
         reaching: Vec<String>,
         /// Changed files (repository-relative): with `--reaching`, also

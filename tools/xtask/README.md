@@ -119,7 +119,7 @@ Every runner works over a change's reach or over the whole tree. Each CI job
 tier TIER --job JOB`, on a branch with `--checks` naming what its change
 reaches; a test holds the workflows to the registry, so no
 workflow lists checks of its own. A check without a trigger runs only with
-its whole tier: the final image builds, every image class, the examples'
+its whole tier: the boot smoke image build, every image class, the examples'
 builds, the conformance check (it needs clang and the Sail model), Blobray's
 whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
 the probes and the host stands. The session start hook
@@ -358,8 +358,9 @@ performs no hardware operations.
 Every image is built by the one image pipeline,
 [`oer-image`](../image/pipeline/README.md): `build firmware` with the examples' spec,
 `check firmware` and `compare images` through `oer-hil-image`'s class specs.
-No image class is a final radio image, so no build runs Blobray's final radio
-target audit. Encoding uses the `espflash` library, so no build needs the `espflash`
+The Blobray audit of a product image's calls into the vendor radio ROM was
+removed with the last image it audited (#762); it returns with the first
+product image, and the forbidden ROM ranges stay in `chip.toml`. Encoding uses the `espflash` library, so no build needs the `espflash`
 executable. This gate does not run on hardware or measure runtime stack
 high-water.
 

@@ -298,7 +298,7 @@ fn a_change_never_runs_a_whole_tier_check_or_one_above_its_tier() {
         );
     }
     let selected = ids(of_change(&everything));
-    assert!(selected.contains(&"docs") && selected.contains(&"examples-type-check"));
+    assert!(selected.contains(&"docs") && selected.contains(&"example-link"));
     assert!(!selected.contains(&"final-images") && !selected.contains(&"image-classes"));
 }
 

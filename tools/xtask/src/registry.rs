@@ -325,6 +325,16 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| fw(ctx, &["build", "--all", "--type-check"]),
     },
     Check {
+        id: "example-link",
+        tier: Tier::Full,
+        job: "example-link",
+        summary: "the Thread example built, audited and encoded into a bundle",
+        trigger: Some(|change| touches(change, &["platform/"])),
+        // The interrupt-stack gate fetches the pinned ROM it bounds the
+        // image with.
+        run: |ctx, _| fw(ctx, &["build", "thread", "--check", "all"]),
+    },
+    Check {
         id: "firmware-host-tests",
         tier: Tier::Full,
         job: "firmware",
@@ -1022,7 +1032,7 @@ fn images_type_check(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
         Scope::Tree => args.extend(["--class", "boot-smoke"].map(String::from)),
         Scope::Change(change) => {
             // Chip-target code is invisible to the host checks: `cargo hil`
-            // type-checks the final images and every class whose image
+            // type-checks every class whose image
             // compiles a package with that code, so an interface change it
             // still uses fails here.
             let chip = gate::chip_code(&change.tree, &change.affected);

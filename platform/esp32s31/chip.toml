@@ -104,7 +104,8 @@ contexts = [
 
 # The mask ROM the stack analyses read: the pinned ROM ELF
 # (verification/esp32s31/artifacts.toml), the reviewed function summaries
-# and the vendor radio ROM no final image may call into.
+# and the vendor radio ROM no product image may call into (no check reads
+# these ranges until the first product image returns the Blobray audit).
 [rom]
 elf = "rom"
 summaries = "platform/esp32s31/linker/rom/functions.toml"

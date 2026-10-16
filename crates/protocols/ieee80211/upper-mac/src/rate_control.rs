@@ -11,7 +11,7 @@
 
 use core::num::NonZeroU16;
 
-use oer_ieee80211_lower_mac::LinkMetric;
+use oer_ieee80211_lower_mac::{LinkMetric, SnrSample};
 use oer_ieee80211_mac::{
     he::{He20Capabilities, He20PeerState},
     ht::HtPeerCapabilities,
@@ -105,9 +105,10 @@ pub struct AmpduUnavailable;
 /// A zero-count observation cannot reach a controller:
 ///
 /// ```compile_fail,E0061
+/// use oer_ieee80211_lower_mac::SnrSample;
 /// use oer_ieee80211_upper_mac::rate_control::RateControl;
 /// fn empty<C: RateControl>(control: &mut C, now: oer_time::Instant) {
-///     control.observe_ampdu(now, 0, 0, None);
+///     control.observe_ampdu(now, 0, 0, SnrSample::Unmeasured);
 /// }
 /// ```
 ///
@@ -124,6 +125,7 @@ pub struct AmpduUnavailable;
 ///
 /// ```
 /// use core::num::NonZeroU16;
+/// use oer_ieee80211_lower_mac::SnrSample;
 /// use oer_ieee80211_upper_mac::rate_control::{
 ///     AmpduUnavailable, BlockAckTally, MpduOutcome, RateControl,
 /// };
@@ -132,7 +134,7 @@ pub struct AmpduUnavailable;
 /// {
 ///     control.observe_mpdu(NonZeroU16::MIN, MpduOutcome::Acknowledged, Some(30));
 ///     let tally = BlockAckTally::new(NonZeroU16::MIN, 1).unwrap();
-///     control.observe_ampdu(now, tally, Some(30))
+///     control.observe_ampdu(now, tally, SnrSample::Measured(30))
 /// }
 /// ```
 pub trait RateControl: Sized {
@@ -155,14 +157,14 @@ pub trait RateControl: Sized {
     fn observe_mpdu(&mut self, attempts: NonZeroU16, outcome: MpduOutcome, ack_snr_db: Option<i8>);
 
     /// An A-MPDU exchange ended at `now` with checked counts and the
-    /// BlockAck's ACK SNR when the backend reported a valid one. A controller
-    /// without A-MPDU state returns [`AmpduUnavailable`] without changing
-    /// rate or SNR state; the caller receives this refusal directly.
+    /// BlockAck's SNR sample: an unmeasured BlockAck feeds no SNR. A
+    /// controller without A-MPDU state returns [`AmpduUnavailable`] without
+    /// changing rate or SNR state; the caller receives this refusal directly.
     fn observe_ampdu(
         &mut self,
         now: Instant,
         tally: BlockAckTally,
-        ack_snr_db: Option<i8>,
+        ack_snr: SnrSample,
     ) -> Result<(), AmpduUnavailable>;
 }
 
@@ -197,7 +199,7 @@ impl RateControl for FixedRateControl {
         &mut self,
         _now: Instant,
         _tally: BlockAckTally,
-        _ack_snr_db: Option<i8>,
+        _ack_snr: SnrSample,
     ) -> Result<(), AmpduUnavailable> {
         Ok(())
     }

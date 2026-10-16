@@ -948,7 +948,7 @@ fn as_much_work_as_allowed_while_every_setting_changes_loses_no_command() {
 /// What an attempt the closing gate aborted came back as.
 #[derive(Debug, Default)]
 struct Aborted {
-    outcome: Option<TxOutcome>,
+    outcome: Option<ModelSingleOutcome>,
     fresh: bool,
     untouched: bool,
 }
@@ -1179,7 +1179,8 @@ async fn aggregate_completion<'p, 'id: 'p>(
                 ticket,
                 payload,
                 match outcome {
-                    TxOutcome::Ended { ack, .. } => ack.and_then(|ack| ack.block_ack),
+                    TxOutcome::Ended(AggregateEnd::Delivered { report, .. }) => Some(report),
+                    TxOutcome::Ended(_) => None,
                     other => panic!("aggregate did not end: {other:?}"),
                 },
             );
@@ -1342,7 +1343,7 @@ mod preparation;
 
 struct TerminalOutcomes<'a> {
     air: &'a ModelAir,
-    outcomes: &'a RefCell<Vec<TxOutcome>>,
+    outcomes: &'a RefCell<Vec<ModelSingleOutcome>>,
     collision: bool,
 }
 
@@ -1431,11 +1432,13 @@ fn a_timeout_is_final_and_does_not_stop_or_withdraw_the_queue_tail() {
     );
     assert!(matches!(
         outcomes[1],
-        TxOutcome::Ended {
-            status: TxEndStatus::Delivered,
-            last: Some((core::num::NonZeroU16::MIN, _)),
+        TxOutcome::Ended(SingleEnd::Delivered {
+            air: Air {
+                transmissions: core::num::NonZeroU16::MIN,
+                ..
+            },
             ..
-        }
+        })
     ));
     let sent = air.sent();
     assert_eq!(
@@ -1464,19 +1467,17 @@ fn collisions_retry_the_head_then_end_at_contention_limit_without_air_transmissi
     ));
     assert!(matches!(
         outcomes.borrow()[0],
-        TxOutcome::Ended {
-            status: TxEndStatus::ContentionLimit,
-            last: None,
-            ..
-        }
+        TxOutcome::Ended(SingleEnd::ContentionLimit(None))
     ));
     assert!(matches!(
         outcomes.borrow()[1],
-        TxOutcome::Ended {
-            status: TxEndStatus::Delivered,
-            last: Some((core::num::NonZeroU16::MIN, _)),
+        TxOutcome::Ended(SingleEnd::Delivered {
+            air: Air {
+                transmissions: core::num::NonZeroU16::MIN,
+                ..
+            },
             ..
-        }
+        })
     ));
     let sent = air.sent();
     assert_eq!(sent.len(), 3);
@@ -1560,11 +1561,13 @@ impl Work for LongRetryPlan<'_> {
 
                 assert!(matches!(
                     completion,
-                    TxOutcome::Ended {
-                        last: Some((count, PhyRate::Legacy(LegacyRate::Ofdm54M))),
-                        status: TxEndStatus::Delivered,
+                    TxOutcome::Ended(SingleEnd::Delivered {
+                        air: Air {
+                            transmissions: count,
+                            rate: PhyRate::Legacy(LegacyRate::Ofdm54M),
+                        },
                         ..
-                    } if count.get() == 1020
+                    }) if count.get() == 1020
                 ));
                 break;
             }
@@ -1650,13 +1653,12 @@ impl Work for LastRateBeforeCollision<'_> {
 
                 assert_eq!(
                     completion,
-                    TxOutcome::Ended {
-                        status: TxEndStatus::ContentionLimit,
-                        last: Some((NonZeroU16::MIN, first_rate)),
-                        ack: None,
-                    }
+                    TxOutcome::Ended(SingleEnd::ContentionLimit(Some(Air {
+                        transmissions: NonZeroU16::MIN,
+                        rate: first_rate,
+                    })))
                 );
-                assert!(!completion.is_rate_sample());
+                assert!(completion.rate_sample().is_none());
                 assert_eq!(ticket.index(), ticket_index);
                 let ModelAnyBuffer::SmallSent(mpdu) = buffer else {
                     panic!("sent MPDU")

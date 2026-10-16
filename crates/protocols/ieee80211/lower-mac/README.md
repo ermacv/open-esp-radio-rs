@@ -122,27 +122,43 @@ back; its operations are synchronous and never wait:
   and body explicitly.
 - **Retry plans.** An individual frame carries its `RetryPlan`, a sequence
   of rates with their transmissions and protection, as mac80211's rate
-  table. The first stage is mandatory; the tail is a bounded array with an
-  initialized length, so it cannot contain holes. Filtering a plan keeps
+  table. The first stage is mandatory; the tail is a fixed array of
+  `RETRY_STAGES - 1` cells whose occupied cells form a prefix, which every
+  operation keeps, so mapping and filtering a plan are total and cannot
+  exceed the bound. Filtering a plan keeps
   each accepted stage's full budget and order, within the original bound.
   The backend retries the head of its queue by the plan before the
   next attempt of that queue; the completion reports the transmissions made
   and the last rate, for the rate control above the port.
-  `Ended.last` holds the exact nonzero MPDU count together with the last
-  transmitted rate (`u16` covers all four 255-transmission stages). `None`
-  means no MPDU reached air. A collision at a later rate preserves the
-  preceding air transmission's count and rate. A hardware timeout with no
-  completion ends as `Indeterminate`;
+  A single MPDU ends as `SingleOutcome` (`TxOutcome<SingleEnd>`), an
+  aggregate as `AggregateOutcome` (`TxOutcome<AggregateEnd>`), so neither
+  can carry the other's response. `Air` holds the exact nonzero MPDU count
+  together with the last transmitted rate (`u16` covers all four
+  255-transmission stages); a delivery and an ACK timeout always carry it,
+  while a protection failure, contention exhaustion and lost air carry
+  `Option<Air>`, `None` when no MPDU reached air. A collision at a later rate
+  preserves the preceding air transmission's count and rate. A delivered
+  single MPDU names its response: unsolicited, an ACK, or a BlockAckReq's
+  BlockAck with its report. A delivered aggregate always carries its
+  BlockAck report. The backend's evidence of the response is its own type:
+  `PhaseTypes::AckEvidence` for a single MPDU, which a policy needing the
+  ACK's SNR requires as `AckSnr`, and `PhaseTypes::BlockAckEvidence` for an
+  aggregate, split by `BlockAckSnr` into a measured sample or none, because
+  hardware may accept a BlockAck without a measurement
+  ([owner decisions on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225299762)).
+  The outcome carries no RSSI. `AirDenied` carries `PhaseTypes::AirDenied`,
+  `Infallible` for a backend that cannot tell a coexistence abort apart.
+  A hardware timeout with no completion ends as `Indeterminate`;
   the backend does not republish that MPDU, stop the queue, or return its
   tail. `TxStatus` describes only Success, AckTimeout, CtsTimeout, Collision
   and TimedOut observations of a publication. Decoder/accounting faults
   poison the backend and produce no `TxOutcome` or returned-resource event.
   Internal collisions remain driver retries; budget exhaustion is
-  `Ended(ContentionLimit)`. Withdrawals name only GateClosed, KeyRemoved or
-  Disabled. Rate selection ignores withdrawals, Indeterminate and
-  ContentionLimit. A lifecycle barrier waits for one current publication,
+  `ContentionLimit`. Withdrawals name only GateClosed, KeyRemoved or
+  Disabled. Rate selection ignores withdrawals, Indeterminate,
+  ContentionLimit and AirDenied (`SingleEnd::rate_sample`). A lifecycle barrier waits for one current publication,
   bounded by `LowerMacBackend::PUBLICATION_BOUND`, not the remaining plan.
-  ACK still ends as `Ended(Delivered)`; a needed retry returns
+  ACK still ends as `Delivered`; a needed retry returns
   `Withdrawn(cause)` with Sent, retaining SN/PN. An unpublished attempt
   returns Fresh. Unknown timeout remains Indeterminate. Per-AC terminals
   precede the barrier confirmation in their original order.

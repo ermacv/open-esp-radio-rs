@@ -10,7 +10,8 @@ enum Barrier {
     GateTimeout,
     RemoveKey,
 }
-type RecordedBarrier = Rc<RefCell<Option<BarrierTrace>>>;
+type ModelBarrierTrace = BarrierTrace<ModelAck, ModelAirDenied>;
+type RecordedBarrier = Rc<RefCell<Option<ModelBarrierTrace>>>;
 struct DuringPublication(Barrier, Option<RecordedBarrier>);
 
 fn held_snapshot(phase: &ModelPhase<'_, '_>) -> HeldSnapshot {
@@ -124,11 +125,13 @@ impl Work for DuringPublication {
         match self.0 {
             Barrier::GateAck => assert!(matches!(
                 completion,
-                TxOutcome::Ended {
-                    status: TxEndStatus::Delivered,
-                    last: Some((core::num::NonZeroU16::MIN, _)),
+                TxOutcome::Ended(SingleEnd::Delivered {
+                    air: Air {
+                        transmissions: core::num::NonZeroU16::MIN,
+                        ..
+                    },
                     ..
-                }
+                })
             )),
             Barrier::GateRetry => {
                 assert_eq!(completion, TxOutcome::Withdrawn(WithdrawCause::GateClosed))
@@ -277,7 +280,9 @@ fn key_removal_waits_for_the_publication_then_returns_sent_without_retry() {
 
 struct ModelBarrierHarness;
 impl conformance::BarrierHarness for ModelBarrierHarness {
-    async fn exercise_barrier(&mut self, case: BarrierCase) -> BarrierTrace {
+    type Ack = ModelAck;
+    type AirDenied = ModelAirDenied;
+    async fn exercise_barrier(&mut self, case: BarrierCase) -> ModelBarrierTrace {
         let barrier = match case {
             BarrierCase::GateAck => Barrier::GateAck,
             BarrierCase::GateRetry => Barrier::GateRetry,

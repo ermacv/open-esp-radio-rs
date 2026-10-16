@@ -40,7 +40,7 @@ pub struct UnroutedTx<'id, B: StationPort<'id>> {
         <B::Types as PhaseTypes<'id>>::TicketPath,
     >,
     pub buffer: StationTxBuffer<'id, B>,
-    pub outcome: ReturnedTx,
+    pub outcome: PortReturnedTx<'id, B>,
 }
 
 /// The first offending return, with every resource still owned.

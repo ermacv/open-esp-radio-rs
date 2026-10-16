@@ -977,8 +977,6 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
             .hardware_services()
     );
     assert!(caps.services.contains(HardwareServices::FCS));
-    assert!(!caps.services.contains(HardwareServices::RETRY_POLICY));
-    assert!(!caps.services.contains(HardwareServices::BACKOFF_DRAW));
     assert!(caps.supports_channel(Channel::ghz2_4(6, ChannelWidth::Mhz40Above).unwrap()));
     assert!(!caps.supports_channel(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap()));
     assert_eq!(caps.vifs, 2);
@@ -989,7 +987,6 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
         usize::from(caps.max_mpdu_length) + TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE,
         512
     );
-    assert_eq!(caps.max_backoff_slots, 1023);
     assert!(caps.coex_priorities.contains(CoexPriority::Normal));
     assert!(caps.coex_priorities.contains(CoexPriority::Elevated));
     assert!(!caps.coex_priorities.contains(CoexPriority::Critical));
@@ -1001,8 +998,6 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
         caps.access_point_receive_filters,
         ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS)
     );
-    assert_eq!(usize::from(caps.key_slots), LOWER_MAC_KEY_SLOTS);
-    assert_eq!(caps.rx_block_ack_agreements, RESOURCES.rx_block_ack_entries);
 }
 
 #[test]

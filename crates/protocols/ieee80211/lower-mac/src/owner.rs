@@ -16,7 +16,7 @@
 //! | the receive rules a role may not request, a BSSID the role cannot take | [`SupportedFilter`] of the role, and the station's [`StationReceive`]; an access point's BSSID is its address |
 //! | busy (configuring an interface, removing a key an attempt in flight uses, closing the gate) | the operation returns at once and its end arrives as an event; never refused |
 //! | an unsupported rate | [`PhaseRate`], checked against the phase's channel; a BlockAckReq takes a [`LegacyPhaseRate`]; a retry plan's stages take checked rates |
-//! | an unsupported backoff, power or coexistence level | [`SupportedBackoff`], [`SupportedPower`], [`SupportedCoex`] |
+//! | an unsupported power or coexistence level | [`SupportedPower`], [`SupportedCoex`] |
 //! | a response the frame or rate cannot carry | the buffer's [`TxFrame`] kind: an [`IndividualAddress`] or [`GroupAddress`] receiver, and for no ACK a [`NoAckHeader`] at a [`SupportedNoAck`] rate; the backend writes the QoS Ack Policy from the kind ([`QosControl`]) |
 //! | a busy queue, no free buffer | a transmit ticket and buffers of a class ([`TxBufferClass`](crate::TxBufferClass)), tokens the caller holds; the backend keeps an attempt its queue cannot take yet |
 //! | a duplicate attempt identifier | the ticket, which comes back with the terminal |
@@ -82,14 +82,12 @@
 //! #         vifs: 2,
 //! #         tx_queues: 4,
 //! #         max_mpdu_length: 2304,
-//! #         max_backoff_slots: 1023,
 //! #         tx_power_ceiling_min_dbm: Some(0),
 //! #         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
 //! #         individual_no_ack: PhyFormatSet::NON_HT,
 //! #         station_receive_filters: ReceiveFilter::BSS_MEMBER,
 //! #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-//! #         key_slots: 4,
-//! #         rx_block_ack_agreements: 2,
+//! #        
 //! #         rx_block_ack_max_tid: 7,
 //! #         rx_block_ack_max_window: 64,
 //! #         edca_max_aifsn: 15,
@@ -132,14 +130,12 @@
 //! #         vifs: 2,
 //! #         tx_queues: 4,
 //! #         max_mpdu_length: 2304,
-//! #         max_backoff_slots: 1023,
 //! #         tx_power_ceiling_min_dbm: Some(0),
 //! #         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
 //! #         individual_no_ack: PhyFormatSet::NON_HT,
 //! #         station_receive_filters: ReceiveFilter::BSS_MEMBER,
 //! #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-//! #         key_slots: 4,
-//! #         rx_block_ack_agreements: 2,
+//! #        
 //! #         rx_block_ack_max_tid: 7,
 //! #         rx_block_ack_max_window: 64,
 //! #         edca_max_aifsn: 15,
@@ -194,8 +190,8 @@ use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumb
 use oer_radio_port::PortBackend;
 
 use crate::{
-    Backoff, Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter,
-    TxPower, VifRole,
+    Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter, TxPower,
+    VifRole,
 };
 
 /// What a lower-MAC backend type supports, the same for every instance: the
@@ -342,32 +338,6 @@ impl<K> Clone for StationReceive<K> {
 }
 
 impl<K> Copy for StationReceive<K> {}
-
-/// A backoff `K` counts down.
-#[derive(Debug)]
-pub struct SupportedBackoff<K> {
-    backoff: Backoff,
-    brand: PhantomData<fn() -> K>,
-}
-
-impl<K: Ieee80211Capabilities> SupportedBackoff<K> {
-    /// `backoff`, when `K` counts it down.
-    pub const fn new(backoff: Backoff) -> Option<Self> {
-        if K::CAPS.supports_backoff(backoff) {
-            Some(Self {
-                backoff,
-                brand: PhantomData,
-            })
-        } else {
-            None
-        }
-    }
-
-    /// The backoff.
-    pub const fn get(&self) -> Backoff {
-        self.backoff
-    }
-}
 
 /// A transmit power `K` applies.
 #[derive(Debug)]
@@ -1239,9 +1209,9 @@ pub trait LowerMacSetup {
 /// after its install; one whose hardware fixes them (a station
 /// address, set by its cold start) does not implement it.
 pub trait AddressSetup: LowerMacSetup {
-    /// Set the address of the interface of `role`, in place of the one the
-    /// install or an earlier call gave it.
-    fn set_address(&mut self, role: VifRole, address: IndividualAddress);
+    /// Set the address of the interface of the role `R`, in place of the
+    /// one the install or an earlier call gave it.
+    fn set_address<R: InterfaceRole>(&mut self, address: IndividualAddress);
 }
 
 mod extensions;

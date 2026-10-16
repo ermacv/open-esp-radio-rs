@@ -535,7 +535,7 @@ fn non_data_frames_use_the_association_control_schedule() {
 }
 
 mod seam {
-    use oer_ieee80211_lower_mac::LinkMetric;
+    use oer_ieee80211_lower_mac::{LinkMetric, SnrSample};
     use oer_ieee80211_mac::{
         ht::ht_peer_capabilities,
         phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
@@ -632,10 +632,38 @@ mod seam {
         let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
         assert_eq!(control.association().filtered_ack_snr(), None);
         assert_eq!(
-            control.observe_ampdu(oer_time::Instant::from_micros(1_000), tally(4, 4), Some(30)),
+            control.observe_ampdu(
+                oer_time::Instant::from_micros(1_000),
+                tally(4, 4),
+                SnrSample::Measured(30)
+            ),
             Ok(())
         );
         assert!(control.association().filtered_ack_snr().is_some());
+    }
+
+    #[test]
+    fn a_block_ack_without_a_sample_leaves_the_filter_and_still_counts_its_window() {
+        let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
+        let now = oer_time::Instant::from_micros(1_000);
+        assert_eq!(
+            control.observe_ampdu(now, tally(4, 4), SnrSample::Measured(30)),
+            Ok(())
+        );
+        let filtered = control.association().filtered_ack_snr();
+        let latest = control.association().latest_ack_snr();
+        assert_eq!(
+            control.observe_ampdu(now, tally(4, 1), SnrSample::Unmeasured),
+            Ok(())
+        );
+        assert_eq!(control.association().filtered_ack_snr(), filtered);
+        assert_eq!(control.association().latest_ack_snr(), latest);
+        // A measured BlockAck moves the filter again.
+        assert_eq!(
+            control.observe_ampdu(now, tally(4, 4), SnrSample::Measured(10)),
+            Ok(())
+        );
+        assert_ne!(control.association().filtered_ack_snr(), filtered);
     }
 
     #[test]
@@ -655,7 +683,11 @@ mod seam {
         let mut control = EspressifRateControl::for_peer((), &peer, metric(60));
         let before = control.ampdu_rate();
         assert_eq!(
-            control.observe_ampdu(oer_time::Instant::from_micros(1_000), tally(4, 4), Some(30)),
+            control.observe_ampdu(
+                oer_time::Instant::from_micros(1_000),
+                tally(4, 4),
+                SnrSample::Measured(30)
+            ),
             Err(AmpduUnavailable)
         );
         assert_eq!(control.association().filtered_ack_snr(), None);

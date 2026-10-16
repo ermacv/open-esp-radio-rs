@@ -373,10 +373,7 @@ impl Work for ConfigureBarrier {
             } else {
                 assert!(matches!(
                     parts.outcome,
-                    TxOutcome::Ended {
-                        status: TxEndStatus::Delivered,
-                        ..
-                    }
+                    TxOutcome::Ended(SingleEnd::Delivered { .. })
                 ));
             }
         }

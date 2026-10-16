@@ -112,7 +112,6 @@ pub use extensions::{
     TbttEvent, TsfArithmeticError, TsfGeneration, TsfProjectionError, TsfRelation, TsfSample,
     TsfSetKind, TsfTimingError, TsfVifMismatch, VifTsf,
 };
-pub use oer_radio_port::ClockError;
 pub use oer_radio_port::{
     ClockInfo, ClockRelation, EventsLost, Generation, GenerationSource, Poisoned, PortResult,
     Projected, ProjectionError, RelationRate,
@@ -121,8 +120,8 @@ pub use owner::{
     AccessPoint, AckHeader, AddressSetup, BssColor, FrameHeader, GroupAddress, HeaderSpec,
     Ieee80211Capabilities, InterfaceRole, LegacyPhaseRate, LowerMacBackend, LowerMacSetup,
     MpduLength, NoAckHeader, PhaseRate, QosAckPolicy, QosControl, ReceiverAddress, ResponseHeader,
-    SizedFrame, Station, StationReceive, SupportedBackoff, SupportedBlockAck, SupportedChannel,
-    SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, Tid, TxFrame,
+    SizedFrame, Station, StationReceive, SupportedBlockAck, SupportedChannel, SupportedCoex,
+    SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower, Tid, TxFrame,
 };
 pub use owner::{
     AdmittedAggregate, AggregateAttempt, AggregatePushResult, AggregateRefused, AggregateState,
@@ -140,16 +139,18 @@ pub use phase::{
     AccessPointPhase, AdmittedAttempt, AggregateCompleted, Attempt, AttemptKey, CheckedPoolSource,
     ClassFrame, ClassSizedFrame, GateClosed, GateIssuer, GateOpen, GatePool, InstalledGroup,
     InterfaceAttempt, InterfaceKeys, InterfacePhase, InterfaceSubmission, KeyTypes, LowerMacEvent,
-    LowerMacPhase, LowerMacTerminal, PhaseTypes, PoolMpdu, PoolPreparation, PoolSource,
-    PreparationError, PreparationRefused, PreparedTx, RETRY_STAGES, Removed, RemovedKey,
-    RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu, RoleKeys, SingleCompleted,
-    StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxProtection, TxSource,
+    LowerMacPhase, LowerMacTerminal, PhaseAggregateOutcome, PhaseSingleOutcome, PhaseTypes,
+    PoolMpdu, PoolPreparation, PoolSource, PreparationError, PreparationRefused, PreparedTx,
+    RETRY_STAGES, Removed, RemovedKey, RetransmissionPlan, RetryPlan, RetryStage, ReturnedMpdu,
+    RoleKeys, SingleCompleted, StationPhase, TxBufferClass, TxBufferMemory, TxBufferPool,
+    TxCompleted, TxProtection, TxSource,
 };
 pub use rx::{
     LinkMetric, RxBuffer, RxCryptoStatus, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
 };
 pub use tx::{
-    Backoff, BlockAckReport, IndeterminateCause, Protection, TxAck, TxBody, TxEndStatus, TxOutcome,
+    AckSnr, AggregateEnd, AggregateOutcome, Air, BlockAckReport, BlockAckSnr, IndeterminateCause,
+    Protection, RateSample, SingleEnd, SingleOutcome, SingleResponse, SnrSample, TxBody, TxOutcome,
     TxPower, TxResponse, TxStatus, WithdrawCause,
 };
 

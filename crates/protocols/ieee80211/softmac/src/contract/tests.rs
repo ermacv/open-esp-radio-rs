@@ -174,7 +174,6 @@ fn hardware_owned_operations_become_the_port_services() {
                 .union(HardwareServices::BACKOFF_COUNTDOWN)
         )
     );
-    assert!(!services.contains(HardwareServices::RETRY_POLICY));
     assert!(!services.contains(HardwareServices::SEQUENCE_NUMBERS));
     let everything = MacOperationOwnership {
         tx_fcs_generation: MacOperationOwner::Hardware,
@@ -207,11 +206,9 @@ fn hardware_owned_operations_become_the_port_services() {
     assert_eq!(nothing.hardware_services(), HardwareServices::NONE);
     assert!(
         everything.hardware_services().contains(
-            HardwareServices::RETRY_POLICY
-                .union(HardwareServices::RX_REORDER)
+            HardwareServices::RX_REORDER
                 .union(HardwareServices::AMPDU_RETRY_SELECTION)
                 .union(HardwareServices::KEY_SELECTION)
-                .union(HardwareServices::PACKET_NUMBERS)
                 .union(HardwareServices::CIPHER_TRANSFORM)
                 .union(HardwareServices::RX_BLOCK_ACK_MATCHING)
                 .union(HardwareServices::TX_BLOCK_ACK_CAPTURE)

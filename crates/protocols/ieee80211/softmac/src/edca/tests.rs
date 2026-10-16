@@ -1,4 +1,3 @@
-use oer_ieee80211_lower_mac::Backoff;
 use oer_ieee80211_mac::extensions::wmm::WmmAcParameters;
 
 use super::*;
@@ -14,13 +13,6 @@ impl BackoffEntropy for Seeded {
         x ^= x << 5;
         self.0 = x;
         x
-    }
-}
-
-fn slots(backoff: Backoff) -> u16 {
-    match backoff {
-        Backoff::Slots(slots) => slots,
-        Backoff::HardwareDraw { .. } => panic!("the helper draws in software"),
     }
 }
 
@@ -53,7 +45,7 @@ fn draws_stay_inside_the_window_and_cover_it() {
     let mut entropy = Seeded(0x1234_5678);
     let mut seen = [false; 4];
     for _ in 0..200 {
-        let drawn = slots(contention.draw(&mut entropy));
+        let drawn = contention.draw(&mut entropy);
         assert!(drawn <= 3);
         seen[usize::from(drawn)] = true;
     }
@@ -61,7 +53,7 @@ fn draws_stay_inside_the_window_and_cover_it() {
     contention.record_failure();
     contention.record_failure();
     for _ in 0..200 {
-        assert!(slots(contention.draw(&mut entropy)) <= 7);
+        assert!(contention.draw(&mut entropy) <= 7);
     }
 }
 
@@ -72,7 +64,7 @@ fn a_seeded_source_is_deterministic() {
         let mut entropy = Seeded(seed);
         let mut drawn = [0_u16; 16];
         for slot in &mut drawn {
-            *slot = slots(contention.draw(&mut entropy));
+            *slot = contention.draw(&mut entropy);
         }
         drawn
     };
@@ -84,9 +76,9 @@ fn a_seeded_source_is_deterministic() {
 fn the_stateless_draw_matches_the_window_of_its_retry_count() {
     // An all-ones source draws the window itself.
     let mut ones = || u32::MAX;
-    assert_eq!(slots(draw_backoff(BEST_EFFORT, 0, &mut ones)), 15);
-    assert_eq!(slots(draw_backoff(BEST_EFFORT, 2, &mut ones)), 63);
-    assert_eq!(slots(draw_backoff(BEST_EFFORT, 200, &mut ones)), 1023);
+    assert_eq!(draw_backoff(BEST_EFFORT, 0, &mut ones), 15);
+    assert_eq!(draw_backoff(BEST_EFFORT, 2, &mut ones), 63);
+    assert_eq!(draw_backoff(BEST_EFFORT, 200, &mut ones), 1023);
 }
 
 #[test]

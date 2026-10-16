@@ -61,15 +61,12 @@ impl Ieee80211Capabilities for Caps {
         vifs: 2,
         tx_queues: 4,
         max_mpdu_length: 2304,
-        max_backoff_slots: 1023,
         tx_power_ceiling_min_dbm: Some(0),
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
         individual_no_ack: PhyFormatSet::NON_HT,
         station_receive_filters: ReceiveFilter::BSS_MEMBER
             .union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-        key_slots: 4,
-        rx_block_ack_agreements: 2,
         rx_block_ack_max_tid: 7,
         rx_block_ack_max_window: 64,
         edca_max_aifsn: 15,
@@ -176,6 +173,8 @@ impl<const G: usize> StaTokens for Tokens<G> {
     type Ticket = Ticket;
     type SmallBuffer = Buffer;
     type Sent = Buffer;
+    type AckEvidence = ();
+    type AirDenied = ();
     fn renew(mpdu: Self::Sent) -> Buffer {
         mpdu
     }
@@ -313,7 +312,7 @@ struct World<'id, const G: usize = 2> {
     pending_removals: Vec<StaInput<'id, Tokens<G>, Caps>>,
     /// The outcomes of the next transmissions; delivered once none is
     /// queued.
-    outcomes: std::collections::VecDeque<(TxOutcome, bool)>,
+    outcomes: std::collections::VecDeque<(Outcome, bool)>,
     /// The reason codes of the Deauthentications sent.
     deauthentications: Vec<u16>,
     /// Each EAPOL frame's Protected bit and whether it went under the key.
@@ -649,7 +648,7 @@ impl<'id, const G: usize> World<'id, G> {
             let (completion, published) = self
                 .outcomes
                 .pop_front()
-                .unwrap_or((ended(TxEndStatus::Delivered), true));
+                .unwrap_or((ended(End::Delivered), true));
             self.station.input(
                 now,
                 StaInput::TxDone {
@@ -1439,11 +1438,7 @@ fn a_terminal_of_the_previous_connection_only_returns_its_resources() {
                 context: old.context,
                 ticket: old.ticket,
                 buffer: ReturnedMpdu::Sent(old.buffer),
-                completion: TxOutcome::Ended {
-                    status: TxEndStatus::Delivered,
-                    ack: None,
-                    last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
-                },
+                completion: ended(End::Delivered),
             },
         );
         let State::Connected(connected) = &world.station.state else {
@@ -1546,9 +1541,7 @@ fn a_connected_station_scans_in_an_absence_announced_with_nulls() {
 fn an_undelivered_sleep_null_cancels_the_absence_and_the_station_stays() {
     installed(|mint| {
         let mut world = connected_world(mint);
-        world
-            .outcomes
-            .push_back((ended(TxEndStatus::AckTimeout), true));
+        world.outcomes.push_back((ended(End::AckTimeout), true));
         world
             .station
             .command(at(40), StaRequest::new(3, StaCommand::BackgroundScan))
@@ -1602,9 +1595,7 @@ fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
         world.run(at(40));
         // Channel 1's absence; back home, the PM=0 Null is not delivered.
         world.advance();
-        world
-            .outcomes
-            .push_back((ended(TxEndStatus::AckTimeout), true));
+        world.outcomes.push_back((ended(End::AckTimeout), true));
         world.advance();
         // Channel 6, the network's own, without an absence.
         world.advance();
@@ -2016,6 +2007,8 @@ impl crate::data::StaDataTokens for Tokens {
     type Ticket = Ticket;
     type Buffer = Buffer;
     type Sent = Buffer;
+    type AckEvidence = ();
+    type AirDenied = ();
     fn renew(mpdu: Self::Sent) -> Buffer {
         mpdu
     }
@@ -2077,11 +2070,7 @@ fn eapol_and_data_on_tid_7_share_one_counter_and_tid_0_runs_on_across_a_rekey() 
                 context,
                 ticket,
                 buffer,
-                completion: TxOutcome::Ended {
-                    status: TxEndStatus::Delivered,
-                    ack: None,
-                    last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
-                },
+                completion: ended(End::Delivered),
             });
             sent
         }
@@ -3415,12 +3404,30 @@ fn a_lease_terminal_during_leave_preserves_deauthentication_and_configuration() 
     }
 }
 
-fn ended(status: TxEndStatus) -> TxOutcome {
-    TxOutcome::Ended {
-        status,
-        ack: None,
-        last: Some((NonZeroU16::MIN, PhyRate::Legacy(LegacyRate::Ofdm6M))),
-    }
+/// The terminal kinds the station's tests return.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum End {
+    Delivered,
+    AckTimeout,
+    ContentionLimit,
+}
+
+/// A terminal on the tests' port, whose ACK evidence is empty.
+type Outcome = oer_ieee80211_lower_mac::SingleOutcome<(), ()>;
+
+fn ended(status: End) -> Outcome {
+    let air = oer_ieee80211_lower_mac::Air {
+        transmissions: NonZeroU16::MIN,
+        rate: PhyRate::Legacy(LegacyRate::Ofdm6M),
+    };
+    TxOutcome::Ended(match status {
+        End::Delivered => SingleEnd::Delivered {
+            air,
+            response: oer_ieee80211_lower_mac::SingleResponse::Ack(()),
+        },
+        End::AckTimeout => SingleEnd::AckTimeout(air),
+        End::ContentionLimit => SingleEnd::ContentionLimit(Some(air)),
+    })
 }
 
 fn retry_message3(ptk: &oer_ieee80211_rsn::Ptk, counter: u64, material: u8) -> Vec<u8> {
@@ -3611,9 +3618,9 @@ fn connected_eapol_rejects_changed_m3_and_unprotected_group_message1() {
 fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
     use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
     for (outcome, published) in [
-        (ended(TxEndStatus::Delivered), true),
-        (ended(TxEndStatus::AckTimeout), true),
-        (ended(TxEndStatus::ContentionLimit), true),
+        (ended(End::Delivered), true),
+        (ended(End::AckTimeout), true),
+        (ended(End::ContentionLimit), true),
         (TxOutcome::Withdrawn(WithdrawCause::GateClosed), false),
         (TxOutcome::Withdrawn(WithdrawCause::GateClosed), true),
         (
@@ -3629,7 +3636,7 @@ fn only_delivered_m4_connects_and_other_terminals_keep_the_original_deadline() {
             world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
             assert_eq!(world.station.tickets.len(), 2);
             assert_eq!(world.station.buffers.len(), 2);
-            if outcome == ended(TxEndStatus::Delivered) {
+            if outcome == ended(End::Delivered) {
                 assert!(world.station.is_connected());
                 return;
             }
@@ -3717,9 +3724,7 @@ fn a_repeated_m3_can_replace_group_material_without_reinstalling_the_ptk() {
     fn exercise<const G: usize>() {
         installed(|mint| {
             let (mut world, ptk) = wpa2_associated::<G>(mint);
-            world
-                .outcomes
-                .push_back((ended(TxEndStatus::AckTimeout), true));
+            world.outcomes.push_back((ended(End::AckTimeout), true));
             world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
             assert!(!world.station.is_connected());
             assert_eq!(
@@ -3846,9 +3851,7 @@ fn repeated_m3_selects_retained_material_and_restores_each_live_replay_frontier(
         let lanes = core::iter::once(None)
             .chain((0..16).map(Some))
             .collect::<Vec<_>>();
-        world
-            .outcomes
-            .push_back((ended(TxEndStatus::AckTimeout), true));
+        world.outcomes.push_back((ended(End::AckTimeout), true));
         world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
         for &tid in &lanes {
             active_replay(&mut world.station.state)
@@ -3857,9 +3860,7 @@ fn repeated_m3_selects_retained_material_and_restores_each_live_replay_frontier(
                 .unwrap();
         }
         world.hold_key_installs = true;
-        world
-            .outcomes
-            .push_back((ended(TxEndStatus::AckTimeout), true));
+        world.outcomes.push_back((ended(End::AckTimeout), true));
         world.receive(at(34), &retry_message3(&ptk, 3, 0x55));
         assert_eq!(world.pending_installs.len(), 1);
         assert!(world.station.keys.groups.current_material(id, &[0x99; 16]));
@@ -4122,9 +4123,7 @@ fn delivered_m4_retains_all_installed_groups_until_leave() {
             world.hold_group_removals = true;
             for index in 0..G {
                 if index + 1 < G {
-                    world
-                        .outcomes
-                        .push_back((ended(TxEndStatus::AckTimeout), true));
+                    world.outcomes.push_back((ended(End::AckTimeout), true));
                 }
                 world.receive(
                     at(33),
@@ -4187,8 +4186,8 @@ fn delivered_m4_retains_all_installed_groups_until_leave() {
 fn previous_auth_terminal_cannot_finish_new_attempt() {
     use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
     for outcome in [
-        Some(ended(TxEndStatus::Delivered)),
-        Some(ended(TxEndStatus::AckTimeout)),
+        Some(ended(End::Delivered)),
+        Some(ended(End::AckTimeout)),
         Some(TxOutcome::Withdrawn(WithdrawCause::GateClosed)),
         Some(TxOutcome::Indeterminate(
             IndeterminateCause::HardwareTimeout,

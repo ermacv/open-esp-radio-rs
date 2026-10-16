@@ -143,13 +143,16 @@ use oer_ieee80211_lower_mac::{
     GateIssuer, GateOpen, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, InFlight,
     IndeterminateCause, InterfaceCommandPool, InterfacePermissions, InterfacePhase, KeyTypes,
     LinkMetric, LowerMacBackend, LowerMacCapabilities, LowerMacEvent, LowerMacPhase, LowerMacSetup,
-    LowerMacTerminal, MpduKind, MpduLayout, PhaseRate, PhaseTypes, PhyFormatSet, PreparationError,
+    LowerMacTerminal, MpduKind, MpduLayout, PhaseTypes, PhyFormatSet, PreparationError,
     PreparationRefused, PreparedTx, RateSupport, ReceiveFilter, Removed, RemovedKey,
     RetransmissionPlan, RoleKeys, RxBuffer, RxEvidence, RxMeta, RxMetadata, SignalMetadata,
     Station, StationPhase, StationReceive, SupportedBlockAck, SupportedChannel, SupportedEdca,
-    SupportedFilter, TxAck, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted,
-    TxEndStatus, TxFrame, TxMpdu, TxOutcome, TxProtection, TxSource, VifRole, WidthSet,
-    WithdrawCause,
+    SupportedFilter, TxBody, TxBufferClass, TxBufferMemory, TxBufferPool, TxCompleted, TxFrame,
+    TxMpdu, TxOutcome, TxProtection, TxSource, VifRole, WidthSet, WithdrawCause,
+};
+use oer_ieee80211_lower_mac::{
+    AckSnr, AggregateEnd, AggregateOutcome, Air, BlockAckSnr, SingleEnd, SingleOutcome,
+    SingleResponse, SnrSample,
 };
 use oer_ieee80211_lower_mac::{
     AggregateRefused, AggregateState, AmpduCapabilities, AmpduPhase, AmpduRate, BlockAckReport,
@@ -179,21 +182,17 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     },
     services: HardwareServices::FCS
         .union(HardwareServices::IMMEDIATE_ACK)
-        .union(HardwareServices::RETRY_POLICY)
         .union(HardwareServices::CIPHER_TRANSFORM)
         .union(HardwareServices::RX_BLOCK_ACK_MATCHING),
     vifs: 2,
     tx_queues: 4,
     max_mpdu_length: MODEL_MAX_MPDU as u16,
-    max_backoff_slots: 1023,
     tx_power_ceiling_min_dbm: Some(0),
     coex_priorities: CoexPrioritySet::only(CoexPriority::Normal)
         .union(CoexPrioritySet::only(CoexPriority::Elevated)),
     individual_no_ack: PhyFormatSet::NON_HT,
     station_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
     access_point_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
-    key_slots: (4 * MODEL_KEY_SLOTS) as u8,
-    rx_block_ack_agreements: 2,
     rx_block_ack_max_tid: 7,
     rx_block_ack_max_window: 64,
     edca_max_aifsn: 15,
@@ -1000,6 +999,9 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
         'id: 'k;
     type TxBody = X::Body;
     type TicketKind = ModelTickets;
+    type AckEvidence = ModelAck;
+    type BlockAckEvidence = ModelBlockAckEvidence;
+    type AirDenied = ModelAirDenied;
     type AnyTxBuffer = ModelAnyBuffer<'id, X::Body>;
     type TxMpdu = ModelMpdu<'id, X::Body>;
     type TxAggregate = ModelSubframes<'id, X::Body>;
@@ -1008,6 +1010,7 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     type StationKeys = ModelKeys<'id, Station>;
     type AccessPointKeys = ModelKeys<'id, AccessPoint>;
     type BlockAckKind = ModelBlockAcks;
+    const RX_BLOCK_ACK_SLOTS: usize = MODEL_BLOCK_ACK_SLOTS;
     type BlockAck = ModelBlockAck<'id>;
 }
 
@@ -1303,13 +1306,63 @@ pub struct AirFrame {
 /// shape; a mismatch poisons the model before publication, retaining owners.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AirAnswer {
+    /// An ACK, which the model measures at [`MODEL_ACK_SNR_DB`].
     Ack,
-    /// Bit n acknowledges subframe n of this one aggregate.
+    /// A measured BlockAck. Bit n acknowledges subframe n of this one
+    /// aggregate.
     BlockAck(u64),
+    /// An aggregate's BlockAck whose completion carries no SNR measurement,
+    /// as an S31 BlockAck accepted with a failed hardware status does.
+    BlockAckUnmeasured(u64),
     NoResponse,
     Collision,
+    /// Coexistence denied the air before the PPDU went out.
+    AirDenied,
     HardwareTimeout,
 }
+
+/// The SNR the model measures for every ACK and measured BlockAck.
+pub const MODEL_ACK_SNR_DB: i8 = 30;
+
+/// What the model observed of a single MPDU's response: its SNR, always.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelAck {
+    /// The response's SNR, in dB.
+    pub snr_db: i8,
+}
+
+impl AckSnr for ModelAck {
+    fn snr_db(&self) -> i8 {
+        self.snr_db
+    }
+}
+
+/// What the model observed of an aggregate's BlockAck.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelBlockAckEvidence {
+    /// The BlockAck's SNR, in dB.
+    Measured(i8),
+    /// The completion carried no SNR measurement.
+    Unmeasured,
+}
+
+impl BlockAckSnr for ModelBlockAckEvidence {
+    fn snr_sample(&self) -> SnrSample {
+        match *self {
+            Self::Measured(snr_db) => SnrSample::Measured(snr_db),
+            Self::Unmeasured => SnrSample::Unmeasured,
+        }
+    }
+}
+
+/// The model's evidence that coexistence denied an attempt the air.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelAirDenied;
+
+/// A single MPDU's outcome in the model.
+pub type ModelSingleOutcome = SingleOutcome<ModelAck, ModelAirDenied>;
+/// An aggregate's outcome in the model.
+pub type ModelAggregateOutcome = AggregateOutcome<ModelBlockAckEvidence, ModelAirDenied>;
 
 /// One receive agreement applied by the model driver, after capability checking.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1765,23 +1818,94 @@ impl ModelAir {
         }
     }
 
-    fn result(&self, response: ResponsePolicy) -> Result<AirAnswer, AnswerShapeMismatch> {
-        let answer = self
-            .answers
-            .borrow_mut()
-            .pop_front()
-            .unwrap_or(match response {
-                ResponsePolicy::NoResponseExpected => AirAnswer::NoResponse,
-                ResponsePolicy::Ack => AirAnswer::Ack,
-                ResponsePolicy::BlockAck { .. } => AirAnswer::BlockAck(u64::MAX),
-            });
+    fn next_answer(&self, default: AirAnswer) -> AirAnswer {
+        self.answers.borrow_mut().pop_front().unwrap_or(default)
+    }
+
+    /// The next answer to a single MPDU of `response`, checked against it.
+    fn single_result(&self, response: ResponsePolicy) -> Result<SingleAnswer, AnswerShapeMismatch> {
+        let answer = self.next_answer(match response {
+            ResponsePolicy::NoResponseExpected => AirAnswer::NoResponse,
+            ResponsePolicy::Ack => AirAnswer::Ack,
+            ResponsePolicy::BlockAck { .. } => AirAnswer::BlockAck(u64::MAX),
+        });
         match (response, answer) {
-            (ResponsePolicy::NoResponseExpected, AirAnswer::Ack | AirAnswer::BlockAck(_))
-            | (ResponsePolicy::Ack, AirAnswer::BlockAck(_))
-            | (ResponsePolicy::BlockAck { .. }, AirAnswer::Ack) => Err(AnswerShapeMismatch),
-            _ => Ok(answer),
+            (_, AirAnswer::Collision) => Ok(SingleAnswer::Collision),
+            (_, AirAnswer::AirDenied) => Ok(SingleAnswer::AirDenied),
+            (_, AirAnswer::HardwareTimeout) => Ok(SingleAnswer::HardwareTimeout),
+            (ResponsePolicy::NoResponseExpected, AirAnswer::NoResponse) => {
+                Ok(SingleAnswer::Unsolicited)
+            }
+            (ResponsePolicy::Ack | ResponsePolicy::BlockAck { .. }, AirAnswer::NoResponse) => {
+                Ok(SingleAnswer::Unanswered)
+            }
+            (ResponsePolicy::Ack, AirAnswer::Ack) => Ok(SingleAnswer::Ack),
+            (ResponsePolicy::BlockAck { start_sequence }, AirAnswer::BlockAck(bitmap)) => {
+                Ok(SingleAnswer::BlockAck(BlockAckReport {
+                    start_sequence,
+                    bitmap,
+                }))
+            }
+            (
+                ResponsePolicy::NoResponseExpected,
+                AirAnswer::Ack | AirAnswer::BlockAck(_) | AirAnswer::BlockAckUnmeasured(_),
+            )
+            | (ResponsePolicy::Ack, AirAnswer::BlockAck(_) | AirAnswer::BlockAckUnmeasured(_))
+            // A BlockAckReq's BlockAck is a single MPDU's response, which
+            // the model always measures.
+            | (ResponsePolicy::BlockAck { .. }, AirAnswer::Ack | AirAnswer::BlockAckUnmeasured(_)) => {
+                Err(AnswerShapeMismatch)
+            }
         }
     }
+
+    /// The next answer to an aggregate, checked against its BlockAck.
+    fn aggregate_result(&self) -> Result<AggregateAnswer, AnswerShapeMismatch> {
+        match self.next_answer(AirAnswer::BlockAck(u64::MAX)) {
+            AirAnswer::BlockAck(bitmap) => Ok(AggregateAnswer::BlockAck {
+                bitmap,
+                evidence: ModelBlockAckEvidence::Measured(MODEL_ACK_SNR_DB),
+            }),
+            AirAnswer::BlockAckUnmeasured(bitmap) => Ok(AggregateAnswer::BlockAck {
+                bitmap,
+                evidence: ModelBlockAckEvidence::Unmeasured,
+            }),
+            AirAnswer::NoResponse => Ok(AggregateAnswer::Unanswered),
+            AirAnswer::Collision => Ok(AggregateAnswer::Collision),
+            AirAnswer::AirDenied => Ok(AggregateAnswer::AirDenied),
+            AirAnswer::HardwareTimeout => Ok(AggregateAnswer::HardwareTimeout),
+            AirAnswer::Ack => Err(AnswerShapeMismatch),
+        }
+    }
+}
+
+/// A single MPDU's answer, checked against the response it solicited.
+#[derive(Clone, Copy, Debug)]
+enum SingleAnswer {
+    /// The frame solicited no response.
+    Unsolicited,
+    Ack,
+    /// A BlockAckReq's BlockAck.
+    BlockAck(BlockAckReport),
+    /// The solicited response did not come.
+    Unanswered,
+    Collision,
+    AirDenied,
+    HardwareTimeout,
+}
+
+/// An aggregate's answer, checked against its BlockAck.
+#[derive(Clone, Copy, Debug)]
+enum AggregateAnswer {
+    /// Bit n acknowledges subframe n.
+    BlockAck {
+        bitmap: u64,
+        evidence: ModelBlockAckEvidence,
+    },
+    Unanswered,
+    Collision,
+    AirDenied,
+    HardwareTimeout,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2072,6 +2196,16 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
         self.air.poison();
         self.wake_body();
     }
+
+    /// Return one received buffer's capacity. Each buffer is charged once
+    /// when delivered, so a return with none charged is a broken model
+    /// invariant: it poisons instead of hiding the count.
+    fn release_rx(&self) {
+        match self.rx_out.get().checked_sub(1) {
+            Some(out) => self.rx_out.set(out),
+            None => self.poison(),
+        }
+    }
 }
 
 /// The install's local brand. Key identity belongs to each installed key;
@@ -2226,7 +2360,7 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
                     }
                     LowerMacEvent::Received { mut frame, .. } => {
                         frame.recycled = true;
-                        held.rx_out.set(held.rx_out.get().saturating_sub(1));
+                        held.release_rx();
                         held.lost.set(true);
                     }
                     LowerMacEvent::Tbtt(_) => held.lost.set(true),
@@ -2494,7 +2628,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
             }
             while let Some(mut buffer) = held.recycled.pop() {
                 buffer.recycled = true;
-                held.rx_out.set(held.rx_out.get().saturating_sub(1));
+                held.release_rx();
             }
             if settings.other {
                 held.air
@@ -2795,12 +2929,12 @@ impl<'id, X: ModelContext> Driver<'id, X> {
                                 reconfigure(publication.work.role())
                                     .then_some(WithdrawCause::GateClosed)
                             });
-                    let result = if result_held {
-                        AirAnswer::HardwareTimeout
+                    let work = if result_held {
+                        publication.work.timed_out()
                     } else {
-                        publication.result
+                        publication.work
                     };
-                    queue.air = publication.work.complete(held, &self.keys, result, cause);
+                    queue.air = work.complete(held, &self.keys, cause);
                     if held.air.failed() {
                         return;
                     }
@@ -2906,7 +3040,6 @@ struct TxQueue<'id, X: ModelContext> {
 }
 struct Publication<'id, X: ModelContext> {
     started: u64,
-    result: AirAnswer,
     work: Published<'id, X>,
 }
 struct SinglePlan<'id, X: ModelContext> {
@@ -2916,10 +3049,14 @@ struct SinglePlan<'id, X: ModelContext> {
     rate: PhyRate,
 }
 enum Published<'id, X: ModelContext> {
-    Single(SinglePlan<'id, X>),
+    Single {
+        plan: SinglePlan<'id, X>,
+        answer: SingleAnswer,
+    },
     Aggregate {
         prepared: PreparedAggregate<'id, X>,
         report: BlockAckReport,
+        answer: AggregateAnswer,
     },
 }
 /// Derive the terminal from the actual lifecycle barrier and key owner;
@@ -2945,52 +3082,49 @@ fn withdrawal<'id, X: ModelContext>(
 impl<'id, X: ModelContext> Published<'id, X> {
     fn role(&self) -> VifRole {
         match self {
-            Self::Single(plan) => plan.prepared.role,
+            Self::Single { plan, .. } => plan.prepared.role,
             Self::Aggregate { prepared, .. } => prepared.role,
         }
     }
     fn key(&self) -> Option<&KeyIdentity> {
         match self {
-            Self::Single(plan) => plan.prepared.key.as_ref(),
+            Self::Single { plan, .. } => plan.prepared.key.as_ref(),
             Self::Aggregate { prepared, .. } => prepared.key.as_ref(),
         }
         .map(|key| &key.identity)
+    }
+    /// The publication with its answer replaced by the hardware timeout.
+    fn timed_out(self) -> Self {
+        match self {
+            Self::Single { plan, .. } => Self::Single {
+                plan,
+                answer: SingleAnswer::HardwareTimeout,
+            },
+            Self::Aggregate {
+                prepared, report, ..
+            } => Self::Aggregate {
+                prepared,
+                report,
+                answer: AggregateAnswer::HardwareTimeout,
+            },
+        }
     }
     fn complete(
         self,
         held: &ModelHeld<'id, X>,
         keys: &[KeyIdentity],
-        result: AirAnswer,
         cause: Option<WithdrawCause>,
     ) -> Option<Publication<'id, X>> {
         match self {
-            Self::Single(mut plan) => {
-                if matches!(
-                    result,
-                    AirAnswer::Ack | AirAnswer::BlockAck(_) | AirAnswer::NoResponse
-                ) {
-                    let transmissions = plan
-                        .last
-                        .map_or(NonZeroU16::MIN, |(count, _)| count.saturating_add(1));
-                    plan.last = Some((transmissions, plan.rate));
-                }
-                let response = plan.prepared.operation.payload().response;
-                let report = match (response, result) {
-                    (ResponsePolicy::BlockAck { start_sequence }, AirAnswer::BlockAck(bitmap)) => {
-                        Some(BlockAckReport {
-                            start_sequence,
-                            bitmap,
-                        })
-                    }
-                    _ => None,
-                };
-                let outcome = air_outcome(response, result, plan.last, report, cause);
+            Self::Single {
+                mut plan,
+                answer: result,
+            } => {
+                let (outcome, last) = single_outcome(result, plan.last, plan.rate, cause);
+                plan.last = last;
                 if matches!(
                     outcome,
-                    TxOutcome::Ended {
-                        status: TxEndStatus::AckTimeout | TxEndStatus::ContentionLimit,
-                        ..
-                    }
+                    TxOutcome::Ended(SingleEnd::AckTimeout(_) | SingleEnd::ContentionLimit(_))
                 ) && let Some(rate) = plan.remaining.pop_front()
                 {
                     plan.rate = rate;
@@ -2998,59 +3132,109 @@ impl<'id, X: ModelContext> Published<'id, X> {
                 }
                 terminal(held, *plan.prepared, outcome);
             }
-            Self::Aggregate { prepared, report } => {
-                let response = ResponsePolicy::BlockAck {
-                    start_sequence: prepared.start_sequence,
-                };
-                let last = (!matches!(result, AirAnswer::Collision))
-                    .then_some((NonZeroU16::MIN, prepared.rate));
-                terminal_aggregate(
-                    held,
-                    prepared,
-                    air_outcome(response, result, last, Some(report), cause),
-                );
+            Self::Aggregate {
+                prepared,
+                report,
+                answer,
+            } => {
+                let outcome = aggregate_outcome(answer, prepared.rate, report, cause);
+                terminal_aggregate(held, prepared, outcome);
             }
         }
         None
     }
 }
-/// One interpretation of air completion for both submission shapes.
-fn air_outcome(
-    response: ResponsePolicy,
-    answer: AirAnswer,
+
+/// A single MPDU's outcome after `answer`, and its transmissions so far:
+/// `last` before this publication, which went out at `rate`.
+fn single_outcome(
+    answer: SingleAnswer,
     last: Option<(NonZeroU16, PhyRate)>,
-    report: Option<BlockAckReport>,
+    rate: PhyRate,
     cause: Option<WithdrawCause>,
-) -> TxOutcome {
-    match answer {
-        AirAnswer::HardwareTimeout => TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
-        AirAnswer::Ack | AirAnswer::BlockAck(_) => TxOutcome::Ended {
-            status: TxEndStatus::Delivered,
+) -> (ModelSingleOutcome, Option<(NonZeroU16, PhyRate)>) {
+    let before = last.map(|(transmissions, rate)| Air {
+        transmissions,
+        rate,
+    });
+    let transmitted = Air {
+        transmissions: last.map_or(NonZeroU16::MIN, |(count, _)| count.saturating_add(1)),
+        rate,
+    };
+    let ack = ModelAck {
+        snr_db: MODEL_ACK_SNR_DB,
+    };
+    let delivered = |response| {
+        TxOutcome::Ended(SingleEnd::Delivered {
+            air: transmitted,
+            response,
+        })
+    };
+    let went_out = Some((transmitted.transmissions, rate));
+    match (answer, cause) {
+        (SingleAnswer::HardwareTimeout, _) => (
+            TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
             last,
-            ack: Some(TxAck {
-                block_ack: report,
-                ..TxAck::default()
-            }),
-        },
-        AirAnswer::NoResponse if matches!(response, ResponsePolicy::NoResponseExpected) => {
-            TxOutcome::Ended {
-                status: TxEndStatus::Delivered,
-                last,
-                ack: None,
-            }
+        ),
+        (SingleAnswer::AirDenied | SingleAnswer::Collision, Some(cause)) => {
+            (TxOutcome::Withdrawn(cause), last)
         }
-        AirAnswer::NoResponse | AirAnswer::Collision => match cause {
-            Some(cause) => TxOutcome::Withdrawn(cause),
-            None => TxOutcome::Ended {
-                status: if matches!(answer, AirAnswer::Collision) {
-                    TxEndStatus::ContentionLimit
-                } else {
-                    TxEndStatus::AckTimeout
-                },
-                last,
-                ack: None,
-            },
-        },
+        (SingleAnswer::Unanswered, Some(cause)) => (TxOutcome::Withdrawn(cause), went_out),
+        (SingleAnswer::AirDenied, None) => (
+            TxOutcome::Ended(SingleEnd::AirDenied {
+                denial: ModelAirDenied,
+                air: before,
+            }),
+            last,
+        ),
+        (SingleAnswer::Collision, None) => {
+            (TxOutcome::Ended(SingleEnd::ContentionLimit(before)), last)
+        }
+        (SingleAnswer::Unanswered, None) => (
+            TxOutcome::Ended(SingleEnd::AckTimeout(transmitted)),
+            went_out,
+        ),
+        (SingleAnswer::Unsolicited, _) => (delivered(SingleResponse::Unsolicited), went_out),
+        (SingleAnswer::Ack, _) => (delivered(SingleResponse::Ack(ack)), went_out),
+        (SingleAnswer::BlockAck(report), _) => (
+            delivered(SingleResponse::BlockAck { report, ack }),
+            went_out,
+        ),
+    }
+}
+
+/// An aggregate's outcome after `answer`, published once at `rate`.
+fn aggregate_outcome(
+    answer: AggregateAnswer,
+    rate: PhyRate,
+    report: BlockAckReport,
+    cause: Option<WithdrawCause>,
+) -> ModelAggregateOutcome {
+    let air = Air {
+        transmissions: NonZeroU16::MIN,
+        rate,
+    };
+    match (answer, cause) {
+        (AggregateAnswer::HardwareTimeout, _) => {
+            TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+        }
+        (AggregateAnswer::BlockAck { evidence, .. }, _) => {
+            TxOutcome::Ended(AggregateEnd::Delivered {
+                air,
+                report,
+                ack: evidence,
+            })
+        }
+        (
+            AggregateAnswer::Unanswered | AggregateAnswer::Collision | AggregateAnswer::AirDenied,
+            Some(cause),
+        ) => TxOutcome::Withdrawn(cause),
+        (AggregateAnswer::Unanswered, None) => TxOutcome::Ended(AggregateEnd::AckTimeout(air)),
+        (AggregateAnswer::Collision, None) => TxOutcome::Ended(AggregateEnd::ContentionLimit(None)),
+        (AggregateAnswer::AirDenied, None) => TxOutcome::Ended(AggregateEnd::AirDenied {
+            denial: ModelAirDenied,
+            air: None,
+        }),
     }
 }
 
@@ -3089,8 +3273,11 @@ fn publish_single<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut plan: SinglePlan<'id, X>,
 ) -> Option<Publication<'id, X>> {
-    let result = match held.air.result(plan.prepared.operation.payload().response) {
-        Ok(result) => result,
+    let answer = match held
+        .air
+        .single_result(plan.prepared.operation.payload().response)
+    {
+        Ok(answer) => answer,
         Err(AnswerShapeMismatch) => {
             let _fault = held.quarantined.push(Work::Single(plan.prepared));
             held.poison();
@@ -3130,8 +3317,7 @@ fn publish_single<'id, X: ModelContext>(
     held.air.sent.borrow_mut().push(frame);
     Some(Publication {
         started: held.air.now_micros.get(),
-        result,
-        work: Published::Single(plan),
+        work: Published::Single { plan, answer },
     })
 }
 
@@ -3154,7 +3340,7 @@ fn withdrawn<'id, X: ModelContext>(
 fn terminal_aggregate<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     aggregate: PreparedAggregate<'id, X>,
-    completion: TxOutcome,
+    completion: ModelAggregateOutcome,
 ) {
     held.post(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
         TxCompleted::Aggregate(aggregate.operation.complete(completion)),
@@ -3166,19 +3352,20 @@ fn publish_aggregate<'id, X: ModelContext>(
     keys: &[KeyIdentity],
     mut aggregate: PreparedAggregate<'id, X>,
 ) -> Option<Publication<'id, X>> {
-    let result = match held.air.result(ResponsePolicy::BlockAck {
-        start_sequence: aggregate.start_sequence,
-    }) {
-        Ok(result) => result,
+    let answer = match held.air.aggregate_result() {
+        Ok(answer) => answer,
         Err(AnswerShapeMismatch) => {
             let _fault = held.quarantined.push(Work::Aggregate(aggregate));
             held.poison();
             return None;
         }
     };
-    let acknowledged = match result {
-        AirAnswer::BlockAck(bitmap) => bitmap,
-        _ => 0,
+    let acknowledged = match answer {
+        AggregateAnswer::BlockAck { bitmap, .. } => bitmap,
+        AggregateAnswer::Unanswered
+        | AggregateAnswer::Collision
+        | AggregateAnswer::AirDenied
+        | AggregateAnswer::HardwareTimeout => 0,
     };
     let frames = match aggregate.operation.execute().publish(
         aggregate.role,
@@ -3207,10 +3394,10 @@ fn publish_aggregate<'id, X: ModelContext>(
     };
     Some(Publication {
         started: held.air.now_micros.get(),
-        result,
         work: Published::Aggregate {
             prepared: aggregate,
             report,
+            answer,
         },
     })
 }
@@ -3219,7 +3406,7 @@ fn publish_aggregate<'id, X: ModelContext>(
 fn terminal<'id, X: ModelContext>(
     held: &ModelHeld<'id, X>,
     prepared: Prepared<'id, X>,
-    outcome: TxOutcome,
+    outcome: ModelSingleOutcome,
 ) {
     held.post(LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(
         TxCompleted::Single(prepared.operation.complete(outcome)),
@@ -3328,9 +3515,7 @@ impl<'p, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> LowerMacPhase<'p, '
             // next poll can reuse the same bounded RX capacity without a
             // body/driver task switch, exactly the starvation case.
             buffer.recycled = true;
-            self.held
-                .rx_out
-                .set(self.held.rx_out.get().saturating_sub(1));
+            self.held.release_rx();
             return;
         }
         if self.held.recycled.push(buffer).is_err() {
@@ -4167,14 +4352,6 @@ impl<'p, 'v, 'id: 'p, C: Ieee80211Capabilities, X: ModelContext> AccessPointPhas
         self.held
             .command(Command::Configure(Configured::AccessPoint(permission)));
     }
-}
-
-#[allow(dead_code, reason = "the rate check the service uses")]
-fn rate<'p, 'id>(
-    phase: &ModelPhase<'p, 'id>,
-    rate: PhyRate,
-) -> Option<PhaseRate<'p, 'id, ModelCaps>> {
-    phase.rate(rate)
 }
 
 #[cfg(test)]

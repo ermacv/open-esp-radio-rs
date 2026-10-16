@@ -1,12 +1,12 @@
 use super::*;
 use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpRxProtection};
 
-fn exchange_terminals() -> [TxOutcome; 5] {
+fn exchange_terminals() -> [Outcome; 5] {
     use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
     [
-        ended(TxEndStatus::Delivered),
-        ended(TxEndStatus::AckTimeout),
-        ended(TxEndStatus::ContentionLimit),
+        ended(End::Delivered),
+        ended(End::AckTimeout),
+        ended(End::ContentionLimit),
         TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
         TxOutcome::Withdrawn(WithdrawCause::GateClosed),
     ]
@@ -56,7 +56,7 @@ fn deferred_m3_responds_only_to_the_latest_counter_after_the_current_m4_terminal
                     );
                     assert_eq!(
                         world.station.is_connected(),
-                        connected || outcome == ended(TxEndStatus::Delivered)
+                        connected || outcome == ended(End::Delivered)
                     );
                     assert!(
                         world
@@ -447,9 +447,7 @@ fn failed_initial_m4_answers_a_protected_repeat_with_a_protected_m4() {
     for material in [0x99, 0x55] {
         installed(|mint| {
             let (mut world, ptk) = wpa2_associated::<2>(mint);
-            world
-                .outcomes
-                .push_back((ended(TxEndStatus::AckTimeout), true));
+            world.outcomes.push_back((ended(End::AckTimeout), true));
             world.receive(at(33), &retry_message3(&ptk, 2, 0x99));
             assert!(!world.station.is_connected());
             world.take();

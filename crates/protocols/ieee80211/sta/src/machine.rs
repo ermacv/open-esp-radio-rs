@@ -82,8 +82,9 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     AckHeader, Channel, GroupAddress, HeaderSpec, Ieee80211Capabilities, MpduLength, ReceiveFilter,
-    ReturnedMpdu, RxEvidence, RxMetadata, SizedFrame, Station as StationRole, StationReceive,
-    SupportedChannel, SupportedFilter, TxBufferMemory, TxEndStatus, TxOutcome,
+    ReturnedMpdu, RxEvidence, RxMetadata, SingleEnd, SingleOutcome, SizedFrame,
+    Station as StationRole, StationReceive, SupportedChannel, SupportedFilter, TxBufferMemory,
+    TxOutcome,
 };
 use oer_ieee80211_mac::address::{Bssid, IndividualAddress, OwnAddress};
 use oer_ieee80211_mac::ccmp::{Ccmp128Key, CcmpRxReplayEpoch};
@@ -184,6 +185,10 @@ pub trait StaTokens {
     type SmallBuffer: TxBufferMemory;
     /// An immutable published MPDU, including its body and original description.
     type Sent;
+    /// What the port observed of a solicited response.
+    type AckEvidence: Copy;
+    /// The port's evidence that coexistence denied an attempt the air.
+    type AirDenied: Copy;
     /// Release a completed MPDU for a new frame, ending its retained body owner.
     fn renew(mpdu: Self::Sent) -> Self::SmallBuffer;
     /// The affine start permission, reclaimed only through the complete key bank.
@@ -291,7 +296,7 @@ pub enum StaInput<'id, T: StaTokens, K> {
         /// The transmission's buffer.
         buffer: ReturnedMpdu<T::SmallBuffer, T::Sent>,
         /// How it ended.
-        completion: TxOutcome,
+        completion: SingleOutcome<T::AckEvidence, T::AirDenied>,
     },
     /// A frame the service did not send (no rate of its plan is on the
     /// port's channel, or it does not fit its buffer class): its ticket and
@@ -1858,8 +1863,9 @@ fn active_replay<T: StaTokens, K>(state: &mut State<T, K>) -> Option<&mut CcmpRx
     }
 }
 
-/// What ended in the station's world.
-enum Done {
+/// What ended in the station's world, with the port's response evidence
+/// `A` and lost-air evidence `D`.
+enum Done<A, D> {
     Unsent {
         purpose: TxPurpose,
         reason: TxRefusal,
@@ -1869,10 +1875,13 @@ enum Done {
     /// The complete port terminal, including withdrawals and unknown outcomes.
     Tx {
         purpose: TxPurpose,
-        completion: TxOutcome,
+        completion: SingleOutcome<A, D>,
     },
     Configured,
 }
+
+/// The station's [`Done`] in the port types of `T`.
+type StaDone<T> = Done<<T as StaTokens>::AckEvidence, <T as StaTokens>::AirDenied>;
 
 /// An action a state owes.
 enum Owed<'id, T: StaTokens, K> {
@@ -2809,7 +2818,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
     }
 
     /// The state after `done` in `state`.
-    fn step(&mut self, state: State<T, K>, now: Instant, done: Done) -> State<T, K> {
+    fn step(&mut self, state: State<T, K>, now: Instant, done: StaDone<T>) -> State<T, K> {
         if let Done::Unsent { purpose, reason } = done {
             return self.unsent(state, now, purpose, reason);
         }
@@ -2972,7 +2981,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         &mut self,
         confirming: Confirming<T, K>,
         now: Instant,
-        done: Done,
+        done: StaDone<T>,
     ) -> State<T, K> {
         let Confirming {
             connected,
@@ -3003,13 +3012,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         completion,
                     },
                 );
-                if matches!(
-                    completion,
-                    TxOutcome::Ended {
-                        status: TxEndStatus::Delivered,
-                        ..
-                    }
-                ) {
+                if matches!(completion, TxOutcome::Ended(SingleEnd::Delivered { .. })) {
                     match state {
                         State::Connected(mut connected) => {
                             connected.connected_notice = true;
@@ -3031,7 +3034,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         &mut self,
         mut connected: Connected<T, K>,
         now: Instant,
-        done: Done,
+        done: StaDone<T>,
     ) -> State<T, K> {
         if matches!(
             done,
@@ -3049,10 +3052,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
             } => Some((
                 sending,
                 match completion {
-                    TxOutcome::Ended {
-                        status: TxEndStatus::Delivered,
-                        ..
-                    } => NullOutcome::Delivered,
+                    TxOutcome::Ended(SingleEnd::Delivered { .. }) => NullOutcome::Delivered,
                     _ => NullOutcome::Unconfirmed,
                 },
             )),
@@ -3354,7 +3354,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
         State::Join(join)
     }
 
-    fn join_step(&mut self, mut join: Join<T, K>, now: Instant, done: Done) -> State<T, K> {
+    fn join_step(&mut self, mut join: Join<T, K>, now: Instant, done: StaDone<T>) -> State<T, K> {
         join.step = match (
             core::mem::replace(&mut join.step, JoinStep::NeedLease),
             done,
@@ -3405,11 +3405,7 @@ impl<'id, T: StaTokens, K: Ieee80211Capabilities> Station<'id, T, K> {
                         },
                         Done::Tx {
                             purpose: TxPurpose::Authentication { attempt: returned },
-                            completion:
-                                TxOutcome::Ended {
-                                    status: TxEndStatus::Delivered,
-                                    ..
-                                },
+                            completion: TxOutcome::Ended(SingleEnd::Delivered { .. }),
                         },
                     ) if attempt == returned => {
                         let Some(until) = now.checked_add(response_timeout) else {

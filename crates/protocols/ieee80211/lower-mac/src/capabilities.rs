@@ -7,10 +7,7 @@ use oer_ieee80211_mac::{
 };
 use oer_radio_coex::CoexPriority;
 
-use crate::{
-    control::{ReceiveFilter, VifRole},
-    tx::Backoff,
-};
+use crate::control::{ReceiveFilter, VifRole};
 
 /// A set of bands.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -198,16 +195,10 @@ impl HardwareServices {
     pub const RX_BLOCK_ACK_MATCHING: Self = Self(1 << 4);
     /// Capture the BlockAck answering a transmitted A-MPDU.
     pub const TX_BLOCK_ACK_CAPTURE: Self = Self(1 << 5);
-    /// Draw the CSMA/CA backoff.
-    pub const BACKOFF_DRAW: Self = Self(1 << 6);
-    /// Retry unacknowledged attempts and select retry rates.
-    pub const RETRY_POLICY: Self = Self(1 << 7);
     /// Assign sequence numbers.
     pub const SEQUENCE_NUMBERS: Self = Self(1 << 8);
     /// Select the key of an outgoing frame.
     pub const KEY_SELECTION: Self = Self(1 << 9);
-    /// Allocate packet numbers.
-    pub const PACKET_NUMBERS: Self = Self(1 << 10);
     /// Reorder received MPDUs of a Block Ack agreement.
     pub const RX_REORDER: Self = Self(1 << 11);
     /// Select the MPDUs a following A-MPDU attempt retransmits.
@@ -254,8 +245,6 @@ pub struct LowerMacCapabilities {
     /// The longest MPDU a transmit buffer holds, without FCS
     /// and MIC.
     pub max_mpdu_length: u16,
-    /// The largest [`Backoff::Slots`] count.
-    pub max_backoff_slots: u16,
     /// The lowest [`TxPower::MaxDbm`](crate::TxPower::MaxDbm) ceiling the
     /// backend applies; `None` when it applies none.
     pub tx_power_ceiling_min_dbm: Option<i8>,
@@ -268,10 +257,6 @@ pub struct LowerMacCapabilities {
     pub station_receive_filters: ReceiveFilter,
     /// The receive rules an access-point interface may request.
     pub access_point_receive_filters: ReceiveFilter,
-    /// Installed keys at once.
-    pub key_slots: u8,
-    /// Receive Block Ack agreements at once.
-    pub rx_block_ack_agreements: u8,
     /// Highest TID of a receive Block Ack agreement.
     pub rx_block_ack_max_tid: u8,
     /// Largest receive Block Ack window.
@@ -312,14 +297,6 @@ impl LowerMacCapabilities {
         match role {
             VifRole::Station => self.station_receive_filters,
             VifRole::AccessPoint => self.access_point_receive_filters,
-        }
-    }
-
-    /// Whether the backend counts down `backoff`.
-    pub const fn supports_backoff(self, backoff: Backoff) -> bool {
-        match backoff {
-            Backoff::Slots(slots) => slots <= self.max_backoff_slots,
-            Backoff::HardwareDraw { .. } => self.services.contains(HardwareServices::BACKOFF_DRAW),
         }
     }
 }

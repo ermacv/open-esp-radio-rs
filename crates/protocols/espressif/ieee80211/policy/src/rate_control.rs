@@ -14,7 +14,7 @@
 use core::num::{NonZeroU16, NonZeroU32};
 
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
-use oer_ieee80211_lower_mac::LinkMetric;
+use oer_ieee80211_lower_mac::{LinkMetric, SnrSample};
 use oer_ieee80211_mac::{
     channel::WifiChannelWidth,
     he::{He20Capabilities, He20PeerState, HeDcmConstellation, HeMcsNssSupport},
@@ -806,17 +806,39 @@ impl StaRateControlAssociation {
 
     /// Apply a checked aggregate observation, or return its unavailable
     /// controller before changing ACK-SNR or rate state.
+    ///
+    /// An unmeasured BlockAck leaves the ACK-SNR filter as it is, and the
+    /// window and rate decision run on the current filtered SNR. This is a
+    /// reviewed difference from the vendor
+    /// ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225367906)).
+    /// On a BlockAck whose hardware status is not success, the vendor still
+    /// feeds the filter: `ppResortTxAMPDU` copies the descriptor, sets the
+    /// copy's success byte `0x13` to 1 before each call (+0x10c, +0x26e) and
+    /// keeps its ACK-SNR byte `0xd`; `rcUpdateTxDoneAmpdu2` passes
+    /// `desc[0xd] + wDevCtrl[0x2e]` to `rcUpdateAckSnr` (+0x66..+0x7c). Only
+    /// the success branch of `lmacProcessTxSuccess` writes a measurement into
+    /// `0xd` (+0xe8); it and `lmacProcessTxopQComplete` write the sentinel
+    /// 0x7f otherwise (+0x8e, +0x4c), and the error branches leave the byte
+    /// untouched. The vendor sample is then the sentinel plus 0x60, −33 dB,
+    /// which the filter accepts because its sentinel check runs before the
+    /// addition, or a stale byte of an earlier transmission: no measurement.
+    /// A failed aggregate still reaches the rate decision through its window.
+    ///
+    /// SOURCE(esp32s31): `libpp[pp.o]::ppResortTxAMPDU`,
+    /// `libpp[trc.o]::rcUpdateTxDoneAmpdu2`, `libpp[lmac.o]::lmacProcessTxSuccess`,
+    /// `libpp[lmac.o]::lmacProcessTxopQComplete` and `libpp[trc.o]::rcUpdateAckSnr`.
     pub fn observe_ampdu_block_ack(
         &mut self,
         now_us: u32,
         tally: BlockAckTally,
-        ack_snr_db: Option<i8>,
+        ack_snr: SnrSample,
     ) -> Result<AmpduRateDecision, AmpduUnavailable> {
         let Some(runtime) = &mut self.ampdu_runtime else {
             return Err(AmpduUnavailable);
         };
-        if let Some(sample) = ack_snr_db {
-            self.ack_snr.update(sample);
+        match ack_snr {
+            SnrSample::Measured(sample) => self.ack_snr.update(sample),
+            SnrSample::Unmeasured => {}
         }
         let decision = runtime.observe_block_ack(now_us, tally, self.ack_snr.filtered());
         if matches!(
@@ -1385,10 +1407,10 @@ impl RateControl for EspressifRateControl {
         &mut self,
         now: Instant,
         tally: BlockAckTally,
-        ack_snr_db: Option<i8>,
+        ack_snr: SnrSample,
     ) -> Result<(), AmpduUnavailable> {
         self.association
-            .observe_ampdu_block_ack(now.as_micros() as u32, tally, ack_snr_db)
+            .observe_ampdu_block_ack(now.as_micros() as u32, tally, ack_snr)
             .map(|_| ())
     }
 }

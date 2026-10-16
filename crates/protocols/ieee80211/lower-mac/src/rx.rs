@@ -112,7 +112,7 @@ impl LinkMetric {
 /// so code that needs the metric requires this trait and a backend
 /// without it does not build with that code ([owner decision on #563]).
 ///
-/// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563
+/// [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132638867
 pub trait SignalMetadata: RxMetadata {
     /// The frame's signal over the noise floor.
     fn link_metric(&self) -> LinkMetric;

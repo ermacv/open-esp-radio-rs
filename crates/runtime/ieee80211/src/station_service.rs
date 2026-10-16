@@ -104,10 +104,10 @@ use oer_ieee80211_arbiter::{
 };
 use oer_ieee80211_lower_mac::{
     ClassFrame, CoexPriority, Ieee80211Capabilities, InstalledGroup, InterfacePhase, KeyTypes,
-    LowerMacBackend, LowerMacEvent, LowerMacPhase, LowerMacTerminal, PhaseTypes, PoolMpdu,
-    PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan, ReturnedMpdu, RxBuffer,
-    StationPhase, SupportedChannel, SupportedCoex, SupportedPower, TxBufferClass, TxBufferPool,
-    TxCompleted, TxMpdu, TxOutcome, TxPower, TxProtection, TxSource,
+    LowerMacBackend, LowerMacEvent, LowerMacPhase, LowerMacTerminal, PhaseSingleOutcome,
+    PhaseTypes, PoolMpdu, PoolSource, Protection, Removed, RemovedKey, RetransmissionPlan,
+    ReturnedMpdu, RxBuffer, StationPhase, SupportedChannel, SupportedCoex, SupportedPower,
+    TxBufferClass, TxBufferPool, TxCompleted, TxMpdu, TxPower, TxProtection, TxSource,
 };
 use oer_ieee80211_mac::qos::{WmmAccessCategory, WmmUserPriority};
 use oer_ieee80211_sta::{
@@ -249,6 +249,8 @@ where
     type Ticket = Slot<'id, Ty::TicketKind, Ty::TicketPath>;
     type SmallBuffer = <Ty as TxBufferPool<'id, S>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, S>>::Sent;
+    type AckEvidence = Ty::AckEvidence;
+    type AirDenied = Ty::AirDenied;
 
     fn renew(mpdu: Self::Sent) -> Self::SmallBuffer {
         let (memory, body) = <Ty as TxBufferPool<'id, S>>::renew(mpdu);
@@ -336,6 +338,8 @@ where
     type Ticket = Slot<'id, Ty::TicketKind, Ty::TicketPath>;
     type Buffer = <Ty as TxBufferPool<'id, L>>::Buffer;
     type Sent = <Ty as TxBufferPool<'id, L>>::Sent;
+    type AckEvidence = Ty::AckEvidence;
+    type AirDenied = Ty::AirDenied;
 
     fn renew(mpdu: Self::Sent) -> Self::Buffer {
         let (memory, body) = <Ty as TxBufferPool<'id, L>>::renew(mpdu);
@@ -348,6 +352,8 @@ where
 
 /// The metadata the port `B` gives a received frame.
 pub type PortRxMeta<'id, B> = <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::RxMeta;
+/// The ACK evidence of the port `B`.
+pub type PortAck<'id, B> = <<B as StationPort<'id>>::Types as PhaseTypes<'id>>::AckEvidence;
 
 /// The station of the service on the port `B`.
 pub type PortStation<'id, B, const GROUPS: usize = 2> = Station<
@@ -488,11 +494,17 @@ pub enum TxOperation {
     Data,
 }
 
+/// How a transmission returned: its port terminal's outcome `O`, or the
+/// service's refusal before submission.
 #[derive(Clone, Copy)]
-pub enum ReturnedTx {
-    Completed(TxOutcome),
+pub enum ReturnedTx<O> {
+    Completed(O),
     Refused(TxRefusal),
 }
+
+/// A returned transmission of the service on the port `B`.
+pub type PortReturnedTx<'id, B> =
+    ReturnedTx<PhaseSingleOutcome<'id, <B as StationPort<'id>>::Types>>;
 
 /// A backend returned owners that cannot belong to the submitted operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -676,8 +688,13 @@ impl<'p, 'id, B: StationPort<'id>, S, const GROUPS: usize> ServiceCompleted<'p, 
     }
 }
 
-impl<'p, 'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUPS: usize>
-    StoppedService<'p, 'id, B, S, GROUPS>
+impl<
+    'p,
+    'id,
+    B: StationPort<'id>,
+    S: RateSelection<PortRxMeta<'id, B>, PortAck<'id, B>>,
+    const GROUPS: usize,
+> StoppedService<'p, 'id, B, S, GROUPS>
 {
     /// Resume on the selected channel without minting pools, epochs, leases,
     /// gate authority or admission permissions. Startup reclaims old keys and
@@ -854,8 +871,12 @@ enum Next<'id, B: StationPort<'id>> {
     Failed(StepFailure<'id, B>),
 }
 
-impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUPS: usize>
-    StationService<'id, B, S, GROUPS>
+impl<
+    'id,
+    B: StationPort<'id>,
+    S: RateSelection<PortRxMeta<'id, B>, PortAck<'id, B>>,
+    const GROUPS: usize,
+> StationService<'id, B, S, GROUPS>
 {
     /// The service of the machines the composition built, its frames at
     /// the rates `rates` selects.
@@ -973,8 +994,12 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
     }
 }
 
-impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUPS: usize>
-    ServiceState<'id, B, S, GROUPS>
+impl<
+    'id,
+    B: StationPort<'id>,
+    S: RateSelection<PortRxMeta<'id, B>, PortAck<'id, B>>,
+    const GROUPS: usize,
+> ServiceState<'id, B, S, GROUPS>
 {
     async fn run_loop<
         'p,
@@ -1897,13 +1922,13 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
             <B::Types as PhaseTypes<'id>>::TicketPath,
         >,
         buffer: <B::Types as PhaseTypes<'id>>::AnyTxBuffer,
-        end: ReturnedTx,
+        end: PortReturnedTx<'id, B>,
     ) -> Result<(), ContractFault<'id, B>> {
         match (context, B::tx_buffer(buffer)) {
             (TxContext::Station(context), StationTxBuffer::Small(buffer)) => {
                 if self.station.is_current(&context)
                     && let ReturnedTx::Completed(completion) = end
-                    && completion.is_rate_sample()
+                    && completion.rate_sample().is_some()
                 {
                     let rates = if context.is_probe() {
                         FrameRates::Probe
@@ -1932,7 +1957,7 @@ impl<'id, B: StationPort<'id>, S: RateSelection<PortRxMeta<'id, B>>, const GROUP
             (TxContext::Data(context), StationTxBuffer::Large(buffer)) => {
                 if self.data.is_current(&context)
                     && let ReturnedTx::Completed(completion) = end
-                    && completion.is_rate_sample()
+                    && completion.rate_sample().is_some()
                 {
                     self.rates.completed(now, FrameRates::Data, &completion);
                 }
@@ -2040,7 +2065,7 @@ fn submit_station<'p, 'id: 'p, B, P, S, const GROUPS: usize>(
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
-    S: RateSelection<PortRxMeta<'id, B>>,
+    S: RateSelection<PortRxMeta<'id, B>, PortAck<'id, B>>,
 {
     let StaTransmit {
         context,
@@ -2145,7 +2170,7 @@ fn station_action<
 where
     B: StationPort<'id>,
     P: LowerMacPhase<'p, 'id, Caps = B::Caps, Types = B::Types>,
-    S: RateSelection<PortRxMeta<'id, B>>,
+    S: RateSelection<PortRxMeta<'id, B>, PortAck<'id, B>>,
 {
     let input = match action {
         StaAction::RequestChannel(request, place) => {

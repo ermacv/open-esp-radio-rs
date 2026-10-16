@@ -11,7 +11,7 @@
 //!
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6132066470
 
-use oer_ieee80211_lower_mac::{RetryPlan, RxMetadata, TxOutcome};
+use oer_ieee80211_lower_mac::{RetryPlan, RxMetadata, SingleOutcome};
 use oer_ieee80211_mac::phy::PhyRate;
 use oer_time::Instant;
 
@@ -30,9 +30,10 @@ pub enum FrameRates {
 }
 
 /// The rates of one interface's frames, on a port whose received frames
-/// carry the metadata `M`: a selection that needs what `M` does not
-/// guarantee (a signal measurement) is not one for that port.
-pub trait RateSelection<M: RxMetadata> {
+/// carry the metadata `M` and whose solicited responses carry the evidence
+/// `A`: a selection that needs what `M` or `A` does not guarantee (a signal
+/// measurement, an ACK's SNR) is not one for that port.
+pub trait RateSelection<M: RxMetadata, A> {
     /// The retry plan of the next frame for `frame`, in the rates the
     /// port's channel carries: `carried` turns a rate into the phase's, or
     /// refuses it. The selection's own rule decides what a refused stage
@@ -53,5 +54,5 @@ pub trait RateSelection<M: RxMetadata> {
 
     /// A frame for `frame` ended at `now` with `completion`: its
     /// transmissions, the rate of the last, whether it was acknowledged.
-    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxOutcome);
+    fn completed<D>(&mut self, now: Instant, frame: FrameRates, completion: &SingleOutcome<A, D>);
 }

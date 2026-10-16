@@ -3,15 +3,71 @@ use super::*;
 use embassy_futures::yield_now;
 use oer_ieee80211_lower_mac::PhaseTypes;
 use oer_ieee80211_lower_mac::{
-    AggregateAttempt, AmpduPhase, BlockAckReport, CheckedAggregate, ClassSubframe, GroupAddress,
-    IndeterminateCause, MpduStartSpacing, NoAckHeader, QosControl, SubframeSource, Tid, TxAck,
-    TxEndStatus, TxMpdu, TxOutcome, WithdrawCause,
+    AggregateAttempt, AggregateEnd, Air, AmpduPhase, BlockAckReport, CheckedAggregate,
+    ClassSubframe, GroupAddress, IndeterminateCause, MpduStartSpacing, NoAckHeader, QosControl,
+    SingleEnd, SingleResponse, SubframeSource, Tid, TxMpdu, TxOutcome, WithdrawCause,
 };
 use oer_ieee80211_mac::{
     phy::{HtMcs, HtRate, PpduBandwidth},
     sequence::SequenceNumber,
 };
-use oer_ieee80211_runtime::lower_mac_owner::model::{AirAnswer, ModelCaps, ModelPhase};
+use oer_ieee80211_runtime::lower_mac_owner::model::{
+    AirAnswer, ModelAggregateOutcome, ModelCaps, ModelPhase, ModelSingleOutcome,
+};
+
+/// What a terminal reported, for single MPDUs and aggregates alike.
+#[derive(Debug, Eq, PartialEq)]
+enum Seen {
+    /// Delivered; `report` is the BlockAck's window, and `solicited` whether
+    /// a response answered it.
+    Delivered {
+        air: Air,
+        report: Option<BlockAckReport>,
+        solicited: bool,
+    },
+    AckTimeout(Air),
+    ContentionLimit(Option<Air>),
+    Withdrawn(WithdrawCause),
+    Indeterminate(IndeterminateCause),
+    Other,
+}
+
+impl Seen {
+    fn single(outcome: ModelSingleOutcome) -> Self {
+        match outcome {
+            TxOutcome::Ended(SingleEnd::Delivered { air, response }) => Self::Delivered {
+                air,
+                report: match response {
+                    SingleResponse::BlockAck { report, .. } => Some(report),
+                    SingleResponse::Unsolicited | SingleResponse::Ack(_) => None,
+                },
+                solicited: !matches!(response, SingleResponse::Unsolicited),
+            },
+            TxOutcome::Ended(SingleEnd::AckTimeout(air)) => Self::AckTimeout(air),
+            TxOutcome::Ended(SingleEnd::ContentionLimit(air)) => Self::ContentionLimit(air),
+            TxOutcome::Ended(SingleEnd::CtsTimeout(_) | SingleEnd::AirDenied { .. }) => Self::Other,
+            TxOutcome::Withdrawn(cause) => Self::Withdrawn(cause),
+            TxOutcome::Indeterminate(cause) => Self::Indeterminate(cause),
+        }
+    }
+
+    fn aggregate(outcome: ModelAggregateOutcome) -> Self {
+        match outcome {
+            TxOutcome::Ended(AggregateEnd::Delivered { air, report, .. }) => Self::Delivered {
+                air,
+                report: Some(report),
+                solicited: true,
+            },
+            TxOutcome::Ended(AggregateEnd::AckTimeout(air)) => Self::AckTimeout(air),
+            TxOutcome::Ended(AggregateEnd::ContentionLimit(air)) => Self::ContentionLimit(air),
+            TxOutcome::Ended(AggregateEnd::CtsTimeout(_) | AggregateEnd::AirDenied { .. }) => {
+                Self::Other
+            }
+            TxOutcome::Withdrawn(cause) => Self::Withdrawn(cause),
+            TxOutcome::Indeterminate(cause) => Self::Indeterminate(cause),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum Frame {
@@ -142,7 +198,11 @@ impl Case {
             ))) => {
                 assert!(!matches!(self.frame, Frame::Aggregate));
                 let terminal = terminal.into_parts(terminal_access);
-                (terminal.ticket, terminal.payload, terminal.outcome)
+                (
+                    terminal.ticket,
+                    terminal.payload,
+                    Seen::single(terminal.outcome),
+                )
             }
             LowerMacEvent::Terminal(LowerMacTerminal::TxCompleted(TxCompleted::Aggregate(
                 terminal,
@@ -153,7 +213,7 @@ impl Case {
                 (
                     terminal.ticket,
                     terminal.payload.into_iter().next().unwrap(),
-                    terminal.outcome,
+                    Seen::aggregate(terminal.outcome),
                 )
             }
             LowerMacEvent::Terminal(LowerMacTerminal::GateClosed(_)) => return false,
@@ -169,38 +229,29 @@ impl Case {
             ),
             _ => PhyRate::Legacy(LegacyRate::Ofdm6M),
         };
-        let last = Some((core::num::NonZeroU16::MIN, rate));
+        let air = Air {
+            transmissions: core::num::NonZeroU16::MIN,
+            rate,
+        };
         let expected = match self.expected {
-            Expected::Delivered(report) => TxOutcome::Ended {
-                status: TxEndStatus::Delivered,
-                last,
-                ack: Some(TxAck {
-                    block_ack: report,
-                    ..TxAck::default()
-                }),
+            Expected::Delivered(report) => Seen::Delivered {
+                air,
+                report,
+                solicited: true,
             },
-            Expected::Unacknowledged => TxOutcome::Ended {
-                status: TxEndStatus::Delivered,
-                last,
-                ack: None,
+            Expected::Unacknowledged => Seen::Delivered {
+                air,
+                report: None,
+                solicited: false,
             },
-            Expected::Timeout => TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+            Expected::Timeout => Seen::Indeterminate(IndeterminateCause::HardwareTimeout),
             Expected::Missing | Expected::Collision => match self.barrier {
-                Barrier::Gate => TxOutcome::Withdrawn(WithdrawCause::GateClosed),
-                Barrier::Disable => TxOutcome::Withdrawn(WithdrawCause::Disabled),
-                Barrier::None => TxOutcome::Ended {
-                    status: if matches!(self.expected, Expected::Missing) {
-                        TxEndStatus::AckTimeout
-                    } else {
-                        TxEndStatus::ContentionLimit
-                    },
-                    last: if matches!(self.expected, Expected::Collision) {
-                        None
-                    } else {
-                        last
-                    },
-                    ack: None,
-                },
+                Barrier::Gate => Seen::Withdrawn(WithdrawCause::GateClosed),
+                Barrier::Disable => Seen::Withdrawn(WithdrawCause::Disabled),
+                Barrier::None if matches!(self.expected, Expected::Missing) => {
+                    Seen::AckTimeout(air)
+                }
+                Barrier::None => Seen::ContentionLimit(None),
             },
             Expected::Rejected => panic!("incompatible answer fabricated success"),
         };

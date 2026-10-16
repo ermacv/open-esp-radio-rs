@@ -33,8 +33,8 @@ use core::marker::PhantomData;
 use core::num::NonZeroU8;
 
 use oer_ieee80211_lower_mac::{
-    Band, Ieee80211Capabilities, Protection, RetryPlan, RetryStage, SignalMetadata, TxEndStatus,
-    TxOutcome,
+    AckSnr, Band, Ieee80211Capabilities, Protection, RateSample, RetryPlan, RetryStage,
+    SignalMetadata, SingleOutcome,
 };
 use oer_ieee80211_mac::phy::{LegacyRate, PhyRate};
 use oer_ieee80211_upper_mac::{
@@ -68,12 +68,12 @@ use crate::{
 /// #             he_max_mcs: HeMcs::new(9), he_max_bandwidth_mhz: 20, he_dcm: false,
 /// #             he_ldpc: true, spatial_streams: 1 },
 /// #         services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
-/// #         max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+/// #         tx_power_ceiling_min_dbm: None,
 /// #         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
 /// #         individual_no_ack: PhyFormatSet::NON_HT,
 /// #         station_receive_filters: ReceiveFilter::BSS_MEMBER,
-/// #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
-/// #         rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+/// #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+/// #         rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
 /// #         edca_max_aifsn: 15, edca_max_cw_exponent: 10,
 /// #     }
 /// # }
@@ -99,12 +99,12 @@ use crate::{
 /// #             he_max_mcs: HeMcs::new(9), he_max_bandwidth_mhz: 20, he_dcm: false,
 /// #             he_ldpc: true, spatial_streams: 1 },
 /// #         services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
-/// #         max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+/// #         tx_power_ceiling_min_dbm: None,
 /// #         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
 /// #         individual_no_ack: PhyFormatSet::NON_HT,
 /// #         station_receive_filters: ReceiveFilter::BSS_MEMBER,
-/// #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
-/// #         rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+/// #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+/// #         rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
 /// #         edca_max_aifsn: 15, edca_max_cw_exponent: 10,
 /// #     }
 /// # }
@@ -235,9 +235,12 @@ fn control_plan(
 }
 
 /// The selection for a port whose metadata measures every received frame's
-/// signal ([`SignalMetadata`]): the association's rate control starts from
-/// the Association Response's signal over the noise floor. A port whose
-/// metadata does not measure it has no Espressif selection:
+/// signal ([`SignalMetadata`]) and whose ACK evidence carries the
+/// response's SNR ([`AckSnr`]): the association's rate control starts from
+/// the Association Response's signal over the noise floor and filters the
+/// ACK SNR as the vendor's `rcUpdateAckSnr` does. A port whose metadata does
+/// not measure the signal has no Espressif selection (the `rate-selection`
+/// UI suite holds the port without ACK SNR):
 ///
 /// ```compile_fail,E0277
 /// # use oer_espressif_ieee80211_policy::rate_selection::EspressifRateSelection;
@@ -252,15 +255,18 @@ fn control_plan(
 /// #         he_max_mcs: oer_ieee80211_mac::phy::HeMcs::new(9), he_max_bandwidth_mhz: 20,
 /// #         he_dcm: false, he_ldpc: true, spatial_streams: 1 },
 /// #     services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
-/// #     max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+/// #     tx_power_ceiling_min_dbm: None,
 /// #     coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
 /// #     individual_no_ack: PhyFormatSet::NON_HT,
 /// #     station_receive_filters: ReceiveFilter::BSS_MEMBER,
-/// #     access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
-/// #     rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+/// #     access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+/// #     rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
 /// #     edca_max_aifsn: 15, edca_max_cw_exponent: 10,
 /// # };
-/// fn for_port<M: RxMetadata>(selection: impl RateSelection<M>) {}
+/// # #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// # struct Snr(i8);
+/// # impl AckSnr for Snr { fn snr_db(&self) -> i8 { self.0 } }
+/// fn for_port<M: RxMetadata>(selection: impl RateSelection<M, Snr>) {}
 /// // The portable metadata measures nothing.
 /// for_port::<RxMeta>(EspressifRateSelection::<Caps>::new());
 /// ```
@@ -280,12 +286,12 @@ fn control_plan(
 /// #         he_max_mcs: oer_ieee80211_mac::phy::HeMcs::new(9), he_max_bandwidth_mhz: 20,
 /// #         he_dcm: false, he_ldpc: true, spatial_streams: 1 },
 /// #     services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
-/// #     max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+/// #     tx_power_ceiling_min_dbm: None,
 /// #     coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
 /// #     individual_no_ack: PhyFormatSet::NON_HT,
 /// #     station_receive_filters: ReceiveFilter::BSS_MEMBER,
-/// #     access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
-/// #     rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+/// #     access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+/// #     rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
 /// #     edca_max_aifsn: 15, edca_max_cw_exponent: 10,
 /// # };
 /// #[derive(Clone, Copy)]
@@ -304,10 +310,19 @@ fn control_plan(
 ///         LinkMetric::new(self.rssi_dbm, self.noise_floor_dbm)
 ///     }
 /// }
-/// fn for_port<M: RxMetadata>(selection: impl RateSelection<M>) {}
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// struct Snr(i8);
+/// impl AckSnr for Snr {
+///     fn snr_db(&self) -> i8 {
+///         self.0
+///     }
+/// }
+/// fn for_port<M: RxMetadata>(selection: impl RateSelection<M, Snr>) {}
 /// for_port::<Measured>(EspressifRateSelection::<Caps>::new());
 /// ```
-impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for EspressifRateSelection<K> {
+impl<K: Ieee80211Capabilities, M: SignalMetadata, A: AckSnr> RateSelection<M, A>
+    for EspressifRateSelection<K>
+{
     fn plan<R>(
         &self,
         frame: FrameRates,
@@ -328,25 +343,23 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata> RateSelection<M> for Espressif
         self.control = None;
     }
 
-    fn completed(&mut self, _now: Instant, frame: FrameRates, completion: &TxOutcome) {
+    fn completed<D>(&mut self, _now: Instant, frame: FrameRates, completion: &SingleOutcome<A, D>) {
         if frame != FrameRates::Data {
             return;
         }
-        let TxOutcome::Ended {
-            status,
-            last: Some((transmissions, _rate)),
-            ack,
-        } = *completion
-        else {
-            return;
-        };
-        let outcome = match status {
-            TxEndStatus::Delivered => MpduOutcome::Acknowledged,
-            TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout => MpduOutcome::Unacknowledged,
-            TxEndStatus::ContentionLimit => return,
+        let (transmissions, outcome, ack_snr_db) = match completion.rate_sample() {
+            Some(RateSample::Delivered { air, ack }) => (
+                air.transmissions,
+                MpduOutcome::Acknowledged,
+                ack.map(AckSnr::snr_db),
+            ),
+            Some(RateSample::Unanswered(air)) => {
+                (air.transmissions, MpduOutcome::Unacknowledged, None)
+            }
+            None => return,
         };
         if let Some(control) = &mut self.control {
-            control.observe_mpdu(transmissions, outcome, ack.and_then(|ack| ack.snr_db));
+            control.observe_mpdu(transmissions, outcome, ack_snr_db);
         }
     }
 }

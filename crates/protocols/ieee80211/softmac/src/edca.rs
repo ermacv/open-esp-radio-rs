@@ -1,16 +1,13 @@
 //! Portable EDCA contention: the CSMA/CA backoff draw above the lower-MAC
 //! port.
 //!
-//! A backend that counts down a chosen backoff but does not draw it (no
-//! [`HardwareServices::BACKOFF_DRAW`](oer_ieee80211_lower_mac::HardwareServices::BACKOFF_DRAW))
-//! receives the slot count with each attempt as
-//! [`Backoff::Slots`]. [`EdcaContention`] keeps the contention window of one
+//! A backend that counts down a chosen backoff but does not draw it
+//! takes the slot count of each attempt from here. [`EdcaContention`] keeps the contention window of one
 //! access category (IEEE 802.11-2020 10.23.2): it starts at `CWmin`, doubles
 //! after each failed attempt of a frame up to `CWmax` and returns to
 //! `CWmin` when the frame ends. The random source is injected, so a seeded
 //! source makes the draws deterministic.
 
-use oer_ieee80211_lower_mac::Backoff;
 use oer_ieee80211_mac::extensions::wmm::WmmAcParameters;
 
 /// The largest contention-window exponent: the four-bit ECW fields of the
@@ -85,9 +82,9 @@ impl EdcaContention {
         self.retries
     }
 
-    /// Draw the backoff of the next attempt uniformly from `0..=CW`.
-    pub fn draw(self, entropy: &mut impl BackoffEntropy) -> Backoff {
-        Backoff::Slots((entropy.next_u32() & u32::from(self.cw())) as u16)
+    /// Draw the backoff slots of the next attempt uniformly from `0..=CW`.
+    pub fn draw(self, entropy: &mut impl BackoffEntropy) -> u16 {
+        (entropy.next_u32() & u32::from(self.cw())) as u16
     }
 
     /// Double the window after a failed attempt of the frame (an ACK or CTS
@@ -136,7 +133,7 @@ pub fn draw_backoff(
     parameters: WmmAcParameters,
     retries: u8,
     entropy: &mut impl BackoffEntropy,
-) -> Backoff {
+) -> u16 {
     let mut contention = EdcaContention::from_wmm(parameters);
     for _ in 0..retries {
         contention.record_failure();

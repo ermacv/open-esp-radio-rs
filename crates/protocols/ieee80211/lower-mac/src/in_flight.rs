@@ -1,6 +1,5 @@
 //! Custody of an accepted TX operation, from admission to its terminal.
 
-use crate::TxOutcome;
 use core::marker::PhantomData;
 use oer_radio_port::{PoolBuilder, PoolPath, PoolSet, Root, Slot, Slots};
 
@@ -86,8 +85,10 @@ impl<C, T, M> InFlight<C, T, M> {
         self.payload.execution()
     }
 
-    /// End this operation once, returning its entire owner with its outcome.
-    pub const fn complete(self, outcome: TxOutcome) -> Completed<C, T, M> {
+    /// End this operation once, returning its entire owner with its outcome:
+    /// a single MPDU's [`SingleOutcome`](crate::SingleOutcome) or an
+    /// aggregate's [`AggregateOutcome`](crate::AggregateOutcome).
+    pub const fn complete<O>(self, outcome: O) -> Completed<C, T, M, O> {
         Completed {
             operation: self,
             outcome,
@@ -97,25 +98,25 @@ impl<C, T, M> InFlight<C, T, M> {
 
 /// The terminal carries the accepted operation itself. There is no public
 /// constructor from independently supplied context, ticket, MPDU or body.
-pub struct Completed<C, T, M> {
+pub struct Completed<C, T, M, O> {
     operation: InFlight<C, T, M>,
-    outcome: TxOutcome,
+    outcome: O,
 }
 
-impl<C, T, M> Completed<C, T, M> {
+impl<C, T, M, O> Completed<C, T, M, O> {
     /// The terminal's observation, without releasing any owner.
-    pub const fn outcome(&self) -> TxOutcome {
-        self.outcome
+    pub const fn outcome(&self) -> &O {
+        &self.outcome
     }
 }
 
-impl<'id, C, Kind, Path: PoolPath, M> Completed<C, Slot<'id, Kind, Path>, M> {
+impl<'id, C, Kind, Path: PoolPath, M, O> Completed<C, Slot<'id, Kind, Path>, M, O> {
     /// Recover the owners using the consumer authority for this ticket pool.
     /// A backend can create and forward terminals, but cannot reopen them.
     pub fn into_parts(
         self,
         _: &mut TerminalAccess<'id, Kind, Path>,
-    ) -> TerminalParts<C, Slot<'id, Kind, Path>, M> {
+    ) -> TerminalParts<C, Slot<'id, Kind, Path>, M, O> {
         let InFlight {
             context,
             ticket,
@@ -132,7 +133,7 @@ impl<'id, C, Kind, Path: PoolPath, M> Completed<C, Slot<'id, Kind, Path>, M> {
 
 /// Owners recovered by consuming a terminal. Their higher layer may now
 /// classify, renew, retry or release them according to the returned outcome.
-pub struct TerminalParts<C, T, M> {
+pub struct TerminalParts<C, T, M, O> {
     /// Original opaque operation context.
     pub context: C,
     /// Original admission and terminal capacity.
@@ -140,7 +141,7 @@ pub struct TerminalParts<C, T, M> {
     /// One MPDU or the whole submitted aggregate, including external bodies.
     pub payload: M,
     /// Observation which ended this operation.
-    pub outcome: TxOutcome,
+    pub outcome: O,
 }
 
 /// One returned MPDU. A fresh MPDU carries its memory and optional body

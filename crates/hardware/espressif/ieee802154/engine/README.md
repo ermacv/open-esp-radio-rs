@@ -42,6 +42,6 @@ No runtime holds the engine now; the former ESP32-S31 composition (tag
 6. the engine's `mac_init`, under the runtime's critical section;
 7. the CPU route of modem interrupt source 132.
 
-Stop reverses every step. A failure before shared state is touched rolls
-back; a started PHY or clock transaction that fails is fail-stop. The
-runtime is a process singleton: source 132 has one handler.
+Stop reversed every step. A failure before shared state was touched rolled
+back; a started PHY or clock transaction that failed was fail-stop. The
+runtime was a process singleton: source 132 had one handler.

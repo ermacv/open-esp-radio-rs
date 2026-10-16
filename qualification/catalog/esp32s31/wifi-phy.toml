@@ -13,7 +13,7 @@ level = "lower-primitive"
 id = "bluetooth-initial-phy-handoff"
 composition = "production"
 scope = "Common radio power and Bluetooth module clocks through the shared radio arbiter, arbiter-owned PHY registration or RF wake, then Bluetooth-client and BTBB membership with initial tracking at once under the arbiter lease when due at the join"
-limits = "The PHY client and driver steps remain; the shared radio arbiter and the Bluetooth composition that ran them went in #770 (tag `legacy-radio-2026-10-16`), so nothing composes the handoff now; #771 (the shared radio system) brings a composer back. It retained fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
+limits = "The PHY client and driver steps remain; the radio system that held the HAL shared radio arbiter and the Bluetooth composition that ran them through it went in #770 (the arbiter, `SharedRadio`, remains) (tag `legacy-radio-2026-10-16`), so nothing composes the handoff now; #771 (the shared radio system) brings a composer back. It retained fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",

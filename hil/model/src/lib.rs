@@ -24,6 +24,7 @@ mod arithmetic;
 mod capabilities;
 mod digest;
 mod estimate;
+mod finite;
 mod name;
 mod profile;
 mod purpose;
@@ -38,6 +39,7 @@ pub use arithmetic::{Overflow, sum};
 pub use capabilities::{Composition, CompositionConflict, TargetCapabilities};
 pub use digest::{Sha256, canonical_json};
 pub use estimate::Estimate;
+pub use finite::NonFinite;
 pub use name::{
     BoundName, CapabilityKey, ChipId, CompositionName, CountName, FixtureName, Grammar,
     InstanceName, InvalidName, Operation, ScenarioId, ScenarioInstance, SpanName,
@@ -52,7 +54,7 @@ pub use purpose::{
 pub use resources::{
     BoardCapability, BoardNeed, BoardOffer, BoardRole, LpClockSource, Resources, StandOffer, Unmet,
 };
-pub use spec::{Instance, Spec, Subject};
+pub use spec::{IdentityError, Instance, Spec, Subject};
 pub use tier::Tier;
 pub use verdict::{Finding, Verdict};
 pub use wait::{

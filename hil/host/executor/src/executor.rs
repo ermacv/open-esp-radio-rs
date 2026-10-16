@@ -88,7 +88,8 @@ pub trait ModelDriver {}
 pub trait StandDriver {}
 
 /// Something that executes scenarios: its kind, and the driver a scenario
-/// uses (for a conformance scenario, its port's harness). It is sealed:
+/// uses (for a conformance scenario, the HIL agent around its port's
+/// harness, or the stand's proxy). It is sealed:
 /// [`Model`] and [`Stand`] are the only executors, so no other type can
 /// claim a kind its driver does not prove.
 pub trait Executor: sealed::Sealed {

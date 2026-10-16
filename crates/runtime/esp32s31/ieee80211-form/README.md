@@ -535,8 +535,9 @@ Moderation is `ActiveEpoch<Moderated>`'s type, and consuming `quiesce` returns
 `irq-counters` neither that diagnostic type nor its counter accessors exists.
 `mac_irq_cycles` additionally requires RV32 cycle measurement and
 `task-poll-telemetry`. It includes status, facts and counters,
-**excluding external waker invocation**. `CORE0_PERFORMANCE` and
-`CORE0_RX_CYCLES` have no hard-IRQ fields.
+**excluding external waker invocation**. No global performance snapshot
+carries hard-IRQ fields: every IRQ counter belongs to the installation's
+`IrqDiagnostics`.
 
 The driver's AtomicWaker points only to the permanent ScopeSlot, never to
 Driver, Held or a future. A wake enters the slot's admission domain and pends

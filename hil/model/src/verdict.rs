@@ -1,4 +1,4 @@
-//! Verdicts and their recomputation.
+//! Verdicts.
 
 use serde::{Deserialize, Serialize};
 
@@ -42,30 +42,6 @@ impl Verdict {
     }
 }
 
-/// A recomputed verdict next to the recorded one. A difference is
-/// reported; the recorded verdict is never overwritten.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Agreement {
-    Same,
-    Differs {
-        recorded: Verdict,
-        recomputed: Verdict,
-    },
-}
-
-impl Agreement {
-    pub fn of(recorded: &Verdict, recomputed: Verdict) -> Self {
-        if *recorded == recomputed {
-            Self::Same
-        } else {
-            Self::Differs {
-                recorded: recorded.clone(),
-                recomputed,
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,19 +51,5 @@ mod tests {
         assert_eq!(Verdict::from_findings(Vec::new()), Verdict::Pass);
         let failed = Verdict::from_findings(vec![Finding::new("order", "terminal 2 before 1")]);
         assert!(!failed.passed());
-    }
-
-    #[test]
-    fn a_changed_verdict_is_reported_beside_the_recorded_one() {
-        let recorded = Verdict::Pass;
-        let recomputed = Verdict::from_findings(vec![Finding::new("bound", "1200 us > 1000 us")]);
-        assert_eq!(Agreement::of(&recorded, Verdict::Pass), Agreement::Same);
-        assert_eq!(
-            Agreement::of(&recorded, recomputed.clone()),
-            Agreement::Differs {
-                recorded,
-                recomputed
-            }
-        );
     }
 }

@@ -6,37 +6,41 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{SpanName, StandProfile};
+use crate::{BoundName, Overflow, RunRef, SpanName, StandProfile, arithmetic};
 
-/// The name of a contract bound or backend parameter an image reports,
-/// such as `lower-mac.drain` or `radio-system.retune.answer`.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct BoundName(pub String);
-
-impl BoundName {
-    pub fn new(name: impl Into<String>) -> Self {
-        Self(name.into())
-    }
-}
-
-impl fmt::Display for BoundName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-/// The bounds the image under test reports for its contracts, in
-/// microseconds of its monotonic clock. They come from the image, never
-/// from host constants, so a backend's actual value is the one used.
+/// The bounds an image reports for its contracts, in microseconds of its
+/// monotonic clock.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ReportedBounds(pub BTreeMap<BoundName, u64>);
+#[serde(transparent)]
+pub struct ReportedBounds(BTreeMap<BoundName, u64>);
 
 impl ReportedBounds {
-    pub fn with(mut self, name: &str, micros: u64) -> Self {
-        self.0.insert(BoundName::new(name), micros);
+    pub fn with(mut self, name: BoundName, micros: u64) -> Self {
+        self.0.insert(name, micros);
         self
     }
+
+    pub fn get(&self, name: &BoundName) -> Option<u64> {
+        self.0.get(name).copied()
+    }
+}
+
+/// Where a plan's bounds come from (#761, owner decision on the review of
+/// #775).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BoundsSource {
+    /// An image of the same recipe reported them in a recorded run.
+    Recorded(RunRef),
+    /// The recipe is new: the contract's declared constants, so every wait
+    /// on them is provisional.
+    Declared { contract: &'static str },
+}
+
+/// The bounds a plan or a run uses, with their source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Bounds {
+    pub values: ReportedBounds,
+    pub source: BoundsSource,
 }
 
 /// A multiplier of at least one, as a ratio, so that a margin is exact and
@@ -76,15 +80,14 @@ impl Factor {
         })
     }
 
-    /// `micros × factor`, rounded up and saturating.
-    pub const fn apply(self, micros: u64) -> u64 {
+    /// `micros × factor`, rounded up.
+    pub const fn apply(self, micros: u64) -> Result<u64, Overflow> {
         let product = micros as u128 * self.numerator as u128;
-        let denominator = self.denominator.get() as u128;
-        let rounded = product.div_ceil(denominator);
+        let rounded = product.div_ceil(self.denominator.get() as u128);
         if rounded > u64::MAX as u128 {
-            u64::MAX
+            Err(Overflow)
         } else {
-            rounded as u64
+            Ok(rounded as u64)
         }
     }
 }
@@ -103,158 +106,247 @@ impl From<Factor> for (u32, NonZeroU32) {
     }
 }
 
+/// A protocol interval typed by its protocol: a beacon interval in time
+/// units, a BLE connection interval in 1.25 ms units. A scenario's
+/// parameters hold such values; a [`Wait`] on a protocol interval can only
+/// be made from one, never from a bare number.
+pub trait ProtocolQuantity {
+    /// What the interval is, for records: `beacon-interval`.
+    const NAME: &'static str;
+    fn interval_micros(&self) -> Result<u64, Overflow>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Source {
+    Contract {
+        bound: BoundName,
+        factor: Factor,
+    },
+    Protocol {
+        quantity: &'static str,
+        interval_micros: u64,
+        count: NonZeroU32,
+    },
+    Measured {
+        span: SpanName,
+    },
+}
+
 /// How long a scenario waits for something. Scenario and executor code
 /// holds no duration literal: every wait names where its length comes
 /// from.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "from")]
-pub enum Wait {
-    /// A contract bound the image reports, times a factor.
-    Contract { bound: BoundName, factor: Factor },
-    /// A protocol interval times a count, for example six BLE connection
-    /// intervals or one Thread leader-election period; `basis` says which.
-    Protocol {
-        interval_micros: u64,
-        count: NonZeroU32,
-        basis: String,
-    },
-    /// A span measured on the stand ([`StandProfile`]), such as boot to
-    /// Hello or a fixture's readiness.
-    Measured { span: SpanName },
-}
-
-/// A wait whose source has no value.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MissingBound {
-    /// The image reports no such bound.
-    Contract(BoundName),
-    /// The stand profile has no such span, or not enough samples for it
-    /// and no provisional label.
-    Measured(SpanName),
+pub struct Wait(Source);
+
+impl Wait {
+    /// A contract bound the image reports, times a factor.
+    pub const fn contract(bound: BoundName, factor: Factor) -> Self {
+        Self(Source::Contract { bound, factor })
+    }
+
+    /// `count` protocol intervals, for example six BLE connection intervals.
+    pub fn protocol<Q: ProtocolQuantity>(
+        quantity: &Q,
+        count: NonZeroU32,
+    ) -> Result<Self, Overflow> {
+        Ok(Self(Source::Protocol {
+            quantity: Q::NAME,
+            interval_micros: quantity.interval_micros()?,
+            count,
+        }))
+    }
+
+    /// A span measured on the stand ([`StandProfile`]).
+    pub const fn measured(span: SpanName) -> Self {
+        Self(Source::Measured { span })
+    }
 }
 
-impl fmt::Display for MissingBound {
+/// A value used although its evidence is not yet sufficient; every plan
+/// and record that uses it carries the label.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "provisional")]
+pub enum Provisional {
+    /// A stand span with too few samples.
+    Span { span: SpanName, reason: String },
+    /// A contract's declared constant, because no run of the image's recipe
+    /// reported the bound yet.
+    DeclaredBound {
+        contract: &'static str,
+        bound: BoundName,
+    },
+}
+
+/// A wait's length, and its label when it is provisional.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Resolved {
+    pub micros: u64,
+    pub provisional: Option<Provisional>,
+}
+
+/// Why a wait has no length.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WaitError {
+    /// Neither the image's recorded bounds nor the contract's declared
+    /// constants have the bound.
+    NoBound(BoundName),
+    /// The stand profile has no such span.
+    NoSpan(SpanName),
+    Overflow,
+}
+
+impl From<Overflow> for WaitError {
+    fn from(_: Overflow) -> Self {
+        Self::Overflow
+    }
+}
+
+impl fmt::Display for WaitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Contract(name) => write!(f, "the image reports no bound `{name}`"),
-            Self::Measured(name) => write!(f, "the stand profile has no usable span `{name}`"),
+            Self::NoBound(name) => write!(f, "no bound `{name}` is recorded or declared"),
+            Self::NoSpan(name) => write!(f, "the stand profile has no span `{name}`"),
+            Self::Overflow => Overflow.fmt(f),
         }
     }
 }
 
-impl std::error::Error for MissingBound {}
+impl std::error::Error for WaitError {}
 
 impl Wait {
-    /// The wait's length in microseconds.
-    pub fn micros(
-        &self,
-        bounds: &ReportedBounds,
-        profile: &StandProfile,
-    ) -> Result<u64, MissingBound> {
-        match self {
-            Self::Contract { bound, factor } => bounds
-                .0
-                .get(bound)
-                .map(|&micros| factor.apply(micros))
-                .ok_or_else(|| MissingBound::Contract(bound.clone())),
-            Self::Protocol {
+    /// The wait's length in microseconds, with its label when provisional.
+    pub fn micros(&self, bounds: &Bounds, profile: &StandProfile) -> Result<Resolved, WaitError> {
+        match &self.0 {
+            Source::Contract { bound, factor } => {
+                let value = bounds
+                    .values
+                    .get(bound)
+                    .ok_or_else(|| WaitError::NoBound(bound.clone()))?;
+                let provisional = match bounds.source {
+                    BoundsSource::Recorded(_) => None,
+                    BoundsSource::Declared { contract } => Some(Provisional::DeclaredBound {
+                        contract,
+                        bound: bound.clone(),
+                    }),
+                };
+                Ok(Resolved {
+                    micros: factor.apply(value)?,
+                    provisional,
+                })
+            }
+            Source::Protocol {
                 interval_micros,
                 count,
                 ..
-            } => Ok(interval_micros.saturating_mul(u64::from(count.get()))),
-            Self::Measured { span } => profile
-                .budget_micros(span)
-                .ok_or_else(|| MissingBound::Measured(span.clone())),
+            } => Ok(Resolved {
+                micros: arithmetic::mul(*interval_micros, u64::from(count.get()))?,
+                provisional: None,
+            }),
+            Source::Measured { span } => profile.budget(span),
         }
     }
 
-    /// The wait as a duration: the one place host HIL code turns a derived
-    /// wait into a `Duration`.
+    /// The wait as a duration: the one place HIL code turns a derived wait
+    /// into a `Duration`.
     pub fn resolve(
         &self,
-        bounds: &ReportedBounds,
+        bounds: &Bounds,
         profile: &StandProfile,
-    ) -> Result<Duration, MissingBound> {
-        self.micros(bounds, profile).map(Duration::from_micros)
+    ) -> Result<(Duration, Option<Provisional>), WaitError> {
+        let resolved = self.micros(bounds, profile)?;
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "the one conversion of a derived wait, whose source the Wait names, into a Duration"
+        )]
+        let duration = Duration::from_micros(resolved.micros);
+        Ok((duration, resolved.provisional))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MeasuredSpan, RunRef};
+    use crate::name;
 
     fn ratio(numerator: u32, denominator: u32) -> Factor {
         Factor::new(numerator, NonZeroU32::new(denominator).unwrap()).unwrap()
     }
 
+    fn recorded(values: ReportedBounds) -> Bounds {
+        Bounds {
+            values,
+            source: BoundsSource::Recorded(crate::profile::tests::run_ref()),
+        }
+    }
+
+    /// A BLE connection interval in its 1.25 ms units.
+    struct ConnectionInterval(u16);
+
+    impl ProtocolQuantity for ConnectionInterval {
+        const NAME: &'static str = "ble-connection-interval";
+
+        fn interval_micros(&self) -> Result<u64, Overflow> {
+            arithmetic::mul(u64::from(self.0), 1_250)
+        }
+    }
+
     #[test]
-    fn a_factor_below_one_is_rejected() {
+    fn a_factor_below_one_is_rejected_and_an_overflow_is_reported() {
         assert_eq!(
             Factor::new(1, NonZeroU32::new(2).unwrap()),
             Err(InvalidFactor)
         );
-        assert_eq!(ratio(3, 2).apply(1001), 1502);
-        assert_eq!(Factor::ONE.apply(7), 7);
+        assert_eq!(ratio(3, 2).apply(1001), Ok(1502));
+        assert_eq!(ratio(2, 1).apply(u64::MAX), Err(Overflow));
     }
 
     #[test]
-    fn a_contract_wait_uses_the_bound_the_image_reports() {
-        let bounds = ReportedBounds::default().with("lower-mac.drain", 4_000);
-        let wait = Wait::Contract {
-            bound: BoundName::new("lower-mac.drain"),
-            factor: ratio(2, 1),
-        };
-        assert_eq!(wait.micros(&bounds, &StandProfile::default()), Ok(8_000));
-        let missing = Wait::Contract {
-            bound: BoundName::new("lower-mac.retune"),
-            factor: Factor::ONE,
-        };
+    fn a_contract_wait_uses_the_recorded_bound() {
+        let drain = name!(BoundName, "lower-mac.drain");
+        let bounds = recorded(ReportedBounds::default().with(drain.clone(), 4_000));
+        let wait = Wait::contract(drain, ratio(2, 1));
         assert_eq!(
-            missing.micros(&bounds, &StandProfile::default()),
-            Err(MissingBound::Contract(BoundName::new("lower-mac.retune")))
+            wait.micros(&bounds, &StandProfile::empty()),
+            Ok(Resolved {
+                micros: 8_000,
+                provisional: None
+            })
+        );
+        let retune = name!(BoundName, "lower-mac.retune");
+        assert_eq!(
+            Wait::contract(retune.clone(), Factor::ONE).micros(&bounds, &StandProfile::empty()),
+            Err(WaitError::NoBound(retune))
         );
     }
 
     #[test]
-    fn a_protocol_wait_is_its_interval_times_its_count() {
-        let wait = Wait::Protocol {
-            interval_micros: 30_000,
-            count: NonZeroU32::new(6).unwrap(),
-            basis: "a connection the DUT never received ends within six intervals".into(),
-        };
-        assert_eq!(
-            wait.micros(&ReportedBounds::default(), &StandProfile::default()),
-            Ok(180_000)
-        );
-    }
-
-    #[test]
-    fn a_measured_wait_needs_a_supported_span() {
-        let span = SpanName::new("boot-to-hello");
-        let mut profile = StandProfile::default();
-        let wait = Wait::Measured { span: span.clone() };
-        assert_eq!(
-            wait.micros(&ReportedBounds::default(), &profile),
-            Err(MissingBound::Measured(span.clone()))
-        );
-        profile.spans.insert(
-            span,
-            MeasuredSpan {
-                quantile_micros: 900_000,
-                samples: 3_000,
-                margin: ratio(3, 2),
-                margin_reason: "USB re-enumeration varies with the hub".into(),
-                provisional: None,
-                evidence: vec![RunRef {
-                    run: "r1".into(),
-                    sha256: "0".repeat(64),
-                }],
+    fn a_declared_bound_is_provisional() {
+        let drain = name!(BoundName, "lower-mac.drain");
+        let bounds = Bounds {
+            values: ReportedBounds::default().with(drain.clone(), 4_000),
+            source: BoundsSource::Declared {
+                contract: "toy::Port",
             },
-        );
+        };
+        let resolved = Wait::contract(drain.clone(), Factor::ONE)
+            .micros(&bounds, &StandProfile::empty())
+            .unwrap();
         assert_eq!(
-            wait.micros(&ReportedBounds::default(), &profile),
-            Ok(1_350_000)
+            resolved.provisional,
+            Some(Provisional::DeclaredBound {
+                contract: "toy::Port",
+                bound: drain
+            })
+        );
+    }
+
+    #[test]
+    fn a_protocol_wait_comes_from_a_typed_quantity() {
+        let wait = Wait::protocol(&ConnectionInterval(24), NonZeroU32::new(6).unwrap()).unwrap();
+        let bounds = recorded(ReportedBounds::default());
+        assert_eq!(
+            wait.micros(&bounds, &StandProfile::empty()).unwrap().micros,
+            180_000
         );
     }
 }

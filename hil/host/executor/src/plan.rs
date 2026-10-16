@@ -11,28 +11,28 @@
 //! Segments are summed as if serial; parallel lanes come with the
 //! lane-isolation result.
 //!
-//! An instance's bounds come from the stand profile when an image of the
-//! same recipe reported them; for a new recipe they are its contract's
-//! declared constants, and the plan labels every wait on them
-//! provisional, as it labels provisional stand spans.
+//! Every instance's waits are sized by its contract's ceilings, which no
+//! backend may exceed (#761, owner decision 6221891573 on contract
+//! ceilings), and the plan adds each instance's boot to Hello from the
+//! stand profile, so no scenario can leave it out. The plan labels every
+//! provisional stand span it used.
 
 use core::fmt;
 
 use oer_hil_model::{
-    Bounds, Estimate, Factor, Instance, Overflow, Provisional, ReportedBounds, Resources,
-    ScenarioInstance, Sha256, SpanName, Spec, StandOffer, StandProfile, Subject,
-    TargetCapabilities, Tier, Unmet, WaitError, sum,
+    Estimate, Factor, Instance, Overflow, Provisional, ReportedBounds, Resources, ScenarioInstance,
+    SpanName, Spec, StandOffer, StandProfile, Subject, TargetCapabilities, Tier, Unmet, WaitError,
+    sum,
 };
 
-type EstimateFn = dyn Fn(&Bounds, &StandProfile) -> Result<Estimate, WaitError>;
+type EstimateFn = dyn Fn(&ReportedBounds, &StandProfile) -> Result<Estimate, WaitError>;
 
 /// One scenario instance in the plan.
 pub struct Planned {
     pub id: ScenarioInstance,
     pub image: TargetCapabilities,
     pub resources: Resources,
-    contract: &'static str,
-    declared: ReportedBounds,
+    ceilings: ReportedBounds,
     estimate: Box<EstimateFn>,
 }
 
@@ -46,21 +46,22 @@ impl Planned {
             id: instance.id(),
             image: S::target(&instance.params),
             resources: S::resources(&instance.params),
-            contract: <S::Subject as Subject>::CONTRACT,
-            declared: <S::Subject as Subject>::declared_bounds(),
-            estimate: Box::new(move |bounds, profile| S::estimate(&params, bounds, profile)),
+            ceilings: <S::Subject as Subject>::ceilings(),
+            estimate: Box::new(move |ceilings, profile| S::estimate(&params, ceilings, profile)),
         }
     }
 }
 
-/// What an image costs beyond its scenarios: the stand spans that measure
-/// it.
+/// What the stand costs beyond the scenarios' own work: the stand spans
+/// that measure it.
 #[derive(Clone, Debug)]
-pub struct ImageCosts {
-    /// Building the image when no build of its recipe is cached.
+pub struct StandCosts {
+    /// Building an image when no build of its recipe is cached.
     pub build: SpanName,
-    /// Writing the image to a board, once per segment.
+    /// Writing an image to a board, once per segment.
     pub flash: SpanName,
+    /// A reset to the agent's Hello, once per scenario instance.
+    pub boot: SpanName,
 }
 
 /// How a segment's lease limit derives from its estimate.
@@ -75,12 +76,11 @@ pub struct LeasePolicy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Segment {
     pub image: TargetCapabilities,
-    pub recipe: Sha256,
     pub scenarios: Vec<ScenarioInstance>,
     /// The build before this segment's lease: the image's first segment
     /// builds it, later segments reuse the build.
     pub build_micros: u64,
-    /// What the lease holds: the flash and the scenarios.
+    /// What the lease holds: the flash and the scenarios with their boots.
     pub lease_estimate_micros: u64,
     /// The estimate times the margin, at most the stand's cap.
     pub lease_limit_micros: u64,
@@ -97,7 +97,7 @@ pub struct Plan {
     pub tier: Tier,
     pub segments: Vec<Segment>,
     pub total_micros: u64,
-    /// Every provisional value the plan used.
+    /// Every provisional stand span the plan used.
     pub provisional: Vec<Provisional>,
 }
 
@@ -106,12 +106,14 @@ pub struct Plan {
 pub enum PlanError {
     /// The stand lacks boards, board capabilities or fixtures.
     Refused(Vec<(ScenarioInstance, Vec<Unmet>)>),
-    /// A wait has no length; `None` for the image costs.
+    /// A wait has no length; `None` for the stand costs.
     Wait {
         scenario: Option<ScenarioInstance>,
         error: WaitError,
     },
-    Overflow,
+    /// A time does not fit in 64-bit microseconds; `None` for the tier's
+    /// total.
+    Overflow { scenario: Option<ScenarioInstance> },
     /// The plan exceeds the tier's budget; the largest scenarios first.
     OverBudget {
         budget_micros: u64,
@@ -124,12 +126,6 @@ pub enum PlanError {
         lease_micros: u64,
         cap_micros: u64,
     },
-}
-
-impl From<Overflow> for PlanError {
-    fn from(_: Overflow) -> Self {
-        Self::Overflow
-    }
 }
 
 impl fmt::Display for PlanError {
@@ -151,8 +147,11 @@ impl fmt::Display for PlanError {
             Self::Wait {
                 scenario: None,
                 error,
-            } => write!(f, "image costs: {error}"),
-            Self::Overflow => Overflow.fmt(f),
+            } => write!(f, "stand costs: {error}"),
+            Self::Overflow {
+                scenario: Some(scenario),
+            } => write!(f, "{scenario}: {Overflow}"),
+            Self::Overflow { scenario: None } => write!(f, "the tier's total: {Overflow}"),
             Self::OverBudget {
                 budget_micros,
                 total_micros,
@@ -188,11 +187,9 @@ const NAMED: usize = 3;
 
 /// The plan's inputs besides the scenarios.
 pub struct Stand<'a> {
-    /// The digest of the source snapshot the images are built from.
-    pub source: &'a Sha256,
     pub profile: &'a StandProfile,
     pub offer: &'a StandOffer,
-    pub costs: &'a ImageCosts,
+    pub costs: &'a StandCosts,
     pub lease: LeasePolicy,
 }
 
@@ -223,9 +220,10 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
     };
     let build_micros = cost(&stand.costs.build)?;
     let flash_micros = cost(&stand.costs.flash)?;
+    let boot_micros = cost(&stand.costs.boot)?;
 
-    // Images in first-use order: a scenario joins the first image whose
-    // composition it shares, or either side needs none.
+    // Images in first-use order: a scenario joins the first image of its
+    // chip whose composition it shares, or either side needs none.
     let mut images: Vec<(TargetCapabilities, Vec<&Planned>)> = Vec::new();
     for planned in scenarios {
         let joined = images.iter_mut().find_map(|(image, members)| {
@@ -242,39 +240,42 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
     let mut segments = Vec::new();
     let mut sizes = Vec::new();
     for (image, members) in images {
-        let recipe = image.recipe(stand.source);
         let mut builds = true;
         let mut current = Vec::new();
         let mut leased = flash_micros;
         for planned in members {
-            let bounds =
-                stand
-                    .profile
-                    .bounds_for(&recipe, planned.contract, planned.declared.clone());
+            let id = || Some(planned.id.clone());
+            let overflow = |_| PlanError::Overflow { scenario: id() };
             let estimate =
-                (planned.estimate)(&bounds, stand.profile).map_err(|error| PlanError::Wait {
-                    scenario: Some(planned.id.clone()),
-                    error,
+                (planned.estimate)(&planned.ceilings, stand.profile).map_err(|error| {
+                    PlanError::Wait {
+                        scenario: id(),
+                        error,
+                    }
                 })?;
-            let own = estimate.total_micros()?;
-            provisional.extend(estimate.provisional);
+            let own =
+                sum([boot_micros, estimate.total_micros().map_err(overflow)?]).map_err(overflow)?;
+            provisional.extend(estimate.provisional().iter().cloned());
             sizes.push((planned.id.clone(), own));
+            let with = sum([leased, own]).map_err(overflow)?;
             if !current.is_empty()
-                && stand.lease.margin.apply(sum([leased, own])?)? > stand.lease.cap_micros
+                && stand.lease.margin.apply(with).map_err(overflow)? > stand.lease.cap_micros
             {
-                segments.push(segment(
+                let closed = segment(
                     &image,
-                    recipe,
                     core::mem::take(&mut current),
                     builds,
                     build_micros,
                     leased,
                     stand.lease,
-                )?);
+                )
+                .map_err(overflow)?;
+                segments.push(closed);
                 builds = false;
                 leased = flash_micros;
             }
-            let lease_micros = stand.lease.margin.apply(sum([leased, own])?)?;
+            let leased_with = sum([leased, own]).map_err(overflow)?;
+            let lease_micros = stand.lease.margin.apply(leased_with).map_err(overflow)?;
             if lease_micros > stand.lease.cap_micros {
                 return Err(PlanError::Unsplittable {
                     scenario: planned.id.clone(),
@@ -283,24 +284,19 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
                 });
             }
             current.push(planned.id.clone());
-            leased = sum([leased, own])?;
+            leased = leased_with;
         }
         if !current.is_empty() {
-            segments.push(segment(
-                &image,
-                recipe,
-                current,
-                builds,
-                build_micros,
-                leased,
-                stand.lease,
-            )?);
+            let last = segment(&image, current, builds, build_micros, leased, stand.lease)
+                .map_err(|_| PlanError::Overflow { scenario: None })?;
+            segments.push(last);
         }
     }
 
     let total_micros = segments
         .iter()
-        .try_fold(0_u64, |total, segment| sum([total, segment.wall_micros()?]))?;
+        .try_fold(0_u64, |total, segment| sum([total, segment.wall_micros()?]))
+        .map_err(|_| PlanError::Overflow { scenario: None })?;
     if let Some(budget_micros) = tier.budget_micros()
         && total_micros > budget_micros
     {
@@ -324,7 +320,6 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
 
 fn segment(
     image: &TargetCapabilities,
-    recipe: Sha256,
     scenarios: Vec<ScenarioInstance>,
     builds: bool,
     build_micros: u64,
@@ -333,7 +328,6 @@ fn segment(
 ) -> Result<Segment, Overflow> {
     Ok(Segment {
         image: image.clone(),
-        recipe,
         scenarios,
         build_micros: if builds { build_micros } else { 0 },
         lease_estimate_micros: leased,
@@ -346,46 +340,48 @@ mod tests {
     use core::num::NonZeroU32;
     use std::collections::BTreeSet;
 
-    use oer_hil_model::InstanceName;
     use oer_hil_model::{
-        BoardCapability, BoardNeed, BoardOffer, BoardRole, Composition, CompositionName,
-        Conformance, LpClockSource, MeasuredSpan, RawStandProfile, RunId, RunRef, Support, Verdict,
-        Wait, name,
+        BoardCapability, BoardNeed, BoardOffer, BoardRole, ChipId, Composition, CompositionName,
+        Conformance, ContractName, InstanceName, LpClockSource, MeasuredSpan, RawStandProfile,
+        RunId, RunRef, ScenarioId, Sha256, Support, Verdict, Wait, name,
     };
     use serde::{Deserialize, Serialize};
 
     use super::*;
 
     const SECOND: u64 = 1_000_000;
+    const STATION: &str = "oer-esp32s31-ieee80211-system";
 
     struct Port;
 
     impl Subject for Port {
-        const CONTRACT: &'static str = "toy::Port";
+        const CONTRACT: ContractName = name!(ContractName, "toy::Port");
 
-        fn declared_bounds() -> ReportedBounds {
+        fn ceilings() -> ReportedBounds {
             ReportedBounds::default().with(name!(BoundName, "toy.terminal"), 2 * SECOND)
         }
     }
 
-    /// A scenario whose one repetition waits for the measured span
-    /// `span` and once for the port's terminal bound.
+    /// A scenario whose one repetition waits for the measured span `span`
+    /// and once for the port's terminal ceiling.
     struct Fixed;
 
     #[derive(Clone, Debug, Deserialize, Serialize)]
     struct Params {
         span: SpanName,
+        chip: ChipId,
         composition: Option<CompositionName>,
         crystal: bool,
     }
 
     impl Spec for Fixed {
-        const ID: oer_hil_model::ScenarioId = name!(ScenarioId, "fixed");
+        const ID: ScenarioId = name!(ScenarioId, "fixed");
         type Purpose = Conformance;
         type Subject = Port;
         type Params = Params;
         type Criteria = ();
         type Trace = ();
+        type Finding = ();
 
         fn resources(params: &Params) -> Resources {
             let capabilities = if params.crystal {
@@ -396,7 +392,7 @@ mod tests {
             Resources {
                 boards: vec![BoardNeed {
                     role: BoardRole::Dut,
-                    chip: name!(ChipId, "esp32s31"),
+                    chip: params.chip.clone(),
                     capabilities,
                 }],
                 fixtures: Vec::new(),
@@ -405,6 +401,7 @@ mod tests {
 
         fn target(params: &Params) -> TargetCapabilities {
             TargetCapabilities {
+                chip: params.chip.clone(),
                 composition: params
                     .composition
                     .clone()
@@ -415,7 +412,7 @@ mod tests {
 
         fn estimate(
             params: &Params,
-            bounds: &Bounds,
+            ceilings: &ReportedBounds,
             profile: &StandProfile,
         ) -> Result<Estimate, WaitError> {
             let terminal = Wait::contract(name!(BoundName, "toy.terminal"), Factor::ONE);
@@ -423,20 +420,13 @@ mod tests {
                 &[],
                 &[Wait::measured(params.span.clone()), terminal],
                 1,
-                bounds,
+                ceilings,
                 profile,
             )
         }
 
-        fn verdict((): &(), (): &()) -> Verdict {
+        fn verdict((): &(), (): &()) -> Verdict<()> {
             Verdict::Pass
-        }
-    }
-
-    fn run_ref() -> RunRef {
-        RunRef {
-            run: RunId::parse("1788729094522-000d170b").unwrap(),
-            sha256: Sha256([0; 32]),
         }
     }
 
@@ -447,37 +437,51 @@ mod tests {
             margin: Factor::ONE,
             margin_reason: "test".into(),
             support: Support::Measured,
-            evidence: vec![run_ref()],
+            evidence: vec![RunRef {
+                run: RunId::parse("1788729094522-000d170b").unwrap(),
+                sha256: Sha256([0; 32]),
+            }],
         }
     }
 
-    fn profile(spans: &[(&'static str, u64)]) -> StandProfile {
+    fn raw(spans: &[(&'static str, u64)]) -> RawStandProfile {
         let mut raw = RawStandProfile::default();
         raw.spans
             .insert(name!(SpanName, "image.build"), measured(50));
         raw.spans
             .insert(name!(SpanName, "flash.application"), measured(25));
+        raw.spans
+            .insert(name!(SpanName, "boot-to-hello"), measured(2));
         for (span, seconds) in spans {
             raw.spans
                 .insert(SpanName::parse(span).unwrap(), measured(*seconds));
         }
-        StandProfile::try_from(raw).unwrap()
+        raw
     }
 
-    fn costs() -> ImageCosts {
-        ImageCosts {
+    fn profile(spans: &[(&'static str, u64)]) -> StandProfile {
+        StandProfile::try_from(raw(spans)).unwrap()
+    }
+
+    fn costs() -> StandCosts {
+        StandCosts {
             build: name!(SpanName, "image.build"),
             flash: name!(SpanName, "flash.application"),
+            boot: name!(SpanName, "boot-to-hello"),
         }
     }
 
     fn offer() -> StandOffer {
+        let board = |chip: ChipId| BoardOffer {
+            chip,
+            roles: vec![BoardRole::Dut],
+            capabilities: vec![BoardCapability::LpClock(LpClockSource::RcSlow)],
+        };
         StandOffer {
-            boards: vec![BoardOffer {
-                chip: name!(ChipId, "esp32s31"),
-                roles: vec![BoardRole::Dut],
-                capabilities: vec![BoardCapability::LpClock(LpClockSource::RcSlow)],
-            }],
+            boards: vec![
+                board(name!(ChipId, "esp32s31")),
+                board(name!(ChipId, "esp32c5")),
+            ],
             fixtures: Vec::new(),
         }
     }
@@ -489,7 +493,8 @@ mod tests {
         }
     }
 
-    fn fixed(
+    fn on(
+        chip: &'static str,
         instance: &'static str,
         span: &'static str,
         composition: Option<&'static str>,
@@ -498,70 +503,64 @@ mod tests {
             InstanceName::parse(instance).unwrap(),
             Params {
                 span: SpanName::parse(span).unwrap(),
+                chip: ChipId::parse(chip).unwrap(),
                 composition: composition.map(|name| CompositionName::parse(name).unwrap()),
                 crystal: false,
             },
         ))
     }
 
-    const STATION: &str = "oer-esp32s31-ieee80211-system";
+    fn fixed(
+        instance: &'static str,
+        span: &'static str,
+        composition: Option<&'static str>,
+    ) -> Planned {
+        on("esp32s31", instance, span, composition)
+    }
 
-    fn stand<'a>(
-        source: &'a Sha256,
-        profile: &'a StandProfile,
-        offer: &'a StandOffer,
-        costs: &'a ImageCosts,
+    fn run(
+        tier: Tier,
+        scenarios: &[Planned],
+        profile: &StandProfile,
         cap: u64,
-    ) -> Stand<'a> {
-        Stand {
-            source,
-            profile,
-            offer,
-            costs,
-            lease: lease(cap),
-        }
+    ) -> Result<Plan, PlanError> {
+        let (offer, costs) = (offer(), costs());
+        plan(
+            tier,
+            scenarios,
+            &Stand {
+                profile,
+                offer: &offer,
+                costs: &costs,
+                lease: lease(cap),
+            },
+        )
     }
 
     #[test]
-    fn a_new_recipe_plans_on_declared_bounds_and_labels_them() {
-        let (source, profile, offer, costs) = (
-            Sha256([1; 32]),
-            profile(&[("toy.case", 10)]),
-            offer(),
-            costs(),
-        );
+    fn one_image_holds_a_smoke_tier_and_each_instance_boots_once() {
+        let profile = profile(&[("toy.case", 10)]);
         let scenarios = [
             fixed("a", "toy.case", None),
             fixed("b", "toy.case", Some(STATION)),
         ];
-        let plan = plan(
-            Tier::Smoke,
-            &scenarios,
-            &stand(&source, &profile, &offer, &costs, 3_600),
-        )
-        .unwrap();
+        let plan = run(Tier::Smoke, &scenarios, &profile, 3_600).unwrap();
         assert_eq!(plan.segments.len(), 1);
         let segment = &plan.segments[0];
         assert_eq!(segment.build_micros, 50 * SECOND);
-        assert_eq!(segment.lease_estimate_micros, (25 + 12 + 12) * SECOND);
+        // Flash, then per instance: boot 2 s, span 10 s, terminal ceiling 2 s.
+        assert_eq!(segment.lease_estimate_micros, (25 + 14 + 14) * SECOND);
         assert_eq!(
             segment.lease_limit_micros,
             segment.lease_estimate_micros * 3 / 2
         );
-        assert_eq!(plan.total_micros, (50 + 25 + 24) * SECOND);
-        assert_eq!(
-            plan.provisional,
-            vec![Provisional::DeclaredBound {
-                contract: "toy::Port",
-                bound: name!(BoundName, "toy.terminal")
-            }]
-        );
+        assert_eq!(plan.total_micros, (50 + 25 + 28) * SECOND);
+        assert!(plan.provisional.is_empty());
     }
 
     #[test]
     fn a_provisional_stand_span_is_labelled_in_the_plan() {
-        let (source, offer, costs) = (Sha256([1; 32]), offer(), costs());
-        let mut raw = RawStandProfile::from(profile(&[("toy.case", 10)]));
+        let mut raw = raw(&[("toy.case", 10)]);
         let flash = name!(SpanName, "flash.application");
         let mut early = measured(25);
         early.samples = 201;
@@ -570,64 +569,35 @@ mod tests {
         };
         raw.spans.insert(flash.clone(), early);
         let profile = StandProfile::try_from(raw).unwrap();
-        let plan = plan(
+        let plan = run(
             Tier::Smoke,
             &[fixed("a", "toy.case", None)],
-            &stand(&source, &profile, &offer, &costs, 3_600),
+            &profile,
+            3_600,
         )
         .unwrap();
-        assert!(plan.provisional.contains(&Provisional::Span {
-            span: flash,
-            reason: "first stand measurement".into()
-        }));
-    }
-
-    #[test]
-    fn a_recorded_recipe_plans_on_its_reported_bounds() {
-        let (source, offer, costs) = (Sha256([1; 32]), offer(), costs());
-        let scenario = fixed("a", "toy.case", Some(STATION));
-        let recipe = scenario.image.recipe(&source);
-        let mut raw = RawStandProfile::from(profile(&[("toy.case", 10)]));
-        raw.bounds.insert(
-            recipe,
-            oer_hil_model::RecordedBounds {
-                bounds: ReportedBounds::default()
-                    .with(name!(BoundName, "toy.terminal"), 5 * SECOND),
-                evidence: run_ref(),
-            },
+        assert_eq!(
+            plan.provisional,
+            vec![Provisional {
+                span: flash,
+                reason: "first stand measurement".into()
+            }]
         );
-        let profile = StandProfile::try_from(raw).unwrap();
-        let plan = plan(
-            Tier::Smoke,
-            &[scenario],
-            &stand(&source, &profile, &offer, &costs, 3_600),
-        )
-        .unwrap();
-        assert!(plan.provisional.is_empty());
-        assert_eq!(plan.segments[0].lease_estimate_micros, (25 + 15) * SECOND);
     }
 
     #[test]
     fn a_board_without_a_crystal_refuses_the_plan() {
-        let (source, profile, offer, costs) = (
-            Sha256([1; 32]),
-            profile(&[("toy.case", 10)]),
-            offer(),
-            costs(),
-        );
+        let profile = profile(&[("toy.case", 10)]);
         let crystal = Planned::of(&Instance::<Fixed>::new(
             name!(InstanceName, "sleep"),
             Params {
                 span: name!(SpanName, "toy.case"),
+                chip: name!(ChipId, "esp32s31"),
                 composition: None,
                 crystal: true,
             },
         ));
-        let Err(PlanError::Refused(refusals)) = plan(
-            Tier::Full,
-            &[crystal],
-            &stand(&source, &profile, &offer, &costs, 3_600),
-        ) else {
+        let Err(PlanError::Refused(refusals)) = run(Tier::Full, &[crystal], &profile, 3_600) else {
             panic!("refused");
         };
         assert_eq!(refusals.len(), 1);
@@ -635,23 +605,12 @@ mod tests {
 
     #[test]
     fn a_long_tier_splits_into_leases_that_fit_the_cap_and_builds_once() {
-        let (source, profile, offer, costs) = (
-            Sha256([1; 32]),
-            profile(&[("toy.long", 598)]),
-            offer(),
-            costs(),
-        );
-        let names = ["a", "b", "c", "d", "e", "f"];
-        let scenarios: Vec<_> = names
+        let profile = profile(&[("toy.long", 598)]);
+        let scenarios: Vec<_> = ["a", "b", "c", "d", "e", "f"]
             .iter()
             .map(|name| fixed(name, "toy.long", Some(STATION)))
             .collect();
-        let plan = plan(
-            Tier::Full,
-            &scenarios,
-            &stand(&source, &profile, &offer, &costs, 1_200),
-        )
-        .unwrap();
+        let plan = run(Tier::Full, &scenarios, &profile, 1_200).unwrap();
         assert!(plan.segments.len() > 1);
         assert!(
             plan.segments
@@ -676,24 +635,14 @@ mod tests {
 
     #[test]
     fn the_build_never_shortens_a_lease_margin() {
-        // The scenario takes 2_350 s + the 2 s terminal bound. With the
-        // 25 s flash its lease is 1.5 × 2_377 s = 3_565.5 s, inside the
-        // 3_600 s cap; were the 50 s build inside the lease it would need
-        // 1.5 × 2_427 s = 3_640.5 s and the plan would refuse it.
-        let (source, profile, offer, costs) = (
-            Sha256([1; 32]),
-            profile(&[("toy.long", 2_350)]),
-            offer(),
-            costs(),
-        );
-        let plan = plan(
-            Tier::Full,
-            &[fixed("a", "toy.long", None)],
-            &stand(&source, &profile, &offer, &costs, 3_600),
-        )
-        .unwrap();
+        // The instance takes 2 s boot + 2_346 s + the 2 s ceiling = 2_350 s.
+        // With the 25 s flash its lease is 1.5 × 2_375 s = 3_562.5 s, inside
+        // the 3_600 s cap; were the 50 s build inside the lease it would
+        // need 1.5 × 2_425 s = 3_637.5 s and the plan would refuse it.
+        let profile = profile(&[("toy.long", 2_346)]);
+        let plan = run(Tier::Full, &[fixed("a", "toy.long", None)], &profile, 3_600).unwrap();
         let segment = &plan.segments[0];
-        assert_eq!(segment.lease_estimate_micros, (25 + 2_352) * SECOND);
+        assert_eq!(segment.lease_estimate_micros, (25 + 2_350) * SECOND);
         assert_eq!(segment.build_micros, 50 * SECOND);
         assert_eq!(
             segment.lease_limit_micros,
@@ -703,24 +652,15 @@ mod tests {
 
     #[test]
     fn an_unsplittable_scenario_reports_the_lease_it_needs() {
-        let (source, profile, offer, costs) = (
-            Sha256([1; 32]),
-            profile(&[("toy.soak", 2_398)]),
-            offer(),
-            costs(),
-        );
+        let profile = profile(&[("toy.soak", 2_394)]);
         assert_eq!(
-            plan(
-                Tier::Full,
-                &[fixed("a", "toy.soak", None)],
-                &stand(&source, &profile, &offer, &costs, 3_600)
-            ),
+            run(Tier::Full, &[fixed("a", "toy.soak", None)], &profile, 3_600),
             Err(PlanError::Unsplittable {
                 scenario: ScenarioInstance {
                     scenario: name!(ScenarioId, "fixed"),
                     instance: name!(InstanceName, "a")
                 },
-                lease_micros: (25 + 2_400) * SECOND * 3 / 2,
+                lease_micros: (25 + 2_398) * SECOND * 3 / 2,
                 cap_micros: 3_600 * SECOND,
             })
         );
@@ -728,19 +668,16 @@ mod tests {
 
     #[test]
     fn an_over_budget_plan_names_its_largest_scenarios() {
-        let spans = [("toy.a", 100), ("toy.b", 200), ("toy.c", 50), ("toy.d", 10)];
-        let (source, profile, offer, costs) = (Sha256([1; 32]), profile(&spans), offer(), costs());
+        let profile = profile(&[("toy.a", 100), ("toy.b", 200), ("toy.c", 50), ("toy.d", 10)]);
         let scenarios = [
             fixed("a", "toy.a", None),
             fixed("b", "toy.b", None),
             fixed("c", "toy.c", None),
             fixed("d", "toy.d", None),
         ];
-        let Err(PlanError::OverBudget { largest, .. }) = plan(
-            Tier::Smoke,
-            &scenarios,
-            &stand(&source, &profile, &offer, &costs, 3_600),
-        ) else {
+        let Err(PlanError::OverBudget { largest, .. }) =
+            run(Tier::Smoke, &scenarios, &profile, 3_600)
+        else {
             panic!("over budget");
         };
         let names: Vec<_> = largest
@@ -751,24 +688,35 @@ mod tests {
     }
 
     #[test]
-    fn compositions_get_separate_images() {
-        let (source, profile, offer, costs) = (
-            Sha256([1; 32]),
-            profile(&[("toy.case", 10)]),
-            offer(),
-            costs(),
+    fn an_overflowing_scenario_is_named() {
+        let profile = profile(&[("toy.case", 10)]);
+        let mut huge = fixed("a", "toy.case", None);
+        // The instance's own work just fits in 64 bits; its boot does not.
+        huge.ceilings = ReportedBounds::default()
+            .with(name!(BoundName, "toy.terminal"), u64::MAX - 10 * SECOND);
+        assert_eq!(
+            run(Tier::Full, &[huge], &profile, 3_600),
+            Err(PlanError::Overflow {
+                scenario: Some(ScenarioInstance {
+                    scenario: name!(ScenarioId, "fixed"),
+                    instance: name!(InstanceName, "a")
+                }),
+            })
         );
+    }
+
+    #[test]
+    fn compositions_and_chips_get_separate_images() {
+        let profile = profile(&[("toy.case", 10)]);
         let scenarios = [
             fixed("a", "toy.case", Some(STATION)),
             fixed("b", "toy.case", Some("oer-esp32s31-bluetooth-system")),
+            on("esp32c5", "c", "toy.case", None),
+            fixed("d", "toy.case", None),
         ];
-        let plan = plan(
-            Tier::Full,
-            &scenarios,
-            &stand(&source, &profile, &offer, &costs, 3_600),
-        )
-        .unwrap();
-        assert_eq!(plan.segments.len(), 2);
+        let plan = run(Tier::Full, &scenarios, &profile, 3_600).unwrap();
+        assert_eq!(plan.segments.len(), 3);
         assert!(plan.segments.iter().all(|segment| segment.build_micros > 0));
+        assert_eq!(plan.segments[2].image.chip, name!(ChipId, "esp32c5"));
     }
 }

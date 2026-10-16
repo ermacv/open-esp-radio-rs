@@ -2,18 +2,18 @@
 
 use core::{fmt, future::Future};
 
-use oer_hil_model::{Instance, Operation, Sha256, Spec, Verdict};
+use oer_hil_model::{IdentityError, Instance, Operation, Sha256, Spec, Verdict};
 
 use crate::{Executed, Executor, ExecutorKind, Recorder, RunsOn};
 
-/// A failure of the stand, the link or the host, not of the subject. It
-/// leaves the run without a trace and therefore without a verdict
+/// A failure of the stand, the link or the host, not of the subject. A
+/// run that ends with one has no trace, and so no verdict
 /// (`broken/infrastructure`).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Infrastructure {
     /// What failed, such as `link.sync` or `target.report`.
     pub operation: Operation,
-    pub cause: String,
+    pub cause: Box<dyn std::error::Error + Send + Sync>,
 }
 
 impl fmt::Display for Infrastructure {
@@ -22,7 +22,11 @@ impl fmt::Display for Infrastructure {
     }
 }
 
-impl std::error::Error for Infrastructure {}
+impl std::error::Error for Infrastructure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.cause.as_ref())
+    }
+}
 
 /// Execution of a scenario by executor `X`. A scenario implements it for
 /// the executors whose driver it can use, typically generically over its
@@ -44,7 +48,7 @@ pub struct Outcome<S: Spec> {
     pub executed: Executed,
     pub identity: Sha256,
     pub trace: S::Trace,
-    pub verdict: Verdict,
+    pub verdict: Verdict<S::Finding>,
     pub recorder: Recorder,
 }
 
@@ -64,9 +68,10 @@ impl<S: Spec> fmt::Debug for Outcome<S> {
 #[derive(Debug)]
 pub enum Cause {
     Infrastructure(Infrastructure),
-    /// The scenario itself is defective: its parameters or criteria have no
-    /// JSON form, so the instance has no identity.
-    Identity(String),
+    /// The scenario itself is defective: its parameters or criteria hold a
+    /// NaN or an infinite number, or have no JSON form, so the instance has
+    /// no identity.
+    Identity(IdentityError),
 }
 
 /// An instance without a verdict, with what it counted before.
@@ -95,7 +100,7 @@ where
         Err(error) => {
             return Err(Failed {
                 executed,
-                cause: Cause::Identity(error.to_string()),
+                cause: Cause::Identity(error),
                 recorder,
             });
         }

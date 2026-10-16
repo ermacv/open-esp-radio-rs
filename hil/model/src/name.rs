@@ -20,6 +20,40 @@ pub enum Grammar {
     /// Kebab segments joined by single dots, at most 96 bytes:
     /// `lower-mac.drain`, `boot-to-hello`.
     Dotted,
+    /// A package name (lowercase letters, digits, hyphens and
+    /// underscores, starting with a letter) followed by one or more `::`
+    /// and Rust identifiers, at most 128 bytes:
+    /// `oer-ieee80211-lower-mac::LowerMacPort`.
+    Path,
+}
+
+const fn identifier(bytes: &[u8], start: usize, end: usize) -> bool {
+    if start >= end || !(bytes[start].is_ascii_alphabetic() || bytes[start] == b'_') {
+        return false;
+    }
+    let mut index = start;
+    while index < end {
+        if !(bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_') {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+const fn package(bytes: &[u8], end: usize) -> bool {
+    if end == 0 || !bytes[0].is_ascii_lowercase() {
+        return false;
+    }
+    let mut index = 0;
+    while index < end {
+        let byte = bytes[index];
+        if !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_') {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 const fn kebab(bytes: &[u8], start: usize, end: usize) -> bool {
@@ -57,6 +91,38 @@ impl Grammar {
                         start = index + 1;
                     }
                     index += 1;
+                }
+                true
+            }
+            Self::Path => {
+                if bytes.len() > 128 {
+                    return false;
+                }
+                // The package, then `::`-separated identifiers.
+                let mut index = 0;
+                while index + 1 < bytes.len() && !(bytes[index] == b':' && bytes[index + 1] == b':')
+                {
+                    index += 1;
+                }
+                if index + 1 >= bytes.len() || !package(bytes, index) {
+                    return false;
+                }
+                let mut start = index + 2;
+                let mut cursor = start;
+                while cursor <= bytes.len() {
+                    if cursor == bytes.len()
+                        || (bytes[cursor] == b':'
+                            && cursor + 1 < bytes.len()
+                            && bytes[cursor + 1] == b':')
+                    {
+                        if !identifier(bytes, start, cursor) {
+                            return false;
+                        }
+                        start = cursor + 2;
+                        cursor = start;
+                        continue;
+                    }
+                    cursor += 1;
                 }
                 true
             }
@@ -143,8 +209,8 @@ names! {
     BoundName: Dotted;
     /// A span measured on the stand, such as `boot-to-hello`.
     SpanName: Dotted;
-    /// A count a run records, such as `connect.attempts`.
-    CountName: Dotted;
+    /// A measurement a run records, such as `connect.attempts`.
+    MeasurementName: Dotted;
     /// An infrastructure operation, such as `link.sync`.
     Operation: Dotted;
     /// A chip of `platform/<chip>/chip.toml`, such as `esp32s31`.
@@ -153,6 +219,11 @@ names! {
     FixtureName: Kebab;
     /// A product composition crate, such as `oer-esp32s31-ieee80211-system`.
     CompositionName: Kebab;
+    /// The contract a scenario exercises, by its path:
+    /// `oer-ieee80211-lower-mac::LowerMacPort`.
+    ContractName: Path;
+    /// A clock that trace times are on, such as `esp32s31.systimer`.
+    ClockName: Dotted;
     /// A capability the HIL agent serves, by its `hil/protocol` module and
     /// name, such as `conformance.lower-mac`; the image keys derive from
     /// these through `oer-hil-image-keys`.
@@ -233,8 +304,27 @@ mod tests {
 
     #[test]
     fn a_parsed_name_reads_back_and_a_wrong_one_is_refused() {
-        let name: CountName = serde_json::from_str("\"connect.attempts\"").unwrap();
-        assert_eq!(name, crate::name!(CountName, "connect.attempts"));
-        assert!(serde_json::from_str::<CountName>("\"Connect\"").is_err());
+        let name: MeasurementName = serde_json::from_str("\"connect.attempts\"").unwrap();
+        assert_eq!(name, crate::name!(MeasurementName, "connect.attempts"));
+        assert!(serde_json::from_str::<MeasurementName>("\"Connect\"").is_err());
+    }
+
+    #[test]
+    fn contract_paths_name_a_package_and_items() {
+        assert!(ContractName::parse("oer-ieee80211-lower-mac::LowerMacPort").is_ok());
+        assert!(ContractName::parse("oer_radio_port::conformance::Harness").is_ok());
+        for name in [
+            "",
+            "LowerMacPort",
+            "oer::",
+            "::Port",
+            "Oer::Port",
+            "oer::1Port",
+            "oer:Port",
+            "oer::Port::",
+            "oer::a b",
+        ] {
+            assert!(ContractName::parse(name).is_err(), "{name:?}");
+        }
     }
 }

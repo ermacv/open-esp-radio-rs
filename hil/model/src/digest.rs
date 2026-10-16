@@ -89,6 +89,12 @@ pub fn canonical_json(value: &serde_json::Value) -> Vec<u8> {
                 }
                 out.push(b']');
             }
+            // Negative zero equals zero; both are written as `0.0`.
+            serde_json::Value::Number(number)
+                if number.as_f64() == Some(0.0) && number.is_f64() =>
+            {
+                out.extend(b"0.0");
+            }
             scalar => out.extend(scalar.to_string().into_bytes()),
         }
     }
@@ -114,6 +120,14 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<Sha256>(&text).is_err(), "{text}");
         }
+    }
+
+    #[test]
+    fn negative_zero_is_written_as_zero() {
+        let negative = serde_json::json!({ "x": -0.0_f64 });
+        let positive = serde_json::json!({ "x": 0.0_f64 });
+        assert_eq!(canonical_json(&negative), canonical_json(&positive));
+        assert_eq!(canonical_json(&negative), br#"{"x":0.0}"#.to_vec());
     }
 
     #[test]

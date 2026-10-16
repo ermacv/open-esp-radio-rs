@@ -28,7 +28,7 @@ hil/
 │   ├── experiment/    the one run launch, revision runs, A/B comparisons and bisection
 │   ├── image/         image class specs for the image pipeline, firmware records, compare_images
 │   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
-│   ├── executor/      typed scenario execution on the model or the stand, counted retries, the tier plan and its leases
+│   ├── executor/      typed scenario execution on the model or the stand, the tier plan and its leases
 │   ├── image-class/   image classes and the keys each serves
 │   ├── source-snapshot/ source snapshots builds and runs are made from
 │   ├── board/         board I/O: ports, the flash writer, starts, resets, OpenOCD, power, consoles

@@ -7,7 +7,7 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 | --- | --- |
 | `protocol/`, `schema/`, `observer/` | Host/target wire protocol; the evidence contract shared with qualification; the observer's build identity |
 | `scenarios/` | Versioned scenario documents and their [roles](scenarios/README.md#roles) |
-| `model/`, `host/executor/` | The typed scenario model that replaces those documents (#761): spec with a purpose type and a pure verdict, validated names, derived waits, the stand profile; its execution (model or stand), counted retries and the tier plan ([model](model/README.md), [executor](host/executor/README.md)). Each new HIL scenario crate keeps the identical `hil-scenario` copy of `clippy.toml` |
+| `model/`, `host/executor/` | The typed scenario model that replaces those documents (#761): spec with a purpose type and a pure verdict, validated names, derived waits, the stand profile; its execution (the model, or the stand under a granted lease) and the tier plan ([model](model/README.md), [executor](host/executor/README.md)). Each new HIL scenario crate keeps the identical `hil-scenario` copy of `clippy.toml` |
 | `host/` | `cargo hil` (`cli/`), runner, the flash operation, image builder, families, fixtures ([host guide](host/README.md)) |
 | `../stand/` | `cargo stand` and the stand packages: stand file, boards, arbiter, owners, journal, power, host files ([stand guide](host/stand.md), [stand file](../stand/file/README.md)) |
 | `targets/<chip>/`, `agent/` | Target firmware workspaces; chip-independent agent logic |

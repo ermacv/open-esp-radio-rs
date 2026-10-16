@@ -12,12 +12,12 @@
 //!   byte-identical, and a group has at least two files; a group's shared
 //!   rule set is then changed in every copy at once;
 //! - every HIL scenario package carries its own copy of the `hil-scenario`
-//!   group: a package at `hil/model`, `hil/host/executor` or under
-//!   `hil/scenarios/`, or a package under `hil/` that depends on
-//!   `oer-hil-model`; a consumer of the model outside `hil/`, such as the
-//!   qualification evaluator, is not a scenario package (#761, owner
-//!   decision 6221112155, until #761 step 10 replaces the copies with one
-//!   `hil/clippy.toml`).
+//!   group. The packages at `hil/model`, `hil/host/executor` and under
+//!   `hil/scenarios/` do (#761, owner decision 6221112155, until #761 step
+//!   10 replaces the copies with one `hil/clippy.toml`); so does, by this
+//!   check's own rule, any other package under `hil/` that depends on
+//!   `oer-hil-model`. A consumer of the model outside `hil/`, such as the
+//!   qualification evaluator, is not a scenario package.
 
 use std::collections::{BTreeMap, BTreeSet};
 

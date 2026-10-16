@@ -97,6 +97,21 @@
 //! let _ = Stand::new(ModelPort);
 //! ```
 //!
+//! Nor can any other executor claim the stand's kind, since only
+//! [`Model`] and [`Stand`] are executors:
+//!
+//! ```compile_fail,E0277
+//! # use oer_hil_executor::*;
+//! struct ModelPort;
+//! impl ModelDriver for ModelPort {}
+//! struct Fake(ModelPort);
+//! impl Executor for Fake {
+//!     type Kind = OnStand;
+//!     type Driver = ModelPort;
+//!     fn driver(&mut self) -> &mut ModelPort { &mut self.0 }
+//! }
+//! ```
+//!
 //! A driver made under a lease can:
 //!
 //! ```

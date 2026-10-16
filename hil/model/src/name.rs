@@ -17,13 +17,15 @@ pub enum Grammar {
     /// letter and not ending with a hyphen, at most 64 bytes:
     /// `lower-mac-tx-ownership`.
     Kebab,
-    /// Kebab segments joined by single dots, at most 96 bytes:
-    /// `lower-mac.drain`, `boot-to-hello`.
+    /// Kebab segments, each at most 64 bytes, joined by single dots, at
+    /// most 96 bytes in all: `lower-mac.drain`, `boot-to-hello`.
     Dotted,
     /// A package name (lowercase letters, digits, hyphens and
     /// underscores, starting with a letter) followed by one or more `::`
-    /// and Rust identifiers, at most 128 bytes:
-    /// `oer-ieee80211-lower-mac::LowerMacPort`.
+    /// and segments of ASCII letters, digits and underscores that start
+    /// with a letter or an underscore, at most 128 bytes:
+    /// `oer-ieee80211-lower-mac::LowerMacPort`. Keywords are not refused:
+    /// the name identifies a contract, it is not compiled.
     Path,
 }
 
@@ -85,7 +87,7 @@ impl Grammar {
                 let mut index = 0;
                 while index <= bytes.len() {
                     if index == bytes.len() || bytes[index] == b'.' {
-                        if !kebab(bytes, start, index) {
+                        if index - start > 64 || !kebab(bytes, start, index) {
                             return false;
                         }
                         start = index + 1;
@@ -291,6 +293,13 @@ mod tests {
         let segment = "a".repeat(47);
         assert!(BoundName::parse(&format!("{segment}.{}", "b".repeat(48))).is_ok());
         assert!(BoundName::parse(&format!("{segment}.{}", "b".repeat(49))).is_err());
+    }
+
+    #[test]
+    fn a_dotted_segment_is_at_most_64_bytes() {
+        assert!(BoundName::parse(&"a".repeat(64)).is_ok());
+        assert!(BoundName::parse(&"a".repeat(65)).is_err());
+        assert!(BoundName::parse(&format!("{}.b", "a".repeat(65))).is_err());
     }
 
     #[test]

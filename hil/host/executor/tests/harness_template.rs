@@ -131,7 +131,7 @@ enum Finding {
         case: Case,
         violation: Violation,
     },
-    /// An expected case has no trace; a run with none fails here too.
+    /// An expected case has no trace.
     Unexercised(Case),
 }
 
@@ -180,12 +180,13 @@ impl Spec for TxConformance {
 
     fn verdict(traces: &Traces, (): &()) -> Verdict<Finding> {
         let ceilings = TxPort::ceilings();
+        // A run without any trace fails on `NoTrace`, an instance without
+        // cases included.
         let mut findings: Vec<Finding> = TraceHeader::of_run(
             traces.runs.iter().map(|(_, trace)| &trace.header),
             &ceilings,
         )
         .into_iter()
-        .filter(|finding| *finding != HeaderFinding::NoTrace)
         .map(Finding::Header)
         .collect();
         let exercised: BTreeSet<Case> = traces.runs.iter().map(|(case, _)| *case).collect();
@@ -426,9 +427,24 @@ fn a_run_without_its_cases_does_not_pass() {
     assert_eq!(
         TxConformance::verdict(&traces, &()),
         Verdict::from_findings(vec![
+            Finding::Header(HeaderFinding::NoTrace),
             Finding::Unexercised(Case::OneFrame),
-            Finding::Unexercised(Case::CloseGate)
+            Finding::Unexercised(Case::CloseGate),
         ])
+    );
+}
+
+#[test]
+fn an_instance_without_cases_does_not_pass() {
+    let outcome = embassy_futures::block_on(execute(
+        &instance(Vec::new()),
+        &(),
+        &mut Model::new(ModelPort),
+    ))
+    .unwrap();
+    assert_eq!(
+        outcome.verdict,
+        Verdict::from_findings(vec![Finding::Header(HeaderFinding::NoTrace)])
     );
 }
 

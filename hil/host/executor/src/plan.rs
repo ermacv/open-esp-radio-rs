@@ -559,6 +559,30 @@ mod tests {
     }
 
     #[test]
+    fn a_provisional_stand_span_is_labelled_in_the_plan() {
+        let (source, offer, costs) = (Sha256([1; 32]), offer(), costs());
+        let mut raw = RawStandProfile::from(profile(&[("toy.case", 10)]));
+        let flash = name!(SpanName, "flash.application");
+        let mut early = measured(25);
+        early.samples = 201;
+        early.support = Support::Provisional {
+            reason: "first stand measurement".into(),
+        };
+        raw.spans.insert(flash.clone(), early);
+        let profile = StandProfile::try_from(raw).unwrap();
+        let plan = plan(
+            Tier::Smoke,
+            &[fixed("a", "toy.case", None)],
+            &stand(&source, &profile, &offer, &costs, 3_600),
+        )
+        .unwrap();
+        assert!(plan.provisional.contains(&Provisional::Span {
+            span: flash,
+            reason: "first stand measurement".into()
+        }));
+    }
+
+    #[test]
     fn a_recorded_recipe_plans_on_its_reported_bounds() {
         let (source, offer, costs) = (Sha256([1; 32]), offer(), costs());
         let scenario = fixed("a", "toy.case", Some(STATION));

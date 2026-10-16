@@ -1,5 +1,5 @@
 //! SHA-256 digests in their one canonical text form, and the canonical
-//! JSON that identities and recipe digests hash.
+//! JSON that instance identities hash.
 
 use core::fmt;
 use std::collections::BTreeMap;

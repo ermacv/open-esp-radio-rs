@@ -1,6 +1,6 @@
 //! Validated names: kebab-case scenario, instance, chip, fixture and
-//! composition names, and the dotted names of bounds, spans, counts,
-//! operations and capabilities.
+//! composition names, the dotted names of bounds, spans, measurements,
+//! operations, clocks and capabilities, and the contract path.
 
 use core::fmt;
 use std::borrow::Cow;

@@ -2,8 +2,11 @@
 //! against the tier's budget, all before anything is built or leased.
 //!
 //! A segment is one image on one board lane. Every segment takes its own
-//! lease, whose hard limit is the segment's estimate times a margin, capped
-//! by the stand's maximum (#761 Q4). A stage gate therefore never needs one
+//! lease, whose hard limit is the segment's estimate times a margin (#761
+//! Q4). A segment closes before that limit would pass the stand's longest
+//! lease, and a scenario that cannot fit in any lease is refused rather
+//! than given a shorter margin. The image is built before its first
+//! segment's lease, so builds count toward the tier's wall time only. A stage gate therefore never needs one
 //! lease of the whole hour, and the arbiter interleaves other work between
 //! segments. Segments are summed as if serial; parallel lanes come with the
 //! lane-isolation result.
@@ -41,16 +44,44 @@ pub struct LeasePolicy {
     pub cap_micros: u64,
 }
 
-/// One image on one board lane, under one lease.
+/// One image on one board lane, under one lease. The image is built
+/// before the lease is requested, so the build counts toward the tier's
+/// wall time but not toward the lease.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Segment {
     pub image: TargetCapabilities,
     pub scenarios: Vec<String>,
-    /// Whether this segment builds the image; later segments of the same
-    /// image reuse the build.
-    pub builds: bool,
-    pub estimate_micros: u64,
+    /// The build before this segment's lease: the image's first segment
+    /// builds it, later segments reuse the build.
+    pub build_micros: u64,
+    /// What the lease holds: the flash and the scenarios with their boots.
+    pub lease_estimate_micros: u64,
+    /// The estimate times the margin; never above the stand's cap, which
+    /// the plan refuses instead of shortening the margin.
     pub lease_limit_micros: u64,
+}
+
+impl Segment {
+    pub const fn wall_micros(&self) -> u64 {
+        self.build_micros.saturating_add(self.lease_estimate_micros)
+    }
+}
+
+fn segment(
+    image: &TargetCapabilities,
+    scenarios: Vec<String>,
+    builds: bool,
+    leased: u64,
+    costs: ImageCosts,
+    lease: LeasePolicy,
+) -> Segment {
+    Segment {
+        image: image.clone(),
+        scenarios,
+        build_micros: if builds { costs.build_micros } else { 0 },
+        lease_estimate_micros: leased,
+        lease_limit_micros: lease.margin.apply(leased),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -149,54 +180,42 @@ pub fn plan(
     for (image, members) in images {
         let mut builds = true;
         let mut current: Vec<String> = Vec::new();
-        let mut current_micros = 0_u64;
-        let base = |builds: bool| {
-            costs
-                .flash_micros
-                .saturating_add(if builds { costs.build_micros } else { 0 })
-        };
+        // Flash plus the scenarios so far: what the segment's lease holds.
+        let mut leased = costs.flash_micros;
         for planned in members {
             let own = scenario_micros(planned);
-            let alone = lease.margin.apply(base(builds).saturating_add(own));
-            if lease.margin.apply(base(false).saturating_add(own)) > lease.cap_micros {
+            if !current.is_empty()
+                && lease.margin.apply(leased.saturating_add(own)) > lease.cap_micros
+            {
+                segments.push(segment(
+                    &image,
+                    core::mem::take(&mut current),
+                    builds,
+                    leased,
+                    costs,
+                    lease,
+                ));
+                builds = false;
+                leased = costs.flash_micros;
+            }
+            let lease_micros = lease.margin.apply(leased.saturating_add(own));
+            if lease_micros > lease.cap_micros {
                 return Err(PlanError::Unsplittable {
                     scenario: planned.name.clone(),
-                    lease_micros: alone,
+                    lease_micros,
                     cap_micros: lease.cap_micros,
                 });
             }
-            let with = base(builds)
-                .saturating_add(current_micros)
-                .saturating_add(own);
-            if !current.is_empty() && lease.margin.apply(with) > lease.cap_micros {
-                let estimate = base(builds).saturating_add(current_micros);
-                segments.push(Segment {
-                    image: image.clone(),
-                    scenarios: core::mem::take(&mut current),
-                    builds,
-                    estimate_micros: estimate,
-                    lease_limit_micros: lease.margin.apply(estimate).min(lease.cap_micros),
-                });
-                builds = false;
-                current_micros = 0;
-            }
             current.push(planned.name.clone());
-            current_micros = current_micros.saturating_add(own);
+            leased = leased.saturating_add(own);
         }
         if !current.is_empty() {
-            let estimate = base(builds).saturating_add(current_micros);
-            segments.push(Segment {
-                image: image.clone(),
-                scenarios: current,
-                builds,
-                estimate_micros: estimate,
-                lease_limit_micros: lease.margin.apply(estimate).min(lease.cap_micros),
-            });
+            segments.push(segment(&image, current, builds, leased, costs, lease));
         }
     }
 
     let total_micros = segments.iter().fold(0_u64, |total, segment| {
-        total.saturating_add(segment.estimate_micros)
+        total.saturating_add(segment.wall_micros())
     });
     if let Some(budget_micros) = tier.budget_micros()
         && total_micros > budget_micros
@@ -271,8 +290,13 @@ mod tests {
         assert_eq!(plan.segments.len(), 1);
         let segment = &plan.segments[0];
         assert_eq!(segment.image.capabilities.len(), 2);
-        assert_eq!(segment.estimate_micros, (50 + 25 + 12 + 22) * SECOND);
-        assert_eq!(segment.lease_limit_micros, segment.estimate_micros * 3 / 2);
+        assert_eq!(segment.build_micros, 50 * SECOND);
+        assert_eq!(segment.lease_estimate_micros, (25 + 12 + 22) * SECOND);
+        assert_eq!(
+            segment.lease_limit_micros,
+            segment.lease_estimate_micros * 3 / 2
+        );
+        assert_eq!(plan.total_micros, (50 + 25 + 12 + 22) * SECOND);
     }
 
     #[test]
@@ -297,7 +321,7 @@ mod tests {
         assert_eq!(
             plan.segments
                 .iter()
-                .filter(|segment| segment.builds)
+                .filter(|segment| segment.build_micros > 0)
                 .count(),
             1
         );
@@ -337,6 +361,39 @@ mod tests {
     }
 
     #[test]
+    fn the_build_never_shortens_a_lease_margin() {
+        // margin × (flash + own) = 1.5 × (25 + 2 + 2_298) s = 3_487.5 s fits
+        // the cap of 3_600 s; with the 126 s build it would not. The build
+        // happens before the lease, so the full margin holds.
+        let costs = ImageCosts {
+            build_micros: 126 * SECOND,
+            ..costs()
+        };
+        let scenarios = [planned("long/x", Some(STATION), "k", 2_298)];
+        let plan = plan(Tier::Full, &scenarios, costs, lease(3_600)).unwrap();
+        let segment = &plan.segments[0];
+        assert_eq!(
+            segment.lease_limit_micros,
+            segment.lease_estimate_micros * 3 / 2
+        );
+        assert!(segment.lease_limit_micros <= 3_600 * SECOND);
+        assert_eq!(plan.total_micros, (126 + 25 + 2 + 2_298) * SECOND);
+    }
+
+    #[test]
+    fn an_unsplittable_scenario_reports_the_lease_it_needs() {
+        let scenarios = [planned("soak/x", Some(STATION), "k", 2_400)];
+        assert_eq!(
+            plan(Tier::Full, &scenarios, costs(), lease(3_600)),
+            Err(PlanError::Unsplittable {
+                scenario: "soak/x".into(),
+                lease_micros: (25 + 2 + 2_400) * SECOND * 3 / 2,
+                cap_micros: 3_600 * SECOND,
+            })
+        );
+    }
+
+    #[test]
     fn compositions_get_separate_images() {
         let scenarios = [
             planned("wifi/x", Some(STATION), "a", 10),
@@ -344,6 +401,6 @@ mod tests {
         ];
         let plan = plan(Tier::Full, &scenarios, costs(), lease(3_600)).unwrap();
         assert_eq!(plan.segments.len(), 2);
-        assert!(plan.segments.iter().all(|segment| segment.builds));
+        assert!(plan.segments.iter().all(|segment| segment.build_micros > 0));
     }
 }

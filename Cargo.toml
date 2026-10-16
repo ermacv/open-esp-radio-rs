@@ -132,6 +132,7 @@ members = [
     "hil/host/scenario",
     "hil/host/executor",
     "hil/model",
+    "hil/trace-header",
     "hil/host/scenario/catalog",
     "hil/host/run-bundle",
     "hil/host/run-bundle/format",

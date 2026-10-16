@@ -3040,7 +3040,9 @@ dependencies = [
  "embassy-futures",
  "oer-hil-executor",
  "oer-hil-model",
+ "oer-hil-trace-header",
  "oer-stand-arbiter",
+ "oer-time",
  "postcard",
  "serde",
 ]
@@ -3294,6 +3296,7 @@ dependencies = [
 name = "oer-hil-model"
 version = "0.1.0"
 dependencies = [
+ "oer-time",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3474,6 +3477,15 @@ dependencies = [
  "oer-ieee802154-trace",
  "oer-phy-trace",
  "oer-trace",
+]
+
+[[package]]
+name = "oer-hil-trace-header"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "postcard-schema",
+ "serde",
 ]
 
 [[package]]

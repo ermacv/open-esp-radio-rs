@@ -1,75 +1,87 @@
-//! The conformance harness template (#761 Q3, architecture section 3) on
-//! a toy port.
+//! The conformance harness template (#761 Q3, architecture section 3, and
+//! owner decision 6223045367) on a toy port.
 //!
-//! A port's conformance crate (for Wi-Fi `…-lower-mac-conformance`, with
-//! its `wire` feature) holds:
-//! - the trace types, each trace starting with the model's
-//!   [`TraceHeader`]: the bounds the image reports and the clock domain of
-//!   its times;
-//! - `Harness::exercise(case) -> Result<Trace, Infrastructure>`;
-//! - a public pure `verify(case, &trace)` that reads the bounds from the
-//!   header, never from criteria or host constants.
+//! A port's conformance crate (for Wi-Fi `…-lower-mac-conformance`) is
+//! `no_std`, needs no HIL dependency, and holds:
+//! - its bounds as a type, `struct Bounds` with named fields, and the
+//!   contract's `const CEILINGS: Bounds`;
+//! - its case and trace types, with a `wire` feature;
+//! - `Harness::exercise(case)`, which returns the trace and the header of
+//!   the backend's actual bounds;
+//! - a public pure `verify(case, &trace, &bounds)`: the bounds come as a
+//!   value, beside the trace.
 //!
-//! The scenario's verdict also checks that every expected case has a
-//! trace, that all of them carry one header, and that the header's bounds
-//! keep the contract's ceilings. One scenario runs with the host model's
-//! harness and with the stand's proxy, which decodes the postcard reports
-//! the target sends.
+//! The HIL agent sends `(case, header, trace)` with the
+//! `oer-hil-trace-header` header. The scenario's verdict checks the run's
+//! headers (one bound set and clock, a new generation only at a restart),
+//! the backend's bounds against the ceilings, the cases against the
+//! expected ones as a multiset, and each case with `verify`.
 
 use core::num::NonZeroU32;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use oer_hil_executor::{
     Cause, Executed, Executor, Infrastructure, Model, ModelDriver, Recorder, Run, Stand,
     StandDriver, StandSession, execute,
 };
 use oer_hil_model::{
-    BoundName, ClockDomain, Composition, Conformance, ContractName, Estimate, Factor,
-    HeaderFinding, Instance, ReportedBounds, Resources, ScenarioId, Spec, StandProfile, Subject,
-    TargetCapabilities, TraceHeader, Verdict, Wait, WaitError, name,
+    Composition, Conformance, ContractName, Estimate, Factor, Instance, Resources, ScenarioId,
+    Spec, StandProfile, Subject, TargetCapabilities, Verdict, Wait, WaitError, name,
 };
+use oer_hil_trace_header::{Clock, ClockDomain, Restart, RunHeaderError, TraceHeader, check_run};
+use oer_time::Duration;
 use serde::{Deserialize, Serialize};
 
-// ---- The contract, with its ceiling. ----
+// ---- What a port's conformance crate provides. ----
 
-const TERMINAL: BoundName = name!(BoundName, "toy-port.terminal");
-/// No backend may take longer than this from submission to terminal.
-const TERMINAL_CEILING_MICROS: u64 = 1_000;
-
-struct TxPort;
-
-impl Subject for TxPort {
-    const CONTRACT: ContractName = name!(ContractName, "toy-port::TxPort");
-
-    fn ceilings() -> ReportedBounds {
-        ReportedBounds::default().with(TERMINAL, TERMINAL_CEILING_MICROS)
-    }
+/// A duration a port's crate or a target reports; a scenario crate never
+/// writes one.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "stands for a port crate's constant or a target's report"
+)]
+const fn micros(value: u64) -> Duration {
+    Duration::from_micros(value)
 }
 
-// ---- A backend's own bound, checked against the ceiling at compile time. ----
+/// The port's bounds, by name, as the `oer_time::Duration` constants its
+/// protocols already use (#761, owner decision 6223240823).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct Bounds {
+    /// Submission to terminal.
+    terminal: Duration,
+}
 
-const S31_TERMINAL_MICROS: u64 = 800;
-const _: () = assert!(
-    S31_TERMINAL_MICROS <= TERMINAL_CEILING_MICROS,
-    "the backend exceeds the contract's ceiling"
-);
-
-// ---- What a port's conformance crate provides. ----
+/// The contract's ceilings: no backend may exceed them.
+const CEILINGS: Bounds = Bounds {
+    terminal: micros(1_000),
+};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 enum Case {
     OneFrame,
     CloseGate,
+    /// The port restarts before its frame, so its clock starts a new
+    /// generation.
+    AfterRestart,
+}
+
+impl Case {
+    const fn restart(self) -> Restart {
+        match self {
+            Self::AfterRestart => Restart::Yes,
+            Self::OneFrame | Self::CloseGate => Restart::No,
+        }
+    }
 }
 
 /// Identities read from the real returned owners, in order.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct Trace {
-    header: TraceHeader,
     submitted: Vec<u8>,
     terminals: Vec<u8>,
     /// Submission to terminal on the header's clock.
-    latency_micros: u64,
+    latency: Duration,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -77,18 +89,20 @@ enum Violation {
     Missing,
     Order,
     Bound,
-    /// The header reports no terminal bound.
-    NoBound,
 }
 
 trait Harness {
-    async fn exercise(&mut self, case: Case) -> Result<Trace, Infrastructure>;
+    async fn exercise(
+        &mut self,
+        case: Case,
+    ) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure>;
 }
 
-/// The suite's pure verdict, shared by the model tests and the stand.
-fn verify(case: Case, trace: &Trace) -> Result<(), Violation> {
+/// The suite's pure verdict, shared by the model tests and the stand; the
+/// backend's bounds come as a value.
+fn verify(case: Case, trace: &Trace, bounds: &Bounds) -> Result<(), Violation> {
     let expected = match case {
-        Case::OneFrame => 1,
+        Case::OneFrame | Case::AfterRestart => 1,
         Case::CloseGate => 2,
     };
     if trace.terminals.len() != expected || trace.submitted.len() != expected {
@@ -97,18 +111,29 @@ fn verify(case: Case, trace: &Trace) -> Result<(), Violation> {
     if trace.terminals != trace.submitted {
         return Err(Violation::Order);
     }
-    let bound = trace
-        .header
-        .bounds
-        .get(&TERMINAL)
-        .ok_or(Violation::NoBound)?;
-    if trace.latency_micros > bound {
+    if trace.latency > bounds.terminal {
         return Err(Violation::Bound);
     }
     Ok(())
 }
 
+// ---- A backend's own bounds, checked against the ceilings at compile time. ----
+
+const S31_BOUNDS: Bounds = Bounds {
+    terminal: micros(800),
+};
+const _: () = assert!(
+    S31_BOUNDS.terminal.as_micros() <= CEILINGS.terminal.as_micros(),
+    "the backend exceeds the contract's ceiling"
+);
+
 // ---- The scenario, in a block's scenario crate. ----
+
+struct TxPort;
+
+impl Subject for TxPort {
+    const CONTRACT: ContractName = name!(ContractName, "toy-port::TxPort");
+}
 
 struct TxConformance;
 
@@ -117,33 +142,50 @@ struct Params {
     cases: Vec<Case>,
 }
 
-/// The run's traces, with the cases it was asked for.
+/// One report of the target: `(case, header, trace)`.
+type Report = (Case, TraceHeader<Bounds>, Trace);
+
+/// The run's reports, with the cases it was asked for.
 #[derive(Debug, Deserialize, Serialize)]
 struct Traces {
     expected: Vec<Case>,
-    runs: Vec<(Case, Trace)>,
+    runs: Vec<Report>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum Finding {
-    Header(HeaderFinding),
+    Header(RunHeaderError),
+    AboveCeiling {
+        reported: Duration,
+        ceiling: Duration,
+    },
     Case {
         case: Case,
         violation: Violation,
     },
-    /// An expected case has no trace.
+    /// An expected case has fewer traces than it was asked for.
     Unexercised(Case),
+    /// A case has more traces than it was asked for.
+    Unexpected(Case),
 }
 
 const TWICE: Factor = Factor::times(NonZeroU32::new(2).unwrap());
+
+fn counts<'a>(cases: impl IntoIterator<Item = &'a Case>) -> BTreeMap<Case, usize> {
+    let mut counts = BTreeMap::new();
+    for case in cases {
+        *counts.entry(*case).or_default() += 1;
+    }
+    counts
+}
 
 impl Spec for TxConformance {
     const ID: ScenarioId = name!(ScenarioId, "toy-tx-conformance");
     type Purpose = Conformance;
     type Subject = TxPort;
     type Params = Params;
-    /// Conformance has no thresholds of its own: the suite, the bounds in
-    /// the trace and the contract's ceilings decide.
+    /// Conformance has no thresholds of its own: the suite, the reported
+    /// bounds and the contract's ceilings decide.
     type Criteria = ();
     type Trace = Traces;
     type Finding = Finding;
@@ -163,45 +205,53 @@ impl Spec for TxConformance {
         }
     }
 
-    fn estimate(
-        params: &Params,
-        ceilings: &ReportedBounds,
-        profile: &StandProfile,
-    ) -> Result<Estimate, WaitError> {
+    fn estimate(params: &Params, profile: &StandProfile) -> Result<Estimate, WaitError> {
         let cases = u64::try_from(params.cases.len()).map_err(|_| WaitError::Overflow)?;
         Estimate::from_waits(
             &[],
-            &[Wait::contract(TERMINAL, TWICE)],
+            &[Wait::contract(CEILINGS.terminal, TWICE)],
             cases,
-            ceilings,
             profile,
         )
     }
 
     fn verdict(traces: &Traces, (): &()) -> Verdict<Finding> {
-        let ceilings = TxPort::ceilings();
-        // A run without any trace fails on `NoTrace`, an instance without
-        // cases included.
-        let mut findings: Vec<Finding> = TraceHeader::of_run(
-            traces.runs.iter().map(|(_, trace)| &trace.header),
-            &ceilings,
-        )
-        .into_iter()
-        .map(Finding::Header)
-        .collect();
-        let exercised: BTreeSet<Case> = traces.runs.iter().map(|(case, _)| *case).collect();
-        findings.extend(
+        let mut findings = Vec::new();
+        if let Err(error) = check_run(
             traces
-                .expected
+                .runs
                 .iter()
-                .filter(|case| !exercised.contains(case))
-                .map(|case| Finding::Unexercised(*case)),
-        );
-        findings.extend(traces.runs.iter().filter_map(|(case, trace)| {
-            verify(*case, trace).err().map(|violation| Finding::Case {
-                case: *case,
-                violation,
-            })
+                .map(|(case, header, _)| (header, case.restart())),
+        ) {
+            findings.push(Finding::Header(error));
+        }
+        if let Some((_, header, _)) = traces.runs.first()
+            && header.bounds.terminal > CEILINGS.terminal
+        {
+            findings.push(Finding::AboveCeiling {
+                reported: header.bounds.terminal,
+                ceiling: CEILINGS.terminal,
+            });
+        }
+        let expected = counts(&traces.expected);
+        let exercised = counts(traces.runs.iter().map(|(case, _, _)| case));
+        for (case, &wanted) in &expected {
+            if exercised.get(case).copied().unwrap_or(0) < wanted {
+                findings.push(Finding::Unexercised(*case));
+            }
+        }
+        for (case, &got) in &exercised {
+            if got > expected.get(case).copied().unwrap_or(0) {
+                findings.push(Finding::Unexpected(*case));
+            }
+        }
+        findings.extend(traces.runs.iter().filter_map(|(case, header, trace)| {
+            verify(*case, trace, &header.bounds)
+                .err()
+                .map(|violation| Finding::Case {
+                    case: *case,
+                    violation,
+                })
         }));
         Verdict::from_findings(findings)
     }
@@ -219,7 +269,8 @@ where
     ) -> Result<Traces, Infrastructure> {
         let mut runs = Vec::new();
         for &case in &params.cases {
-            runs.push((case, executor.driver().exercise(case).await?));
+            let (header, trace) = executor.driver().exercise(case).await?;
+            runs.push((case, header, trace));
         }
         Ok(Traces {
             expected: params.cases.clone(),
@@ -230,33 +281,40 @@ where
 
 // ---- Two drivers. ----
 
-fn header(terminal_micros: u64, clock: &'static str, generation: u32) -> TraceHeader {
-    TraceHeader {
-        bounds: ReportedBounds::default().with(TERMINAL, terminal_micros),
-        clock: ClockDomain {
-            clock: oer_hil_model::ClockName::parse(clock).unwrap(),
-            generation,
-        },
-    }
-}
-
 /// The host model.
-struct ModelPort;
+struct ModelPort {
+    generation: u32,
+}
 
 impl ModelDriver for ModelPort {}
 
 impl Harness for ModelPort {
-    async fn exercise(&mut self, case: Case) -> Result<Trace, Infrastructure> {
+    async fn exercise(
+        &mut self,
+        case: Case,
+    ) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure> {
+        if case.restart() == Restart::Yes {
+            self.generation += 1;
+        }
         let frames: Vec<u8> = match case {
-            Case::OneFrame => vec![0],
+            Case::OneFrame | Case::AfterRestart => vec![0],
             Case::CloseGate => vec![0, 1],
         };
-        Ok(Trace {
-            header: header(TERMINAL_CEILING_MICROS, "model", 0),
-            submitted: frames.clone(),
-            terminals: frames,
-            latency_micros: 400,
-        })
+        let header = TraceHeader {
+            bounds: CEILINGS,
+            clock: ClockDomain {
+                clock: Clock::Model,
+                generation: self.generation,
+            },
+        };
+        Ok((
+            header,
+            Trace {
+                submitted: frames.clone(),
+                terminals: frames,
+                latency: micros(400),
+            },
+        ))
     }
 }
 
@@ -272,60 +330,95 @@ impl core::fmt::Display for NoReport {
 
 impl std::error::Error for NoReport {}
 
-/// The stand's proxy: under its lease's session it asks the target to
-/// exercise a case and decodes the postcard report the target sends; here
-/// the reports are prepared.
-struct StandProxy {
-    session: StandSession<'static>,
-    reports: VecDeque<Vec<u8>>,
+/// A report for another case than the one asked for.
+#[derive(Debug)]
+struct OtherCase {
+    asked: Case,
+    reported: Case,
 }
 
-impl StandDriver<'static> for StandProxy {
-    fn session(&self) -> &StandSession<'static> {
-        &self.session
+impl core::fmt::Display for OtherCase {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "asked for {:?}, the target reported {:?}",
+            self.asked, self.reported
+        )
     }
 }
 
+impl std::error::Error for OtherCase {}
+
+/// The stand's proxy: it asks the target to exercise a case and decodes
+/// the postcard report `(case, header, trace)` the target sends; here the
+/// reports are prepared.
+struct StandProxy {
+    reports: VecDeque<Vec<u8>>,
+}
+
+impl StandDriver for StandProxy {}
+
 impl Harness for StandProxy {
-    async fn exercise(&mut self, case: Case) -> Result<Trace, Infrastructure> {
+    async fn exercise(
+        &mut self,
+        case: Case,
+    ) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure> {
         let operation = name!(Operation, "target.report");
         let report = self.reports.pop_front().ok_or_else(|| Infrastructure {
             operation: operation.clone(),
             cause: Box::new(NoReport(case)),
         })?;
-        postcard::from_bytes(&report).map_err(|error| Infrastructure {
-            operation,
-            cause: Box::new(error),
-        })
+        let (reported, header, trace): Report =
+            postcard::from_bytes(&report).map_err(|error| Infrastructure {
+                operation: operation.clone(),
+                cause: Box::new(error),
+            })?;
+        if reported != case {
+            return Err(Infrastructure {
+                operation,
+                cause: Box::new(OtherCase {
+                    asked: case,
+                    reported,
+                }),
+            });
+        }
+        Ok((header, trace))
     }
 }
 
 fn stand(reports: Vec<Vec<u8>>) -> Stand<'static, StandProxy> {
-    Stand::new(StandProxy {
-        session: StandSession::for_tests(),
-        reports: reports.into(),
-    })
+    Stand::open(
+        StandSession::for_tests(),
+        StandProxy {
+            reports: reports.into(),
+        },
+    )
 }
 
-/// A trace as an S31 target reports it, written independently of the
-/// model: its own clock, its own bound, its own latencies.
-fn target_trace(header: TraceHeader, terminals: Vec<u8>, latency_micros: u64) -> Vec<u8> {
+fn s31(bounds: Bounds, generation: u32) -> TraceHeader<Bounds> {
+    TraceHeader {
+        bounds,
+        clock: ClockDomain {
+            clock: Clock::Systimer,
+            generation,
+        },
+    }
+}
+
+/// A report as an S31 target sends it, written independently of the
+/// model: its own clock, its own bounds, its own latencies.
+fn report(case: Case, header: TraceHeader<Bounds>, terminals: Vec<u8>, latency: u64) -> Vec<u8> {
     let submitted = if terminals.len() == 1 {
         vec![0]
     } else {
         vec![0, 1]
     };
-    postcard::to_allocvec(&Trace {
-        header,
+    let trace = Trace {
         submitted,
         terminals,
-        latency_micros,
-    })
-    .unwrap()
-}
-
-fn s31() -> TraceHeader {
-    header(S31_TERMINAL_MICROS, "esp32s31.systimer", 7)
+        latency: micros(latency),
+    };
+    postcard::to_allocvec(&(case, header, trace)).unwrap()
 }
 
 fn instance(cases: Vec<Case>) -> Instance<TxConformance> {
@@ -336,10 +429,21 @@ fn both() -> Instance<TxConformance> {
     instance(vec![Case::OneFrame, Case::CloseGate])
 }
 
+fn verdict_on_stand(instance: &Instance<TxConformance>, reports: Vec<Vec<u8>>) -> Verdict<Finding> {
+    embassy_futures::block_on(execute(instance, &(), &mut stand(reports)))
+        .unwrap()
+        .verdict
+}
+
 #[test]
-fn the_model_passes_its_own_suite() {
-    let outcome =
-        embassy_futures::block_on(execute(&both(), &(), &mut Model::new(ModelPort))).unwrap();
+fn the_model_passes_its_own_suite_restart_included() {
+    let all = instance(vec![Case::OneFrame, Case::AfterRestart, Case::CloseGate]);
+    let outcome = embassy_futures::block_on(execute(
+        &all,
+        &(),
+        &mut Model::new(ModelPort { generation: 0 }),
+    ))
+    .unwrap();
     assert_eq!(outcome.executed, Executed::Model);
     assert_eq!(outcome.verdict, Verdict::Pass);
 }
@@ -348,21 +452,20 @@ fn the_model_passes_its_own_suite() {
 fn the_stand_judges_the_target_traces_with_the_bounds_they_carry() {
     // 700 µs passes the S31's own 800 µs bound.
     let reports = vec![
-        target_trace(s31(), vec![0], 700),
-        target_trace(s31(), vec![0, 1], 790),
+        report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 700),
+        report(Case::CloseGate, s31(S31_BOUNDS, 7), vec![0, 1], 790),
     ];
-    let on_stand = embassy_futures::block_on(execute(&both(), &(), &mut stand(reports))).unwrap();
-    assert_eq!(on_stand.executed, Executed::Stand);
-    assert_eq!(on_stand.verdict, Verdict::Pass);
+    let outcome = embassy_futures::block_on(execute(&both(), &(), &mut stand(reports))).unwrap();
+    assert_eq!(outcome.executed, Executed::Stand);
+    assert_eq!(outcome.verdict, Verdict::Pass);
 
     // 900 µs keeps the 1 000 µs ceiling but not the S31's own bound.
     let late = vec![
-        target_trace(s31(), vec![0], 900),
-        target_trace(s31(), vec![0, 1], 100),
+        report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 900),
+        report(Case::CloseGate, s31(S31_BOUNDS, 7), vec![0, 1], 100),
     ];
-    let outcome = embassy_futures::block_on(execute(&both(), &(), &mut stand(late))).unwrap();
     assert_eq!(
-        outcome.verdict,
+        verdict_on_stand(&both(), late),
         Verdict::from_findings(vec![Finding::Case {
             case: Case::OneFrame,
             violation: Violation::Bound
@@ -371,46 +474,56 @@ fn the_stand_judges_the_target_traces_with_the_bounds_they_carry() {
 }
 
 #[test]
-fn a_bound_above_the_ceiling_is_a_finding() {
-    let above = || header(1_500, "esp32s31.systimer", 7);
+fn a_restart_starts_a_new_generation_and_passes() {
+    let all = instance(vec![Case::OneFrame, Case::AfterRestart, Case::CloseGate]);
     let reports = vec![
-        target_trace(above(), vec![0], 100),
-        target_trace(above(), vec![0, 1], 100),
+        report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 100),
+        report(Case::AfterRestart, s31(S31_BOUNDS, 8), vec![0], 100),
+        report(Case::CloseGate, s31(S31_BOUNDS, 8), vec![0, 1], 100),
     ];
-    let outcome = embassy_futures::block_on(execute(&both(), &(), &mut stand(reports))).unwrap();
+    assert_eq!(verdict_on_stand(&all, reports), Verdict::Pass);
+}
+
+#[test]
+fn a_new_generation_without_a_restart_is_a_finding() {
+    let reports = vec![
+        report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 100),
+        report(Case::CloseGate, s31(S31_BOUNDS, 8), vec![0, 1], 100),
+    ];
     assert_eq!(
-        outcome.verdict,
-        Verdict::from_findings(vec![Finding::Header(HeaderFinding::AboveCeiling {
-            bound: TERMINAL,
-            reported: 1_500,
-            ceiling: TERMINAL_CEILING_MICROS,
+        verdict_on_stand(&both(), reports),
+        Verdict::from_findings(vec![Finding::Header(RunHeaderError::Generation {
+            case: 1
         })])
     );
 }
 
 #[test]
-fn cases_of_one_run_carry_one_header() {
-    let rebooted = header(S31_TERMINAL_MICROS, "esp32s31.systimer", 8);
+fn a_bound_above_the_ceiling_is_a_finding() {
+    let above = Bounds {
+        terminal: micros(1_500),
+    };
     let reports = vec![
-        target_trace(s31(), vec![0], 100),
-        target_trace(rebooted, vec![0, 1], 100),
+        report(Case::OneFrame, s31(above, 7), vec![0], 100),
+        report(Case::CloseGate, s31(above, 7), vec![0, 1], 100),
     ];
-    let outcome = embassy_futures::block_on(execute(&both(), &(), &mut stand(reports))).unwrap();
     assert_eq!(
-        outcome.verdict,
-        Verdict::from_findings(vec![Finding::Header(HeaderFinding::Changed)])
+        verdict_on_stand(&both(), reports),
+        Verdict::from_findings(vec![Finding::AboveCeiling {
+            reported: micros(1_500),
+            ceiling: CEILINGS.terminal
+        }])
     );
 }
 
 #[test]
 fn a_target_trace_out_of_order_fails_with_its_finding() {
     let reports = vec![
-        target_trace(s31(), vec![0], 100),
-        target_trace(s31(), vec![1, 0], 100),
+        report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 100),
+        report(Case::CloseGate, s31(S31_BOUNDS, 7), vec![1, 0], 100),
     ];
-    let outcome = embassy_futures::block_on(execute(&both(), &(), &mut stand(reports))).unwrap();
     assert_eq!(
-        outcome.verdict,
+        verdict_on_stand(&both(), reports),
         Verdict::from_findings(vec![Finding::Case {
             case: Case::CloseGate,
             violation: Violation::Order
@@ -419,32 +532,50 @@ fn a_target_trace_out_of_order_fails_with_its_finding() {
 }
 
 #[test]
-fn a_run_without_its_cases_does_not_pass() {
+fn the_cases_are_compared_as_a_multiset() {
     let traces = Traces {
         expected: vec![Case::OneFrame, Case::CloseGate],
-        runs: Vec::new(),
+        runs: vec![
+            (
+                Case::OneFrame,
+                s31(S31_BOUNDS, 7),
+                Trace {
+                    submitted: vec![0],
+                    terminals: vec![0],
+                    latency: micros(1),
+                },
+            ),
+            (
+                Case::OneFrame,
+                s31(S31_BOUNDS, 7),
+                Trace {
+                    submitted: vec![0],
+                    terminals: vec![0],
+                    latency: micros(1),
+                },
+            ),
+        ],
     };
     assert_eq!(
         TxConformance::verdict(&traces, &()),
         Verdict::from_findings(vec![
-            Finding::Header(HeaderFinding::NoTrace),
-            Finding::Unexercised(Case::OneFrame),
             Finding::Unexercised(Case::CloseGate),
+            Finding::Unexpected(Case::OneFrame)
         ])
     );
 }
 
 #[test]
-fn an_instance_without_cases_does_not_pass() {
+fn a_run_without_traces_does_not_pass() {
     let outcome = embassy_futures::block_on(execute(
         &instance(Vec::new()),
         &(),
-        &mut Model::new(ModelPort),
+        &mut Model::new(ModelPort { generation: 0 }),
     ))
     .unwrap();
     assert_eq!(
         outcome.verdict,
-        Verdict::from_findings(vec![Finding::Header(HeaderFinding::NoTrace)])
+        Verdict::from_findings(vec![Finding::Header(RunHeaderError::NoTrace)])
     );
 }
 
@@ -453,7 +584,12 @@ fn a_missing_report_is_infrastructure_not_a_verdict() {
     let failed = embassy_futures::block_on(execute(
         &both(),
         &(),
-        &mut stand(vec![target_trace(s31(), vec![0], 100)]),
+        &mut stand(vec![report(
+            Case::OneFrame,
+            s31(S31_BOUNDS, 7),
+            vec![0],
+            100,
+        )]),
     ))
     .unwrap_err();
     let Cause::Infrastructure(infrastructure) = failed.cause else {
@@ -465,11 +601,13 @@ fn a_missing_report_is_infrastructure_not_a_verdict() {
 #[test]
 fn a_stored_trace_is_judged_again_without_a_run() {
     let reports = vec![
-        target_trace(s31(), vec![0], 900),
-        target_trace(s31(), vec![0, 1], 100),
+        report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 900),
+        report(Case::CloseGate, s31(S31_BOUNDS, 7), vec![0, 1], 100),
     ];
     let outcome = embassy_futures::block_on(execute(&both(), &(), &mut stand(reports))).unwrap();
     let stored = postcard::to_allocvec(&outcome.trace).unwrap();
-    let recomputed = TxConformance::verdict(&postcard::from_bytes(&stored).unwrap(), &());
-    assert_eq!(recomputed, outcome.verdict);
+    assert_eq!(
+        TxConformance::verdict(&postcard::from_bytes(&stored).unwrap(), &()),
+        outcome.verdict
+    );
 }

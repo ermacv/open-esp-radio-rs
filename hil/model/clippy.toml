@@ -20,5 +20,11 @@ disallowed-methods = [
     { path = "core::time::Duration::from_secs_f32", reason = "derive the wait: oer_hil_model::Wait" },
     { path = "core::time::Duration::from_secs_f64", reason = "derive the wait: oer_hil_model::Wait" },
     { path = "core::time::Duration::new", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::try_from_secs_f32", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::try_from_secs_f64", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "oer_time::Duration::from_micros", reason = "derive the wait: oer_hil_model::Wait from a port's CEILINGS" },
+    { path = "oer_time::Duration::from_millis", reason = "derive the wait: oer_hil_model::Wait from a port's CEILINGS" },
+    { path = "oer_time::Duration::from_secs", reason = "derive the wait: oer_hil_model::Wait from a port's CEILINGS" },
     { path = "std::thread::sleep", reason = "wait for a typed event or a derived oer_hil_model::Wait" },
+    { path = "std::thread::sleep_ms", reason = "wait for a typed event or a derived oer_hil_model::Wait" },
 ]

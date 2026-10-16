@@ -2,33 +2,10 @@
 //! literal.
 
 use core::{fmt, num::NonZeroU32};
-use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BoundName, Overflow, SpanName, StandProfile, arithmetic};
-
-/// Bounds by name, in microseconds: a contract's ceilings
-/// ([`Subject::ceilings`](crate::Subject::ceilings)) or the bounds an
-/// image reports in its traces.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
-pub struct ReportedBounds(BTreeMap<BoundName, u64>);
-
-impl ReportedBounds {
-    pub fn with(mut self, name: BoundName, micros: u64) -> Self {
-        self.0.insert(name, micros);
-        self
-    }
-
-    pub fn get(&self, name: &BoundName) -> Option<u64> {
-        self.0.get(name).copied()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&BoundName, u64)> {
-        self.0.iter().map(|(name, &micros)| (name, micros))
-    }
-}
+use crate::{Overflow, SpanName, StandProfile, arithmetic};
 
 /// A multiplier of at least one, as a ratio, so that a margin is exact and
 /// reviewable.
@@ -102,57 +79,103 @@ mod sealed {
 /// protocol interval can only be made from one of these, never from a bare
 /// number; a scenario's parameters hold them.
 pub trait ProtocolQuantity: sealed::Sealed {
-    /// What the interval is, for records.
-    const NAME: &'static str;
-    fn interval_micros(&self) -> Result<u64, Overflow>;
+    fn interval_micros(&self) -> u64;
 }
 
-/// An IEEE 802.11 interval in time units of 1024 µs: a beacon interval, a
-/// listen interval.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TimeUnits(pub u32);
+/// A protocol interval outside its protocol's range.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OutOfRange {
+    pub quantity: &'static str,
+    pub value: u32,
+}
 
-/// A Bluetooth LE connection interval in its 1.25 ms units.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ConnectionInterval(pub u16);
-
-/// An IEEE 802.15.4 period in symbols of the 2.4 GHz O-QPSK PHY, 16 µs
-/// each: a backoff period, a turnaround, a superframe slot.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Symbols(pub u32);
-
-impl sealed::Sealed for TimeUnits {}
-impl sealed::Sealed for ConnectionInterval {}
-impl sealed::Sealed for Symbols {}
-
-impl ProtocolQuantity for TimeUnits {
-    const NAME: &'static str = "ieee80211-time-units";
-
-    fn interval_micros(&self) -> Result<u64, Overflow> {
-        arithmetic::mul(u64::from(self.0), 1_024)
+impl fmt::Display for OutOfRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} is outside its protocol's range",
+            self.quantity, self.value
+        )
     }
 }
 
-impl ProtocolQuantity for ConnectionInterval {
-    const NAME: &'static str = "ble-connection-interval";
+impl std::error::Error for OutOfRange {}
 
-    fn interval_micros(&self) -> Result<u64, Overflow> {
-        arithmetic::mul(u64::from(self.0), 1_250)
-    }
+/// An IEEE 802.11 interval of at least one time unit of 1024 µs: a beacon
+/// interval, a listen interval.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct TimeUnits(u32);
+
+/// A Bluetooth LE connection interval in its 1.25 ms units, 6 to 3200 (7.5
+/// ms to 4 s).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct ConnectionInterval(u32);
+
+/// An IEEE 802.15.4 period of at least one symbol of the 2.4 GHz O-QPSK
+/// PHY, 16 µs each: a backoff period, a turnaround, a superframe slot.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Symbols(u32);
+
+macro_rules! quantity {
+    ($type:ident, $name:literal, $range:expr, $micros:expr) => {
+        impl $type {
+            pub const fn new(value: u32) -> Result<Self, OutOfRange> {
+                let range = $range;
+                if *range.start() <= value && value <= *range.end() {
+                    Ok(Self(value))
+                } else {
+                    Err(OutOfRange {
+                        quantity: $name,
+                        value,
+                    })
+                }
+            }
+
+            pub const fn get(self) -> u32 {
+                self.0
+            }
+        }
+
+        impl TryFrom<u32> for $type {
+            type Error = OutOfRange;
+
+            fn try_from(value: u32) -> Result<Self, OutOfRange> {
+                Self::new(value)
+            }
+        }
+
+        impl From<$type> for u32 {
+            fn from(quantity: $type) -> Self {
+                quantity.0
+            }
+        }
+
+        impl sealed::Sealed for $type {}
+
+        impl ProtocolQuantity for $type {
+            fn interval_micros(&self) -> u64 {
+                u64::from(self.0) * $micros
+            }
+        }
+    };
 }
 
-impl ProtocolQuantity for Symbols {
-    const NAME: &'static str = "ieee802154-symbols";
-
-    fn interval_micros(&self) -> Result<u64, Overflow> {
-        arithmetic::mul(u64::from(self.0), 16)
-    }
-}
+quantity!(TimeUnits, "802.11 time units", 1..=u32::MAX, 1_024);
+quantity!(
+    ConnectionInterval,
+    "BLE connection interval",
+    6..=3_200,
+    1_250
+);
+quantity!(Symbols, "802.15.4 symbols", 1..=u32::MAX, 16);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Source {
     Contract {
-        bound: BoundName,
+        ceiling_micros: u64,
         factor: Factor,
     },
     Protocol {
@@ -171,21 +194,22 @@ enum Source {
 pub struct Wait(Source);
 
 impl Wait {
-    /// A contract bound times a factor. A plan takes the bound from the
-    /// contract's ceiling, which no backend may exceed.
-    pub const fn contract(bound: BoundName, factor: Factor) -> Self {
-        Self(Source::Contract { bound, factor })
+    /// A contract's ceiling times a factor: the value of the port's own
+    /// `CEILINGS` constant, which no backend may exceed (#761, owner
+    /// decisions 6221891573 and 6223045367).
+    pub const fn contract(ceiling: oer_time::Duration, factor: Factor) -> Self {
+        Self(Source::Contract {
+            ceiling_micros: ceiling.as_micros(),
+            factor,
+        })
     }
 
     /// `count` protocol intervals, for example six BLE connection intervals.
-    pub fn protocol<Q: ProtocolQuantity>(
-        quantity: &Q,
-        count: NonZeroU32,
-    ) -> Result<Self, Overflow> {
-        Ok(Self(Source::Protocol {
-            interval_micros: quantity.interval_micros()?,
+    pub fn protocol<Q: ProtocolQuantity>(quantity: &Q, count: NonZeroU32) -> Self {
+        Self(Source::Protocol {
+            interval_micros: quantity.interval_micros(),
             count,
-        }))
+        })
     }
 
     /// A span measured on the stand ([`StandProfile`]).
@@ -213,8 +237,6 @@ pub struct Resolved {
 /// Why a wait has no length.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WaitError {
-    /// The contract's ceilings have no such bound.
-    NoBound(BoundName),
     /// The stand profile has no such span.
     NoSpan(SpanName),
     Overflow,
@@ -229,7 +251,6 @@ impl From<Overflow> for WaitError {
 impl fmt::Display for WaitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoBound(name) => write!(f, "the contract has no ceiling `{name}`"),
             Self::NoSpan(name) => write!(f, "the stand profile has no span `{name}`"),
             Self::Overflow => Overflow.fmt(f),
         }
@@ -240,21 +261,15 @@ impl std::error::Error for WaitError {}
 
 impl Wait {
     /// The wait's length in microseconds, with its label when provisional.
-    pub fn micros(
-        &self,
-        ceilings: &ReportedBounds,
-        profile: &StandProfile,
-    ) -> Result<Resolved, WaitError> {
+    pub fn micros(&self, profile: &StandProfile) -> Result<Resolved, WaitError> {
         match &self.0 {
-            Source::Contract { bound, factor } => {
-                let ceiling = ceilings
-                    .get(bound)
-                    .ok_or_else(|| WaitError::NoBound(bound.clone()))?;
-                Ok(Resolved {
-                    micros: factor.apply(ceiling)?,
-                    provisional: None,
-                })
-            }
+            Source::Contract {
+                ceiling_micros,
+                factor,
+            } => Ok(Resolved {
+                micros: factor.apply(*ceiling_micros)?,
+                provisional: None,
+            }),
             Source::Protocol {
                 interval_micros,
                 count,
@@ -270,7 +285,6 @@ impl Wait {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::name;
 
     fn ratio(numerator: u32, denominator: u32) -> Factor {
         Factor::new(numerator, NonZeroU32::new(denominator).unwrap()).unwrap()
@@ -300,40 +314,51 @@ mod tests {
     }
 
     #[test]
-    fn a_contract_wait_uses_the_ceiling() {
-        let drain = name!(BoundName, "lower-mac.drain");
-        let ceilings = ReportedBounds::default().with(drain.clone(), 4_000);
-        let wait = Wait::contract(drain, Factor::times(NonZeroU32::new(2).unwrap()));
+    fn a_contract_wait_is_its_ceiling_times_its_factor() {
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "stands for a port's CEILINGS constant"
+        )]
+        let ceiling = oer_time::Duration::from_micros(4_000);
+        let wait = Wait::contract(ceiling, Factor::times(NonZeroU32::new(2).unwrap()));
         assert_eq!(
-            wait.micros(&ceilings, &StandProfile::empty()),
+            wait.micros(&StandProfile::empty()),
             Ok(Resolved {
                 micros: 8_000,
                 provisional: None
             })
         );
-        let retune = name!(BoundName, "lower-mac.retune");
-        assert_eq!(
-            Wait::contract(retune.clone(), Factor::ONE).micros(&ceilings, &StandProfile::empty()),
-            Err(WaitError::NoBound(retune))
-        );
     }
 
     #[test]
-    fn protocol_waits_come_from_typed_units() {
+    fn protocol_waits_come_from_typed_units_in_their_range() {
         let six = NonZeroU32::new(6).unwrap();
-        let none = ReportedBounds::default();
         let profile = StandProfile::empty();
-        let micros = |wait: Wait| wait.micros(&none, &profile).unwrap().micros;
+        let micros = |wait: Wait| wait.micros(&profile).unwrap().micros;
         assert_eq!(
-            micros(Wait::protocol(&ConnectionInterval(24), six).unwrap()),
+            micros(Wait::protocol(&ConnectionInterval::new(24).unwrap(), six)),
             180_000
         );
         assert_eq!(
-            micros(Wait::protocol(&TimeUnits(100), six).unwrap()),
+            micros(Wait::protocol(&TimeUnits::new(100).unwrap(), six)),
             614_400
         );
-        assert_eq!(micros(Wait::protocol(&Symbols(20), six).unwrap()), 1_920);
-        let huge = Wait::protocol(&TimeUnits(u32::MAX), NonZeroU32::MAX).unwrap();
-        assert_eq!(huge.micros(&none, &profile), Err(WaitError::Overflow));
+        assert_eq!(
+            micros(Wait::protocol(&Symbols::new(20).unwrap(), six)),
+            1_920
+        );
+        let huge = Wait::protocol(&TimeUnits::new(u32::MAX).unwrap(), NonZeroU32::MAX);
+        assert_eq!(huge.micros(&profile), Err(WaitError::Overflow));
+    }
+
+    #[test]
+    fn protocol_units_outside_their_range_are_refused() {
+        assert!(ConnectionInterval::new(5).is_err());
+        assert!(ConnectionInterval::new(6).is_ok());
+        assert!(ConnectionInterval::new(3_200).is_ok());
+        assert!(ConnectionInterval::new(3_201).is_err());
+        assert!(TimeUnits::new(0).is_err());
+        assert!(Symbols::new(0).is_err());
+        assert!(serde_json::from_str::<ConnectionInterval>("3201").is_err());
     }
 }

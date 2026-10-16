@@ -18,23 +18,35 @@ impl Sha256 {
     }
 
     /// The canonical form only.
-    pub fn parse(text: &str) -> Option<Self> {
+    pub fn parse(text: &str) -> Result<Self, InvalidDigest> {
         let digits = text.as_bytes();
         if digits.len() != 64 {
-            return None;
+            return Err(InvalidDigest);
         }
         let value = |digit: u8| match digit {
-            b'0'..=b'9' => Some(digit - b'0'),
-            b'a'..=b'f' => Some(digit - b'a' + 10),
-            _ => None,
+            b'0'..=b'9' => Ok(digit - b'0'),
+            b'a'..=b'f' => Ok(digit - b'a' + 10),
+            _ => Err(InvalidDigest),
         };
         let mut bytes = [0; 32];
         for (byte, pair) in bytes.iter_mut().zip(digits.chunks_exact(2)) {
             *byte = (value(pair[0])? << 4) | value(pair[1])?;
         }
-        Some(Self(bytes))
+        Ok(Self(bytes))
     }
 }
+
+/// A digest that is not 64 lowercase hexadecimal digits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidDigest;
+
+impl fmt::Display for InvalidDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a SHA-256 digest is 64 lowercase hexadecimal digits")
+    }
+}
+
+impl std::error::Error for InvalidDigest {}
 
 impl fmt::Display for Sha256 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -51,8 +63,7 @@ impl Serialize for Sha256 {
 impl<'de> Deserialize<'de> for Sha256 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        Self::parse(&text)
-            .ok_or_else(|| D::Error::custom("a SHA-256 digest is 64 lowercase hexadecimal digits"))
+        Self::parse(&text).map_err(D::Error::custom)
     }
 }
 

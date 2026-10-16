@@ -1,13 +1,13 @@
 //! Execution of typed HIL scenarios ([#761]).
 //!
 //! A scenario is an [`oer_hil_model::Spec`]; executing it is [`Run<X>`]
-//! for an [`Executor`] `X`: [`Model`] around a [`ModelDriver`], or
-//! [`Stand`] around a [`StandDriver`], which holds the [`StandSession`] of
-//! a granted stand lease. A conformance scenario is generic over its
-//! port's harness trait, so the model's harness and the stand's proxy
-//! (which asks the target to exercise a case and decodes the trace it
-//! reports) run the same scenario code, and the same pure verdict judges
-//! both.
+//! for an [`Executor`]: [`Model`] around a [`ModelDriver`], or [`Stand`]
+//! around a [`StandDriver`] under the [`StandSession`] of a granted stand
+//! lease, which the stand executor holds. A conformance scenario is
+//! generic over its port's harness trait, so the model's harness and the
+//! stand's proxy (which asks the target to exercise a case and decodes the
+//! `(case, header, trace)` it reports) run the same scenario code, and the
+//! same pure verdict judges both.
 //!
 //! [`execute`] admits a scenario only on an executor whose kind runs its
 //! purpose ([`RunsOn`]): the model runs conformance only. An interop
@@ -17,10 +17,7 @@
 //! # use oer_hil_executor::*;
 //! # use oer_hil_model::*;
 //! # struct Peer;
-//! # impl Subject for Peer {
-//! #     const CONTRACT: ContractName = name!(ContractName, "toy::Peer");
-//! #     fn ceilings() -> ReportedBounds { ReportedBounds::default() }
-//! # }
+//! # impl Subject for Peer { const CONTRACT: ContractName = name!(ContractName, "toy::Peer"); }
 //! struct WithHostapd;
 //! impl Spec for WithHostapd {
 //!     const ID: ScenarioId = name!(ScenarioId, "with-hostapd");
@@ -34,9 +31,7 @@
 //! #   fn target((): &()) -> TargetCapabilities {
 //! #       TargetCapabilities { chip: name!(ChipId, "esp32s31"), composition: Composition::Any, capabilities: Default::default() }
 //! #   }
-//! #   fn estimate((): &(), c: &ReportedBounds, p: &StandProfile) -> Result<Estimate, WaitError> {
-//! #       Estimate::from_waits(&[], &[], 0, c, p)
-//! #   }
+//! #   fn estimate((): &(), p: &StandProfile) -> Result<Estimate, WaitError> { Estimate::from_waits(&[], &[], 0, p) }
 //! #   fn verdict((): &(), (): &()) -> Verdict<()> { Verdict::Pass }
 //! }
 //! impl<X: Executor> Run<X> for WithHostapd {
@@ -54,10 +49,7 @@
 //! # use oer_hil_executor::*;
 //! # use oer_hil_model::*;
 //! # struct Peer;
-//! # impl Subject for Peer {
-//! #     const CONTRACT: ContractName = name!(ContractName, "toy::Peer");
-//! #     fn ceilings() -> ReportedBounds { ReportedBounds::default() }
-//! # }
+//! # impl Subject for Peer { const CONTRACT: ContractName = name!(ContractName, "toy::Peer"); }
 //! struct WithHostapd;
 //! impl Spec for WithHostapd {
 //!     const ID: ScenarioId = name!(ScenarioId, "with-hostapd");
@@ -71,34 +63,31 @@
 //! #   fn target((): &()) -> TargetCapabilities {
 //! #       TargetCapabilities { chip: name!(ChipId, "esp32s31"), composition: Composition::Any, capabilities: Default::default() }
 //! #   }
-//! #   fn estimate((): &(), c: &ReportedBounds, p: &StandProfile) -> Result<Estimate, WaitError> {
-//! #       Estimate::from_waits(&[], &[], 0, c, p)
-//! #   }
+//! #   fn estimate((): &(), p: &StandProfile) -> Result<Estimate, WaitError> { Estimate::from_waits(&[], &[], 0, p) }
 //! #   fn verdict((): &(), (): &()) -> Verdict<()> { Verdict::Pass }
 //! }
 //! impl<X: Executor> Run<X> for WithHostapd {
 //!     async fn run((): &(), _: &mut X, _: &mut Recorder) -> Result<(), Infrastructure> { Ok(()) }
 //! }
-//! struct Hostapd(StandSession<'static>);
-//! impl StandDriver<'static> for Hostapd {
-//!     fn session(&self) -> &StandSession<'static> { &self.0 }
-//! }
+//! struct Hostapd;
+//! impl StandDriver for Hostapd {}
 //! let instance = Instance::<WithHostapd>::new(name!(InstanceName, "open"), ());
-//! let _ = execute(&instance, &(), &mut Stand::new(Hostapd(StandSession::for_tests())));
+//! let _ = execute(&instance, &(), &mut Stand::open(StandSession::for_tests(), Hostapd));
 //! ```
 //!
-//! A model driver cannot pose as the stand, because a stand driver holds
-//! the session of a granted lease:
+//! A driver runs as the stand only under the session of a granted lease,
+//! which only the arbiter's grant makes; a session cannot be forged:
 //!
-//! ```compile_fail,E0277
+//! ```compile_fail,E0451
 //! # use oer_hil_executor::*;
 //! struct ModelPort;
-//! impl ModelDriver for ModelPort {}
-//! let _ = Stand::new(ModelPort);
+//! impl StandDriver for ModelPort {}
+//! let forged = StandSession { _lease: core::marker::PhantomData };
+//! let _ = Stand::open(forged, ModelPort);
 //! ```
 //!
-//! Nor can any other executor claim the stand's kind, since only
-//! [`Model`] and [`Stand`] are executors:
+//! Nor can any other executor claim the stand's kind, since only [`Model`]
+//! and [`Stand`] are executors:
 //!
 //! ```compile_fail,E0277
 //! # use oer_hil_executor::*;
@@ -112,16 +101,17 @@
 //! }
 //! ```
 //!
-//! A driver made under a lease can:
+//! A driver opened with a session runs as the stand:
 //!
 //! ```
 //! # use oer_hil_executor::*;
-//! struct Proxy(StandSession<'static>);
-//! impl StandDriver<'static> for Proxy {
-//!     fn session(&self) -> &StandSession<'static> { &self.0 }
-//! }
-//! let _ = Stand::new(Proxy(StandSession::for_tests()));
+//! struct Proxy;
+//! impl StandDriver for Proxy {}
+//! let _ = Stand::open(StandSession::for_tests(), Proxy);
 //! ```
+//!
+//! `StandSession::for_tests` exists only under the `test-support`
+//! feature, which `cargo tidy check` allows only in dev-dependencies.
 //!
 //! The [`Recorder`] keeps what a run measured, a name being a count or a
 //! measurement, never both. [`plan`] refuses what the stand lacks, checks a

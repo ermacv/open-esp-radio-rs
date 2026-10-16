@@ -11,6 +11,7 @@ hil/
 ├── protocol/          host/target command and telemetry wire protocol
 ├── schema/            evidence contract shared with qualification
 ├── model/             the typed scenario model: spec, purpose, verdict, names, derived waits, stand profile
+├── trace-header/      the no_std header of conformance traces: typed bounds and clock domain
 ├── observer/          the observer's build identity, content store and receipts
 ├── scenarios/         versioned, non-secret host workloads and criteria
 ├── evidence/          recorded evidence shards per chip

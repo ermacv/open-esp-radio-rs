@@ -1,9 +1,11 @@
 //! What a scenario needs from the stand: boards by role and capability,
-//! fixtures and its footprint on the air.
+//! and fixtures.
 
 use core::fmt;
 
 use serde::{Deserialize, Serialize};
+
+use crate::{ChipId, FixtureName};
 
 /// What a board does in a scenario.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -42,8 +44,7 @@ pub enum BoardCapability {
 #[serde(rename_all = "kebab-case")]
 pub struct BoardNeed {
     pub role: BoardRole,
-    /// The chip identifier of `platform/<chip>/chip.toml`.
-    pub chip: String,
+    pub chip: ChipId,
     pub capabilities: Vec<BoardCapability>,
 }
 
@@ -51,54 +52,17 @@ pub struct BoardNeed {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct BoardOffer {
-    pub name: String,
-    pub chip: String,
+    pub chip: ChipId,
     pub roles: Vec<BoardRole>,
     pub capabilities: Vec<BoardCapability>,
 }
 
-/// The band a scenario's radio work occupies.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+/// What the stand offers a plan.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Band {
-    Ghz2_4,
-    Ghz5,
-}
-
-/// How much air a scenario uses.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Airtime {
-    /// Occasional frames.
-    Quiet,
-    /// Ordinary protocol traffic.
-    Normal,
-    /// Continuous transmission: a carrier, DTM, a throughput flood.
-    Flood,
-}
-
-/// Whether a scenario tolerates other transmitters in its range.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Tolerance {
-    /// No other transmitter may use the range: RF figures, performance.
-    Strict,
-    Tolerant,
-}
-
-/// A scenario's footprint on the stand's air, which the arbiter grants.
-/// It is the stand's resource, distinct from the on-chip `AirClaim` of the
-/// radio-system contract (#771) that a coexistence scenario takes as a
-/// parameter.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct AirFootprint {
-    pub band: Band,
-    /// Centre frequencies in MHz.
-    pub centres_mhz: Vec<u32>,
-    pub bandwidth_mhz: u32,
-    pub airtime: Airtime,
-    pub tolerance: Tolerance,
+pub struct StandOffer {
+    pub boards: Vec<BoardOffer>,
+    pub fixtures: Vec<FixtureName>,
 }
 
 /// Everything a scenario needs from the stand.
@@ -106,21 +70,21 @@ pub struct AirFootprint {
 #[serde(rename_all = "kebab-case")]
 pub struct Resources {
     pub boards: Vec<BoardNeed>,
-    /// Fixture names of the stand file (#335).
-    pub fixtures: Vec<String>,
-    /// `None` for work that does not use the air.
-    pub air: Option<AirFootprint>,
+    pub fixtures: Vec<FixtureName>,
 }
 
 /// Why the stand cannot run a scenario, found at plan time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Unmet {
+    /// No board left for the need; `missing` is what the board of this
+    /// chip and role that lacks the fewest of the need's capabilities
+    /// lacks, empty when no board takes the role at all.
     Board {
         role: BoardRole,
-        chip: String,
+        chip: ChipId,
         missing: Vec<BoardCapability>,
     },
-    Fixture(String),
+    Fixture(FixtureName),
 }
 
 impl fmt::Display for Unmet {
@@ -137,12 +101,44 @@ impl fmt::Display for Unmet {
                 role,
                 chip,
                 missing,
-            } => {
-                write!(f, "no {chip} board for the {role:?} role has {missing:?}")
-            }
+            } => write!(f, "no {chip} board for the {role:?} role has {missing:?}"),
             Self::Fixture(name) => write!(f, "the stand has no fixture `{name}`"),
         }
     }
+}
+
+fn takes(need: &BoardNeed, board: &BoardOffer) -> bool {
+    board.chip == need.chip && board.roles.contains(&need.role)
+}
+
+fn fits(need: &BoardNeed, board: &BoardOffer) -> bool {
+    takes(need, board)
+        && need
+            .capabilities
+            .iter()
+            .all(|c| board.capabilities.contains(c))
+}
+
+/// Kuhn's augmenting path for `need`; `owner[board]` is the need holding
+/// it. A failed search leaves `owner` unchanged.
+fn augment(
+    needs: &[BoardNeed],
+    boards: &[BoardOffer],
+    need: usize,
+    seen: &mut [bool],
+    owner: &mut [Option<usize>],
+) -> bool {
+    for board in 0..boards.len() {
+        if seen[board] || !fits(&needs[need], &boards[board]) {
+            continue;
+        }
+        seen[board] = true;
+        if owner[board].is_none_or(|other| augment(needs, boards, other, seen, owner)) {
+            owner[board] = Some(need);
+            return true;
+        }
+    }
+    false
 }
 
 impl Resources {
@@ -150,49 +146,16 @@ impl Resources {
     /// offered boards by a maximum bipartite matching, so a board with a
     /// rare capability is not spent on a need that does not require it.
     /// Empty when the stand can run the scenario.
-    pub fn unmet(&self, boards: &[BoardOffer], fixtures: &[String]) -> Vec<Unmet> {
-        let takes = |need: &BoardNeed, board: &BoardOffer| {
-            board.chip == need.chip && board.roles.contains(&need.role)
-        };
-        let fits = |need: &BoardNeed, board: &BoardOffer| {
-            takes(need, board)
-                && need
-                    .capabilities
-                    .iter()
-                    .all(|c| board.capabilities.contains(c))
-        };
-        // Kuhn's augmenting paths: `owner[board]` is the need holding it.
-        let mut owner: Vec<Option<usize>> = vec![None; boards.len()];
-        fn augment(
-            need: usize,
-            fits: &dyn Fn(usize, usize) -> bool,
-            boards: usize,
-            seen: &mut [bool],
-            owner: &mut [Option<usize>],
-        ) -> bool {
-            for board in 0..boards {
-                if seen[board] || !fits(need, board) {
-                    continue;
-                }
-                seen[board] = true;
-                if owner[board].is_none_or(|other| augment(other, fits, boards, seen, owner)) {
-                    owner[board] = Some(need);
-                    return true;
-                }
-            }
-            false
-        }
-        let fit = |need: usize, board: usize| fits(&self.boards[need], &boards[board]);
+    pub fn unmet(&self, stand: &StandOffer) -> Vec<Unmet> {
+        let mut owner = vec![None; stand.boards.len()];
         let mut unmet = Vec::new();
         for (index, need) in self.boards.iter().enumerate() {
-            let mut seen = vec![false; boards.len()];
-            if augment(index, &fit, boards.len(), &mut seen, &mut owner) {
+            let mut seen = vec![false; stand.boards.len()];
+            if augment(&self.boards, &stand.boards, index, &mut seen, &mut owner) {
                 continue;
             }
-            // Name what the board of this chip and role that lacks the
-            // fewest capabilities lacks, or nothing when no board takes the
-            // role at all.
-            let missing = boards
+            let missing = stand
+                .boards
                 .iter()
                 .filter(|board| takes(need, board))
                 .map(|board| {
@@ -211,7 +174,7 @@ impl Resources {
             });
         }
         for fixture in &self.fixtures {
-            if !fixtures.contains(fixture) {
+            if !stand.fixtures.contains(fixture) {
                 unmet.push(Unmet::Fixture(fixture.clone()));
             }
         }
@@ -222,36 +185,45 @@ impl Resources {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::name;
 
-    fn s31(name: &str, capabilities: Vec<BoardCapability>) -> BoardOffer {
+    fn s31(capabilities: Vec<BoardCapability>) -> BoardOffer {
         BoardOffer {
-            name: name.into(),
-            chip: "esp32s31".into(),
+            chip: name!(ChipId, "esp32s31"),
             roles: vec![BoardRole::Dut, BoardRole::Peer],
             capabilities,
         }
     }
 
+    fn need(role: BoardRole, capabilities: Vec<BoardCapability>) -> BoardNeed {
+        BoardNeed {
+            role,
+            chip: name!(ChipId, "esp32s31"),
+            capabilities,
+        }
+    }
+
+    fn stand(boards: Vec<BoardOffer>, fixtures: Vec<FixtureName>) -> StandOffer {
+        StandOffer { boards, fixtures }
+    }
+
     #[test]
     fn a_crystal_scenario_is_rejected_on_a_board_without_one() {
+        let crystal = BoardCapability::LpClock(LpClockSource::Xtal32k);
         let needs = Resources {
-            boards: vec![BoardNeed {
-                role: BoardRole::Dut,
-                chip: "esp32s31".into(),
-                capabilities: vec![BoardCapability::LpClock(LpClockSource::Xtal32k)],
-            }],
+            boards: vec![need(BoardRole::Dut, vec![crystal])],
             ..Resources::default()
         };
-        let stand = [s31(
-            "a",
-            vec![BoardCapability::LpClock(LpClockSource::RcSlow)],
-        )];
+        let offer = stand(
+            vec![s31(vec![BoardCapability::LpClock(LpClockSource::RcSlow)])],
+            Vec::new(),
+        );
         assert_eq!(
-            needs.unmet(&stand, &[]),
+            needs.unmet(&offer),
             vec![Unmet::Board {
                 role: BoardRole::Dut,
-                chip: "esp32s31".into(),
-                missing: vec![BoardCapability::LpClock(LpClockSource::Xtal32k)],
+                chip: name!(ChipId, "esp32s31"),
+                missing: vec![crystal]
             }]
         );
     }
@@ -260,64 +232,64 @@ mod tests {
     fn a_rare_capability_is_kept_for_the_need_that_requires_it() {
         let needs = Resources {
             boards: vec![
-                BoardNeed {
-                    role: BoardRole::Dut,
-                    chip: "esp32s31".into(),
-                    capabilities: Vec::new(),
-                },
-                BoardNeed {
-                    role: BoardRole::Peer,
-                    chip: "esp32s31".into(),
-                    capabilities: vec![BoardCapability::Ufl],
-                },
+                need(BoardRole::Dut, Vec::new()),
+                need(BoardRole::Peer, vec![BoardCapability::Ufl]),
             ],
             ..Resources::default()
         };
-        let stand = [s31("a", vec![BoardCapability::Ufl]), s31("b", Vec::new())];
-        assert!(needs.unmet(&stand, &[]).is_empty());
+        let offer = stand(
+            vec![s31(vec![BoardCapability::Ufl]), s31(Vec::new())],
+            Vec::new(),
+        );
+        assert!(needs.unmet(&offer).is_empty());
     }
 
     #[test]
     fn an_unmet_need_names_what_the_closest_board_lacks() {
         let crystal = BoardCapability::LpClock(LpClockSource::Xtal32k);
         let needs = Resources {
-            boards: vec![BoardNeed {
-                role: BoardRole::Dut,
-                chip: "esp32s31".into(),
-                capabilities: vec![BoardCapability::Ufl, crystal],
-            }],
+            boards: vec![need(BoardRole::Dut, vec![BoardCapability::Ufl, crystal])],
             ..Resources::default()
         };
-        let stand = [s31("a", Vec::new()), s31("b", vec![BoardCapability::Ufl])];
+        let offer = stand(
+            vec![s31(Vec::new()), s31(vec![BoardCapability::Ufl])],
+            Vec::new(),
+        );
         assert_eq!(
-            needs.unmet(&stand, &[]),
+            needs.unmet(&offer),
             vec![Unmet::Board {
                 role: BoardRole::Dut,
-                chip: "esp32s31".into(),
+                chip: name!(ChipId, "esp32s31"),
                 missing: vec![crystal]
             }]
         );
     }
 
     #[test]
-    fn each_needed_board_takes_a_distinct_offer() {
-        let need = |role| BoardNeed {
-            role,
-            chip: "esp32s31".into(),
-            capabilities: Vec::new(),
-        };
+    fn each_needed_board_takes_a_distinct_offer_and_fixtures_are_named() {
+        let hostapd = name!(FixtureName, "hostapd");
         let needs = Resources {
-            boards: vec![need(BoardRole::Dut), need(BoardRole::Peer)],
-            fixtures: vec!["hostapd".into()],
-            air: None,
+            boards: vec![
+                need(BoardRole::Dut, Vec::new()),
+                need(BoardRole::Peer, Vec::new()),
+            ],
+            fixtures: vec![hostapd.clone()],
         };
-        let one = [s31("a", Vec::new())];
-        assert_eq!(needs.unmet(&one, &["hostapd".into()]).len(), 1);
-        let two = [s31("a", Vec::new()), s31("b", Vec::new())];
-        assert!(needs.unmet(&two, &["hostapd".into()]).is_empty());
         assert_eq!(
-            needs.unmet(&two, &[]),
-            vec![Unmet::Fixture("hostapd".into())]
+            needs
+                .unmet(&stand(vec![s31(Vec::new())], vec![hostapd.clone()]))
+                .len(),
+            1
+        );
+        let two = vec![s31(Vec::new()), s31(Vec::new())];
+        assert!(
+            needs
+                .unmet(&stand(two.clone(), vec![hostapd.clone()]))
+                .is_empty()
+        );
+        assert_eq!(
+            needs.unmet(&stand(two, Vec::new())),
+            vec![Unmet::Fixture(hostapd)]
         );
     }
 }

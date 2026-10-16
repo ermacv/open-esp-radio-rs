@@ -1,0 +1,37 @@
+[package]
+name = "oer-hil-evidence-archive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The HIL evidence archive: content-addressed versions of sealed runs, the pin the repository tracks, deterministic packing, bounded verified extraction and publication through a release transport"
+
+[dependencies]
+oer-durable = { path = "../../../tools/durable" }
+oer-hil-model = { path = "../../model" }
+oer-hil-run-bundle-format = { path = "../run-bundle/format" }
+oer-hil-schema = { path = "../../schema" }
+oer-process = { path = "../../../tools/process" }
+rustix = { version = "1.1.4", features = ["fs"] }
+flate2 = "1.1.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tar = "0.4.46"
+tempfile = "3"
+toml = "=1.1.4"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "hil"
+platform = "host"
+host-layer = "foundation"
+host-app = "formats"
+host-boundary = "format"
+hil = "observation"
+
+[package.metadata.docs.rs]

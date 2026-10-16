@@ -1,21 +1,18 @@
-//! The conformance harness template (#761 Q3, architecture section 3, and
-//! owner decision 6223045367) on a toy port.
+//! The conformance harness template (#761 Q3, architecture section 3,
+//! owner decisions 6223045367 and 6223240823) on a toy port.
 //!
-//! A port's conformance crate (for Wi-Fi `…-lower-mac-conformance`) is
-//! `no_std`, needs no HIL dependency, and holds:
-//! - its bounds as a type, `struct Bounds` with named fields, and the
-//!   contract's `const CEILINGS: Bounds`;
-//! - its case and trace types, with a `wire` feature;
-//! - `Harness::exercise(case)`, which returns the trace and the header of
-//!   the backend's actual bounds;
-//! - a public pure `verify(case, &trace, &bounds)`: the bounds come as a
-//!   value, beside the trace.
+//! Two parts, kept apart by the module boundary below:
 //!
-//! The HIL agent sends `(case, header, trace)` with the
-//! `oer-hil-trace-header` header. The scenario's verdict checks the run's
-//! headers (one bound set and clock, a new generation only at a restart),
-//! the backend's bounds against the ceilings, the cases against the
-//! expected ones as a multiset, and each case with `verify`.
+//! - **`port`: the port's conformance crate** (for Wi-Fi
+//!   `…-lower-mac-conformance`). It is `no_std`, depends only on
+//!   `oer-time` (with its `serde`/`schema` features under the crate's own
+//!   `wire` feature) and knows nothing of HIL: its `Bounds` with
+//!   `CEILINGS` and `Bounds::within`, its cases (`Case::restarts`), traces,
+//!   its `Harness`, which returns the backend's `(Bounds, Trace)` or the
+//!   port's own error, and the pure `verify(case, &trace, &bounds)`.
+//! - **HIL: the scenario, the agent and the stand proxy.** They wrap a
+//!   port's result in the `oer-hil-trace-header` header, turn a failure
+//!   into `Infrastructure`, and send or decode `(case, header, trace)`.
 
 use core::num::NonZeroU32;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -29,105 +26,143 @@ use oer_hil_model::{
     Spec, StandProfile, Subject, TargetCapabilities, Verdict, Wait, WaitError, name,
 };
 use oer_hil_trace_header::{Clock, ClockDomain, Restart, RunHeaderError, TraceHeader, check_run};
-use oer_time::Duration;
+use port::{BoundField, Bounds, CEILINGS, Case, Trace, Violation, verify};
 use serde::{Deserialize, Serialize};
 
-// ---- What a port's conformance crate provides. ----
+/// The port's conformance crate: `no_std`, `oer-time` only, no HIL.
+mod port {
+    use oer_time::Duration;
+    use serde::{Deserialize, Serialize};
 
-/// A duration a port's crate or a target reports; a scenario crate never
-/// writes one.
-#[allow(
-    clippy::disallowed_methods,
-    reason = "stands for a port crate's constant or a target's report"
-)]
-const fn micros(value: u64) -> Duration {
-    Duration::from_micros(value)
-}
+    /// A duration a port crate writes as a constant; a scenario crate
+    /// never writes one.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "stands for a port crate's constant"
+    )]
+    pub const fn micros(value: u64) -> Duration {
+        Duration::from_micros(value)
+    }
 
-/// The port's bounds, by name, as the `oer_time::Duration` constants its
-/// protocols already use (#761, owner decision 6223240823).
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct Bounds {
-    /// Submission to terminal.
-    terminal: Duration,
-}
+    /// The port's bounds, by name, as the `oer_time::Duration` constants
+    /// its protocols already use.
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    pub struct Bounds {
+        /// Submission to terminal.
+        pub terminal: Duration,
+    }
 
-/// The contract's ceilings: no backend may exceed them.
-const CEILINGS: Bounds = Bounds {
-    terminal: micros(1_000),
-};
+    /// One of the port's bounds, by name.
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    pub enum BoundField {
+        Terminal,
+    }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-enum Case {
-    OneFrame,
-    CloseGate,
-    /// The port restarts before its frame, so its clock starts a new
-    /// generation.
-    AfterRestart,
-}
-
-impl Case {
-    const fn restart(self) -> Restart {
-        match self {
-            Self::AfterRestart => Restart::Yes,
-            Self::OneFrame | Self::CloseGate => Restart::No,
+    impl Bounds {
+        /// The first bound above its ceiling: one check for the backend's
+        /// compile-time assertion and the scenario's verdict.
+        pub const fn within(&self, ceilings: &Self) -> Result<(), BoundField> {
+            if self.terminal.as_micros() > ceilings.terminal.as_micros() {
+                return Err(BoundField::Terminal);
+            }
+            Ok(())
         }
     }
-}
 
-/// Identities read from the real returned owners, in order.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct Trace {
-    submitted: Vec<u8>,
-    terminals: Vec<u8>,
-    /// Submission to terminal on the header's clock.
-    latency: Duration,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-enum Violation {
-    Missing,
-    Order,
-    Bound,
-}
-
-trait Harness {
-    async fn exercise(
-        &mut self,
-        case: Case,
-    ) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure>;
-}
-
-/// The suite's pure verdict, shared by the model tests and the stand; the
-/// backend's bounds come as a value.
-fn verify(case: Case, trace: &Trace, bounds: &Bounds) -> Result<(), Violation> {
-    let expected = match case {
-        Case::OneFrame | Case::AfterRestart => 1,
-        Case::CloseGate => 2,
+    /// The contract's ceilings: no backend may exceed them.
+    pub const CEILINGS: Bounds = Bounds {
+        terminal: micros(1_000),
     };
-    if trace.terminals.len() != expected || trace.submitted.len() != expected {
-        return Err(Violation::Missing);
+
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+    pub enum Case {
+        OneFrame,
+        CloseGate,
+        /// The port restarts before its frame, so its clock starts anew.
+        AfterRestart,
     }
-    if trace.terminals != trace.submitted {
-        return Err(Violation::Order);
+
+    impl Case {
+        /// Whether the case restarts the port.
+        pub const fn restarts(self) -> bool {
+            matches!(self, Self::AfterRestart)
+        }
     }
-    if trace.latency > bounds.terminal {
-        return Err(Violation::Bound);
+
+    /// Identities read from the real returned owners, in order.
+    #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    pub struct Trace {
+        pub submitted: Vec<u8>,
+        pub terminals: Vec<u8>,
+        /// Submission to terminal on the backend's clock.
+        pub latency: Duration,
     }
-    Ok(())
+
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    pub enum Violation {
+        Missing,
+        Order,
+        Bound,
+    }
+
+    /// The port's own failure to exercise a case.
+    #[derive(Debug)]
+    pub struct HarnessError;
+
+    impl core::fmt::Display for HarnessError {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("the backend did not run the case")
+        }
+    }
+
+    impl std::error::Error for HarnessError {}
+
+    /// The port's harness: the backend's actual bounds and the case's
+    /// trace.
+    pub trait Harness {
+        async fn exercise(&mut self, case: Case) -> Result<(Bounds, Trace), HarnessError>;
+    }
+
+    /// The suite's pure verdict, shared by the model tests and the stand;
+    /// the backend's bounds come as a value.
+    pub fn verify(case: Case, trace: &Trace, bounds: &Bounds) -> Result<(), Violation> {
+        let expected = match case {
+            Case::OneFrame | Case::AfterRestart => 1,
+            Case::CloseGate => 2,
+        };
+        if trace.terminals.len() != expected || trace.submitted.len() != expected {
+            return Err(Violation::Missing);
+        }
+        if trace.terminals != trace.submitted {
+            return Err(Violation::Order);
+        }
+        if trace.latency > bounds.terminal {
+            return Err(Violation::Bound);
+        }
+        Ok(())
+    }
+
+    // ---- A backend crate: its bounds, checked against the ceilings at compile time. ----
+
+    pub const S31_BOUNDS: Bounds = Bounds {
+        terminal: micros(800),
+    };
+    const _: () = assert!(
+        S31_BOUNDS.within(&CEILINGS).is_ok(),
+        "the backend exceeds the contract's ceiling"
+    );
 }
 
-// ---- A backend's own bounds, checked against the ceilings at compile time. ----
+// ==== HIL: the scenario. ====
 
-const S31_BOUNDS: Bounds = Bounds {
-    terminal: micros(800),
-};
-const _: () = assert!(
-    S31_BOUNDS.terminal.as_micros() <= CEILINGS.terminal.as_micros(),
-    "the backend exceeds the contract's ceiling"
-);
-
-// ---- The scenario, in a block's scenario crate. ----
+/// A port case's restart, in the trace header's terms.
+const fn restart(case: Case) -> Restart {
+    if case.restarts() {
+        Restart::Yes
+    } else {
+        Restart::No
+    }
+}
 
 struct TxPort;
 
@@ -142,8 +177,13 @@ struct Params {
     cases: Vec<Case>,
 }
 
-/// One report of the target: `(case, header, trace)`.
+/// One report of the agent: `(case, header, trace)`.
 type Report = (Case, TraceHeader<Bounds>, Trace);
+
+/// What the scenario's executors give it for one case.
+trait Reports {
+    async fn report(&mut self, case: Case) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure>;
+}
 
 /// The run's reports, with the cases it was asked for.
 #[derive(Debug, Deserialize, Serialize)]
@@ -155,10 +195,7 @@ struct Traces {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum Finding {
     Header(RunHeaderError),
-    AboveCeiling {
-        reported: Duration,
-        ceiling: Duration,
-    },
+    AboveCeiling(BoundField),
     Case {
         case: Case,
         violation: Violation,
@@ -221,17 +258,14 @@ impl Spec for TxConformance {
             traces
                 .runs
                 .iter()
-                .map(|(case, header, _)| (header, case.restart())),
+                .map(|(case, header, _)| (header, restart(*case))),
         ) {
             findings.push(Finding::Header(error));
         }
         if let Some((_, header, _)) = traces.runs.first()
-            && header.bounds.terminal > CEILINGS.terminal
+            && let Err(field) = header.bounds.within(&CEILINGS)
         {
-            findings.push(Finding::AboveCeiling {
-                reported: header.bounds.terminal,
-                ceiling: CEILINGS.terminal,
-            });
+            findings.push(Finding::AboveCeiling(field));
         }
         let expected = counts(&traces.expected);
         let exercised = counts(traces.runs.iter().map(|(case, _, _)| case));
@@ -260,7 +294,7 @@ impl Spec for TxConformance {
 impl<X> Run<X> for TxConformance
 where
     X: Executor,
-    X::Driver: Harness,
+    X::Driver: Reports,
 {
     async fn run(
         params: &Params,
@@ -269,7 +303,7 @@ where
     ) -> Result<Traces, Infrastructure> {
         let mut runs = Vec::new();
         for &case in &params.cases {
-            let (header, trace) = executor.driver().exercise(case).await?;
+            let (header, trace) = executor.driver().report(case).await?;
             runs.push((case, header, trace));
         }
         Ok(Traces {
@@ -279,44 +313,66 @@ where
     }
 }
 
-// ---- Two drivers. ----
+// ==== HIL: the model's agent, around any port harness. ====
 
-/// The host model.
-struct ModelPort {
+/// The HIL agent on the model: it runs the port's harness and adds the
+/// header of the model's clock, whose generation a restart advances.
+struct ModelAgent<H> {
+    harness: H,
     generation: u32,
 }
 
-impl ModelDriver for ModelPort {}
+impl<H: port::Harness> ModelDriver for ModelAgent<H> {}
 
-impl Harness for ModelPort {
-    async fn exercise(
-        &mut self,
-        case: Case,
-    ) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure> {
-        if case.restart() == Restart::Yes {
+impl<H: port::Harness> Reports for ModelAgent<H> {
+    async fn report(&mut self, case: Case) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure> {
+        if case.restarts() {
             self.generation += 1;
         }
+        let (bounds, trace) =
+            self.harness
+                .exercise(case)
+                .await
+                .map_err(|error| Infrastructure {
+                    operation: name!(Operation, "model.exercise"),
+                    cause: Box::new(error),
+                })?;
+        let clock = ClockDomain {
+            clock: Clock::Model,
+            generation: self.generation,
+        };
+        Ok((TraceHeader { bounds, clock }, trace))
+    }
+}
+
+/// The port's model backend (in a real port, its host model crate).
+struct ModelPort;
+
+impl port::Harness for ModelPort {
+    async fn exercise(&mut self, case: Case) -> Result<(Bounds, Trace), port::HarnessError> {
         let frames: Vec<u8> = match case {
             Case::OneFrame | Case::AfterRestart => vec![0],
             Case::CloseGate => vec![0, 1],
         };
-        let header = TraceHeader {
-            bounds: CEILINGS,
-            clock: ClockDomain {
-                clock: Clock::Model,
-                generation: self.generation,
-            },
-        };
         Ok((
-            header,
+            CEILINGS,
             Trace {
                 submitted: frames.clone(),
                 terminals: frames,
-                latency: micros(400),
+                latency: port::micros(400),
             },
         ))
     }
 }
+
+fn model() -> Model<ModelAgent<ModelPort>> {
+    Model::new(ModelAgent {
+        harness: ModelPort,
+        generation: 0,
+    })
+}
+
+// ==== HIL: the stand's proxy. ====
 
 /// The target sent no report for a case.
 #[derive(Debug)]
@@ -349,8 +405,8 @@ impl core::fmt::Display for OtherCase {
 
 impl std::error::Error for OtherCase {}
 
-/// The stand's proxy: it asks the target to exercise a case and decodes
-/// the postcard report `(case, header, trace)` the target sends; here the
+/// The stand's proxy: it asks the target's agent to exercise a case and
+/// decodes the postcard report `(case, header, trace)` it sends; here the
 /// reports are prepared.
 struct StandProxy {
     reports: VecDeque<Vec<u8>>,
@@ -358,11 +414,8 @@ struct StandProxy {
 
 impl StandDriver for StandProxy {}
 
-impl Harness for StandProxy {
-    async fn exercise(
-        &mut self,
-        case: Case,
-    ) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure> {
+impl Reports for StandProxy {
+    async fn report(&mut self, case: Case) -> Result<(TraceHeader<Bounds>, Trace), Infrastructure> {
         let operation = name!(Operation, "target.report");
         let report = self.reports.pop_front().ok_or_else(|| Infrastructure {
             operation: operation.clone(),
@@ -405,8 +458,8 @@ fn s31(bounds: Bounds, generation: u32) -> TraceHeader<Bounds> {
     }
 }
 
-/// A report as an S31 target sends it, written independently of the
-/// model: its own clock, its own bounds, its own latencies.
+/// A report as an S31 agent sends it, written independently of the model:
+/// its own clock, its own bounds, its own latencies.
 fn report(case: Case, header: TraceHeader<Bounds>, terminals: Vec<u8>, latency: u64) -> Vec<u8> {
     let submitted = if terminals.len() == 1 {
         vec![0]
@@ -416,7 +469,7 @@ fn report(case: Case, header: TraceHeader<Bounds>, terminals: Vec<u8>, latency: 
     let trace = Trace {
         submitted,
         terminals,
-        latency: micros(latency),
+        latency: port::micros(latency),
     };
     postcard::to_allocvec(&(case, header, trace)).unwrap()
 }
@@ -435,15 +488,12 @@ fn verdict_on_stand(instance: &Instance<TxConformance>, reports: Vec<Vec<u8>>) -
         .verdict
 }
 
+use port::S31_BOUNDS;
+
 #[test]
 fn the_model_passes_its_own_suite_restart_included() {
     let all = instance(vec![Case::OneFrame, Case::AfterRestart, Case::CloseGate]);
-    let outcome = embassy_futures::block_on(execute(
-        &all,
-        &(),
-        &mut Model::new(ModelPort { generation: 0 }),
-    ))
-    .unwrap();
+    let outcome = embassy_futures::block_on(execute(&all, &(), &mut model())).unwrap();
     assert_eq!(outcome.executed, Executed::Model);
     assert_eq!(outcome.verdict, Verdict::Pass);
 }
@@ -499,9 +549,9 @@ fn a_new_generation_without_a_restart_is_a_finding() {
 }
 
 #[test]
-fn a_bound_above_the_ceiling_is_a_finding() {
+fn a_bound_above_the_ceiling_is_a_finding_that_names_it() {
     let above = Bounds {
-        terminal: micros(1_500),
+        terminal: port::micros(1_500),
     };
     let reports = vec![
         report(Case::OneFrame, s31(above, 7), vec![0], 100),
@@ -509,10 +559,7 @@ fn a_bound_above_the_ceiling_is_a_finding() {
     ];
     assert_eq!(
         verdict_on_stand(&both(), reports),
-        Verdict::from_findings(vec![Finding::AboveCeiling {
-            reported: micros(1_500),
-            ceiling: CEILINGS.terminal
-        }])
+        Verdict::from_findings(vec![Finding::AboveCeiling(BoundField::Terminal)])
     );
 }
 
@@ -533,27 +580,16 @@ fn a_target_trace_out_of_order_fails_with_its_finding() {
 
 #[test]
 fn the_cases_are_compared_as_a_multiset() {
+    let trace = || Trace {
+        submitted: vec![0],
+        terminals: vec![0],
+        latency: port::micros(1),
+    };
     let traces = Traces {
         expected: vec![Case::OneFrame, Case::CloseGate],
         runs: vec![
-            (
-                Case::OneFrame,
-                s31(S31_BOUNDS, 7),
-                Trace {
-                    submitted: vec![0],
-                    terminals: vec![0],
-                    latency: micros(1),
-                },
-            ),
-            (
-                Case::OneFrame,
-                s31(S31_BOUNDS, 7),
-                Trace {
-                    submitted: vec![0],
-                    terminals: vec![0],
-                    latency: micros(1),
-                },
-            ),
+            (Case::OneFrame, s31(S31_BOUNDS, 7), trace()),
+            (Case::OneFrame, s31(S31_BOUNDS, 7), trace()),
         ],
     };
     assert_eq!(
@@ -567,12 +603,8 @@ fn the_cases_are_compared_as_a_multiset() {
 
 #[test]
 fn a_run_without_traces_does_not_pass() {
-    let outcome = embassy_futures::block_on(execute(
-        &instance(Vec::new()),
-        &(),
-        &mut Model::new(ModelPort { generation: 0 }),
-    ))
-    .unwrap();
+    let outcome =
+        embassy_futures::block_on(execute(&instance(Vec::new()), &(), &mut model())).unwrap();
     assert_eq!(
         outcome.verdict,
         Verdict::from_findings(vec![Finding::Header(RunHeaderError::NoTrace)])
@@ -581,17 +613,8 @@ fn a_run_without_traces_does_not_pass() {
 
 #[test]
 fn a_missing_report_is_infrastructure_not_a_verdict() {
-    let failed = embassy_futures::block_on(execute(
-        &both(),
-        &(),
-        &mut stand(vec![report(
-            Case::OneFrame,
-            s31(S31_BOUNDS, 7),
-            vec![0],
-            100,
-        )]),
-    ))
-    .unwrap_err();
+    let one = vec![report(Case::OneFrame, s31(S31_BOUNDS, 7), vec![0], 100)];
+    let failed = embassy_futures::block_on(execute(&both(), &(), &mut stand(one))).unwrap_err();
     let Cause::Infrastructure(infrastructure) = failed.cause else {
         panic!("infrastructure")
     };

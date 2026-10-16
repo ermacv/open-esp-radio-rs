@@ -4696,6 +4696,12 @@ code = "416433b9770e896abc03ed6c787a78820710f90d6d81e94222ca61172dca03f9"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
+symbol = "rcUpdateTxDoneAmpdu2"
+code = "be0491a6fc7384bda54952e3033e4c6c6209d9e3102f6b04fc269a1847d3f1d6"
+
+[[function]]
+artifact = "libpp"
+member = "trc.o"
 symbol = "rx11AXRate2AMPDULimit"
 code = "b7800a76d0c456fde9703b2ce4ca50cc36e33719a591c333ce451656bf59bede"
 

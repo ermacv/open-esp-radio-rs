@@ -753,9 +753,157 @@ path = "crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"
 reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
 
 [[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/batch_during_wait.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/diagnostics_disabled.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/missing_interrupt_bank.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/quiesced_publication.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/repeat_activation.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/repeat_quiesce.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/repeat_split.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/second_mac_wait.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/second_power_wait.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/unmoderated_unmask.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/hardware/esp32s31/hal/tests/ui/poisoned_clock_retry.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 
 [[uncompiled]]
 path = "crates/hardware/esp32s31/hal/tests/ui/repeat_clock_release.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/closed_scope_access.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/route_once.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/binding_callbacks.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/permanent_backing.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/lease_once.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/poisoned_backing.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/poisoned_hardware.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/configure_fifo_once.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/sample_fifo_once.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/setup_submit.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/phase_retune.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/disabling_submit.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/command_pool_sizes.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/gate_barrier_receipt.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/driver_once.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/driver_borrow_blocks_finish.rs"
+reason = "cargo xtask check ui verifies that retirement only borrows Driver and prevents simultaneous owner recovery on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/quarantined_lease.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/protected_submission.rs"
+reason = "cargo xtask check ui checks the typed command and lifecycle diagnostic with its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/command_capacity.rs"
+reason = "cargo xtask check ui checks the exact mint-derived capacity and its compiling twin"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/send_without_permission.rs"
+reason = "cargo xtask check ui checks the indexed memory permission bound and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_context_stays_held.rs"
+reason = "compile-fail UI case compiled by the xtask UI runner"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_backing_static.rs"
+reason = "compile-fail UI case compiled by the xtask UI runner"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_dma_region.rs"
+reason = "compile-fail UI case compiled by the xtask UI runner"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_applied_gate.rs"
+reason = "cargo xtask check ui checks applied-only bridge receipts and their compiling twins on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_applied_disable.rs"
+reason = "cargo xtask check ui checks applied-only bridge receipts and their compiling twins on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_forged_applied.rs"
+reason = "cargo xtask check ui checks applied-only bridge receipts and their compiling twins on host and RV32"
+
+[[uncompiled]]
+path = "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_projection_owner.rs"
+reason = "cargo xtask check ui verifies a borrowed payload and rejects projecting its mutable owner instead of its narrow view"

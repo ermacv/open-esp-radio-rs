@@ -58,6 +58,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `runtime/interrupt-table/` | Each image's static table of peripheral interrupt sources (handler, level, core) with unique tokens that enable and disable them |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio backend, as the body of the backend's port |
 | `runtime/esp32s31/{bluetooth,ieee802154}/` | Executor-independent radio execution over the `oer-time` ports; the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
+| [`runtime/esp32s31/ieee80211-form/`](runtime/esp32s31/ieee80211-form/README.md) | S31 Wi-Fi pinned driver/IRQ execution form: installation-owned registers, exclusive IRQ consumers, cancellation/forget custody and linked SRAM proof |
 | `adapters/embassy-net/owned/` | Owned-packet network adapter over the pinned Embassy/Xarxa forks |
 | `composition/esp32s31/embassy/{bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` starts the shared radio system (arbiter, PHY domain) with its periodic PHY tracking and coexistence schedule; Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
 
@@ -112,7 +113,10 @@ The chip Wi-Fi `rx/frontier` owns finite physical-ring transitions and borrows
 an abstract delay. Its `rx/transaction` synchronously borrows the live ring,
 storage and staging pool for one bounded completion/recycle pass. Publication
 accepts the unique frame or returns that same lease on rejection. No chip
-dependency points back to an adapter.
+dependency points back to an adapter. The S31 form routes both Wi-Fi
+interrupt handlers through one pinned installation; register banks and
+diagnostics belong to that installation, while the sole static slot holds only
+its address.
 
 ## Register and execution boundaries
 

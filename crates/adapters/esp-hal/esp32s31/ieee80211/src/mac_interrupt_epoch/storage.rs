@@ -1,19 +1,8 @@
-//! Atomic recovery of the two disjoint ISR owners.
+//! The only static context address needed by context-free hard handlers.
+//!
+//! Registers, publication storage, driver state and wakes are owned by the
+//! pinned installation. DriverScope's safety argument covers this slot and
+//! both IRQ routes together; cancellation and forget are tested there.
 
-/// Called with the ISR storage lock held. Missing storage must not disable
-/// routing or consume the other owner; successful recovery first excludes all
-/// handlers and only then removes their register capabilities.
-pub(super) fn detach_pair<A, B>(
-    first: &mut Option<A>,
-    second: &mut Option<B>,
-    disable: impl FnOnce(),
-) -> Option<(A, B)> {
-    if first.is_none() || second.is_none() {
-        return None;
-    }
-    disable();
-    Some((
-        first.take().expect("checked first owner"),
-        second.take().expect("checked second owner"),
-    ))
-}
+#[cfg(feature = "esp32s31")]
+oer_esp32s31_ieee80211_form::declare_scope_slot!(pub(super) static INSTALLATION);

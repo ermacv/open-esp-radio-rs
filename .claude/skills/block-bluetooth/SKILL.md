@@ -53,7 +53,7 @@ lower-MAC port. Nothing on `main` runs a Controller or reaches the air.
 - Three interrupt sources (124, 127, 133) go to one dispatcher at level 3 on core 0; both HAL owners must be installed before any CPU route is enabled (driver README, "Bring-up and teardown order").
 - The hardware scheduler keeps the air timing, so a primary interrupt only services the Controller's status and wakes the driver; every decision belongs to the driver ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643, #563 decision 2).
 - Narrow on purpose: LE 1M only for connections, no peripheral latency, 0 dBm for every role, LE 2M and Coded only in DTM, always awake on the main-XTAL profile. Feature bits stay clear until a production path is complete; a recovered register, SRAM layout, parser or DTM-only PHY never grants advertisement (catalog section `bluetooth-capability-advertisement`).
-- `driver/bluetooth/src/runtime_resources/scheduler.rs` still names the deleted radio role in an ownership comment; the rebuild must re-establish that invariant before relying on it.
+- `ControllerPoweredTaskRuntime::publish_scan_start` is `unsafe`: its caller must reset the scanner graph and publish the receive chains first, which the deleted radio role did.
 - The controller archives' symbols are obfuscated and change between releases: a vendor leaf names the symbol of the pinned release; source names come from `verification/esp32s31/facts/names/` (grep only).
 
 ## Checks

@@ -17,11 +17,7 @@ const WIFI: &[&str] = &[
     "embassy-net",
     "xarxa",
 ];
-const BLUETOOTH: &[&str] = &[
-    "oer-bluetooth-hci",
-    "oer-bluetooth-hci-transport",
-    "oer-bluetooth-ll",
-];
+const BLUETOOTH: &[&str] = &["oer-bluetooth-hci", "oer-bluetooth-ll"];
 const IEEE802154: &[&str] = &["oer-ieee802154"];
 
 /// One facade consumer profile, resolved for one target.

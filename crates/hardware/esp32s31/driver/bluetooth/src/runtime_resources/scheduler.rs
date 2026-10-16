@@ -186,16 +186,21 @@ impl ControllerPoweredTaskRuntime<'_> {
     /// Publish the scanner start's scan-backoff state: both backoff words
     /// start at one under the S31 configuration's maximum upper limit, as the pinned
     /// `r_ble_lll_scan_start` does after it resets the scanner link state.
+    ///
+    /// # Safety
+    ///
+    /// The caller has reset the pinned scanner graph since the last scanner
+    /// it accepted, and published the receive chains before the first RUN
+    /// of this epoch.
     #[allow(
         unsafe_code,
-        reason = "the scanner graph and the receive chains are published before a scanner starts"
+        reason = "the caller publishes the scanner graph and the receive chains before a scanner starts"
     )]
-    pub fn publish_scan_start(&mut self) {
+    pub unsafe fn publish_scan_start(&mut self) {
         let mut controller = self.task.controller();
-        // SAFETY: the radio role resets the pinned scanner graph before it
-        // accepts a scanner, the receive chains were published before the
-        // first RUN of this epoch, and the task endpoint serializes the
-        // scanner registers.
+        // SAFETY: the caller reset the scanner graph and published the
+        // receive chains (this function's contract), and the task endpoint,
+        // borrowed mutably, serializes the scanner registers.
         let _published = unsafe { controller.publish_scan_start() };
     }
 

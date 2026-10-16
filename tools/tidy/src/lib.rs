@@ -24,7 +24,9 @@
 //! - [`lints`]: opted-in crate roots share the canonical deny/test-allow block;
 //! - [`agents`]: every `CLAUDE.md` has its `AGENTS.md` link, skills and
 //!   agent profiles have consistent frontmatter, and agent guidance cites no
-//!   line numbers.
+//!   line numbers;
+//! - [`clippy_configs`]: every `clippy.toml` repeats the root's disallowed
+//!   methods, and the copies of one group are identical.
 //!
 //! The checks are text policy over the repository model of `oer-repo`,
 //! which also answers the `workspaces` and `chips` commands.
@@ -35,6 +37,7 @@ pub mod agents;
 pub mod allowlist;
 pub mod applications;
 pub mod classification;
+pub mod clippy_configs;
 pub mod components;
 pub mod dependencies;
 pub mod fetch;
@@ -159,6 +162,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "agent guidance",
             problems: agents::check(context.repo),
+        },
+        Outcome {
+            check: "clippy configs",
+            problems: clippy_configs::check(context.repo),
         },
     ])
 }

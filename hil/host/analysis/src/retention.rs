@@ -33,7 +33,6 @@ pub fn retained(
     rule: &Retention,
     now_millis: u64,
     pinned: &BTreeSet<String>,
-    cited: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let mut keep = BTreeMap::new();
     let recent = now_millis.saturating_sub(rule.keep_days * 24 * 3600 * 1000);
@@ -41,8 +40,6 @@ pub fn retained(
         let id = run.id().to_owned();
         if pinned.contains(&id) {
             keep.insert(id, String::from("pinned"));
-        } else if cited.contains(&id) {
-            keep.insert(id, String::from("cited by a committed shard"));
         } else if run.started_millis() >= recent {
             keep.insert(id, format!("younger than {} days", rule.keep_days));
         } else if run.state() == RunState::Running && !run.abandoned {
@@ -148,7 +145,7 @@ pub struct Pruned {
     /// held: those of an older schema, and with `unreadable` those of the
     /// current one.
     pub removed_unreadable: Vec<(Unreadable, u64)>,
-    /// The runs this build cannot read that stay, with why: pinned, cited,
+    /// The runs this build cannot read that stay, with why: pinned,
     /// of a newer or unknown schema, of an older one but younger than the
     /// rule's days, or of the current one without `unreadable`.
     pub unreadable_kept: Vec<(Unreadable, String)>,
@@ -166,20 +163,19 @@ impl Pruned {
 }
 
 /// Delete (with `apply`; else only list) the runs of `store` that no rule
-/// keeps: not pinned, not cited by a shard of the checkout at `checkout`,
-/// not replayed, not younger than the rule, not the latest pass or a recent
-/// failure of a scenario. With a `budget` in bytes, a store over it also
-/// loses its oldest runs that only their age kept.
+/// keeps: not pinned (by hand, by an archive selection or by an unpublished
+/// evidence archive version), not replayed, not younger than the rule, not
+/// the latest pass or a recent failure of a scenario. With a `budget` in
+/// bytes, a store over it also loses its oldest runs that only their age
+/// kept.
 ///
 /// A run this build cannot read is deleted when its schema is older than
 /// this build's and it is older than the rule's days, and, with
-/// `unreadable`, when its schema is this build's; pinned and cited runs
-/// stay. A run of a newer or unknown schema always stays: the
-/// store is shared by every checkout, and a newer branch's runs are only
-/// unreadable to this one.
+/// `unreadable`, when its schema is this build's; pinned runs stay. A run of
+/// a newer or unknown schema always stays: the store is shared by every
+/// checkout, and a newer branch's runs are only unreadable to this one.
 pub fn prune(
     store: &RunStore,
-    checkout: &Path,
     rule: &Retention,
     budget: Option<u64>,
     apply: bool,
@@ -187,13 +183,16 @@ pub fn prune(
     captures: &crate::runs::Captures,
 ) -> Result<Pruned> {
     let all = Run::all(store)?;
+    // From reading the pins until the last deletion, no pin can land: a pin
+    // taken meanwhile (`cargo hil archive ref`, `runs pin`) waits, then
+    // checks under the lock that its run still exists and fails if not.
+    let mut pins_lock = Some(store.lock_notes(Sidecar::Pins, oer_process::lock::Mode::Shared)?);
     let now = oer_durable::unix_millis();
     let pinned = store
         .read::<Notes>(Sidecar::Pins)?
         .into_keys()
         .collect::<BTreeSet<_>>();
-    let cited = cited_by_shards(checkout);
-    let keep = retained(&all, rule, now, &pinned, &cited);
+    let keep = retained(&all, rule, now, &pinned);
     let unreadable_runs = Run::unreadable(store)?;
     let recent = now.saturating_sub(rule.keep_days * 24 * 3600 * 1000);
     let mut pruned = Pruned {
@@ -203,8 +202,6 @@ pub fn prune(
     for run in unreadable_runs {
         let kept = if pinned.contains(&run.id) {
             Some(String::from("pinned"))
-        } else if cited.contains(&run.id) {
-            Some(String::from("cited by a committed shard"))
         } else if run.older_schema() {
             (run.started_millis >= recent)
                 .then(|| format!("older schema, younger than {} days", rule.keep_days))
@@ -251,7 +248,6 @@ pub fn prune(
             },
             now,
             &pinned,
-            &cited,
         );
         let mut weighed = remaining
             .iter()
@@ -271,9 +267,7 @@ pub fn prune(
                     Weighed {
                         id: &run.id,
                         bytes: sizes[&run.id],
-                        deletable: run.older_schema()
-                            && !pinned.contains(&run.id)
-                            && !cited.contains(&run.id),
+                        deletable: run.older_schema() && !pinned.contains(&run.id),
                     },
                 )
             }))
@@ -311,48 +305,14 @@ pub fn prune(
         for (run, _) in &pruned.removed_unreadable {
             fs::remove_dir_all(&run.directory)?;
         }
+        // The runs are gone: pins may land again while the shared objects
+        // the deleted runs alone named are collected.
+        pins_lock.take();
         pruned.observers = crate::runs::collect_observers(store)?;
         pruned.sources = crate::runs::collect_sources(store, captures)?;
     }
+    drop(pins_lock);
     Ok(pruned)
-}
-
-/// Run IDs the committed HIL evidence shards of the checkout at `root` cite.
-pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
-    fn collect(value: &serde_json::Value, found: &mut BTreeSet<String>) {
-        match value {
-            serde_json::Value::Object(map) => {
-                for (name, value) in map {
-                    if (name == "run-id" || name == "run_id")
-                        && let Some(text) = value.as_str()
-                    {
-                        found.insert(text.to_owned());
-                    }
-                    collect(value, found);
-                }
-            }
-            serde_json::Value::Array(items) => items.iter().for_each(|item| collect(item, found)),
-            _ => {}
-        }
-    }
-    let mut cited = BTreeSet::new();
-    let Ok(targets) = fs::read_dir(root.join("hil/evidence")) else {
-        return cited;
-    };
-    for target in targets.flatten() {
-        let Ok(shards) = fs::read_dir(target.path()) else {
-            continue;
-        };
-        for shard in shards.flatten() {
-            if let Some(value) = fs::read(shard.path())
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            {
-                collect(&value, &mut cited);
-            }
-        }
-    }
-    cited
 }
 
 #[cfg(test)]

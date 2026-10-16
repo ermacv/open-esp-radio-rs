@@ -14,7 +14,6 @@ hil/
 ├── trace-header/      the no_std header of conformance traces: typed bounds and clock domain
 ├── observer/          the observer's build identity, content store and receipts
 ├── scenarios/         versioned, non-secret host workloads and criteria
-├── evidence/          recorded evidence shards per chip
 ├── host/
 │   ├── cli/           stand CLI: stand commands, jobs, run store, runner launch
 │   ├── runner/        runner CLI, the run core and the family registry
@@ -25,6 +24,7 @@ hil/
 │   ├── link/          the DUT session, generic exchange, reboots, the peer console
 │   ├── net-traffic/   network sessions, paced UDP/TCP and ICMP host traffic
 │   ├── run-bundle/    the run bundle: format, writer and seal, the one reader, run store, build provenance, verification
+│   ├── evidence-archive/  immutable versions of cited runs, the pin, packing, verified copies, publication
 │   ├── analysis/      run queries, the one measurement aggregation and comparison, performance, views
 │   ├── experiment/    the one run launch, revision runs, A/B comparisons and bisection
 │   ├── image/         image class specs for the image pipeline, firmware records, compare_images
@@ -45,9 +45,11 @@ hil/
     └── esp32s31/      current embedded target workspace
 ```
 
-Target firmware lives under `hil/targets/<chip>`. Machine-readable evidence
-lives in immutable bundles under `target/hil/runs`. The qualification
-evaluator independently checks those bundles; Markdown is not proof input.
+Target firmware lives under `hil/targets/<chip>`. Runs are immutable bundles
+in the run store (`target/hil/runs`). Evidence is only the runs of the pinned
+evidence archive version, which the qualification evaluator checks
+independently in a verified copy (`cargo hil archive fetch`, then `cargo
+qualification evaluate --archive DIR`); Markdown is not proof input.
 
 Vendor-linked oracles remain isolated under `verification`; they are
 not HIL scenarios or runner commands.
@@ -203,8 +205,9 @@ packages an image build reads, or inside the HIL host packages and scenarios
 unresolved files block capture with their names and the `--source-include`
 arguments that add them all, ready to paste, before content is archived. The manifest lists every archived untracked
 file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run with any
-option is not noted as pending evidence; `cargo qualification hil-evidence
---hil-target <chip> --run ID` records it. Directory selections and ignored files are not accepted.
+option is still a sealed run: `cargo qualification verdict --run PATH`
+judges it, and evidence cites it only once it is in a pinned archive
+version. Directory selections and ignored files are not accepted.
 For the configured local override, qualify each new file with `esp-hal:`. Agent instructions (`AGENTS.md` at any depth and
 every `.agents/` directory) are excluded from tracked and untracked inputs
 in every source checkout: they configure coding agents, not firmware or HIL.
@@ -264,7 +267,7 @@ scenario or hardware observation; the record supplies no PASS or repetitions.
 
 `cargo hil run S... --repetitions N` runs each selected scenario N times
 (1 to 20) instead of its own count, for a quicker look while debugging. The run
-records the reduced count, and `cargo hil` does not note it as pending evidence.
+records the reduced count, which a requirement's minimum repetitions then judge.
 
 `cargo hil run-all` runs the scenarios carrying each `--tag`, or the whole
 catalog only with an explicit `--all`. It reuses each image across its scenario group but

@@ -41,20 +41,22 @@ comparison, for the ESP32-S31
 They belong to the root workspace; only `targets/<chip>/` builds
 in separate firmware workspaces.
 Generated runs stay below `target/hil/runs`; they are not tracked.
-A run never writes tracked files. After `run` or `run-all` from a
-clean tree, `cargo hil` notes the runs with passed scenarios as the checkout's
-pending evidence in `target/hil/pending-evidence.json`. `cargo
-qualification hil-evidence --hil-target <chip> --pending` records the
-observations of those runs, or of the `--run ID` runs, that qualify on the
-current checkout as tracked shards in `hil/evidence/<chip>/`, bound to the
-firmware and observer sources rather than to the commit; the evaluator reads
-the runs itself, with the checkout's current observer descriptor, and the
-pending runs it observed leave the list. `cargo hil evidence pending` lists
-the pending runs, `cargo hil evidence dismiss --run ID` drops runs that will
-not be recorded, such as runs whose inputs changed since. Recording is optional: stale evidence is
-information, and qualification runs on a baseline the user chooses. A run from a dirty tree or with untracked sources is recorded
-only when named with `--run ID`. Commit the shards with the change
-they qualify; see
+A run never writes tracked files. HIL evidence is the runs a qualification
+decision cites, kept outside the repository in the evidence archive
+([#761](https://github.com/ermacv/open-esp-radio-rs/issues/761) Q7): `cargo
+hil archive ref RUN...` prints the runs' references (ID and the SHA-256 of
+the seal) as a references file and pins the runs for a new selection named in
+it, `pack --refs FILE --out DIR` writes an immutable version of exactly the
+cited runs, the pinned version's from its downloaded, verified copy and the
+others from the run store, and hands the selection's pins to it; `holders`
+lists the selections and unpublished versions that pin runs, `unpin
+VERSION|SELECTION` drops the pins of a version packed but never published or
+of a selection, and `publish DIR` releases it in the pinned version's
+repository (`--repository OWNER/NAME` before the first version, with
+`--new-repository` to move the archive) and writes the pin `evidence/archive.toml` in `qualification/`, and `fetch --out DIR`
+downloads the pinned version and verifies it for `cargo qualification
+evaluate --archive DIR`. `pack`, `publish` and `fetch` reach the network; a
+version is never changed or deleted. See [the archive](host/evidence-archive/README.md) and
 [qualification](../qualification/README.md#evidence-ownership).
 
 ## Safe source-only route

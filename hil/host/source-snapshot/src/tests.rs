@@ -84,12 +84,12 @@ fn repository() -> tempfile::TempDir {
 }
 
 #[test]
-fn untracked_evidence_shards_neither_block_nor_enter_a_snapshot() {
+fn an_untracked_evidence_pin_neither_blocks_nor_enters_a_snapshot() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let target = output.path().join("snapshots");
-    fs::create_dir_all(root.path().join("hil/evidence/chip-a")).unwrap();
-    fs::write(root.path().join("hil/evidence/chip-a/station.json"), "{}").unwrap();
+    fs::create_dir_all(root.path().join("qualification/evidence")).unwrap();
+    fs::write(root.path().join("qualification/evidence/archive.toml"), "").unwrap();
     fs::write(root.path().join("new.rs"), "pub fn new() {}\n").unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
     let error = capture_roots(&roots, &[], &[], &target, &objects(&target))
@@ -97,13 +97,13 @@ fn untracked_evidence_shards_neither_block_nor_enter_a_snapshot() {
         .unwrap()
         .to_string();
     assert!(error.contains("\n  --source-include new.rs\n"), "{error}");
-    assert!(!error.contains("station.json"), "{error}");
+    assert!(!error.contains("archive.toml"), "{error}");
     let snapshot =
         capture_roots(&roots, &["new.rs".into()], &[], &target, &objects(&target)).unwrap();
     assert!(
         !archived(&snapshot)
             .iter()
-            .any(|path| path.starts_with("repository/hil/evidence"))
+            .any(|path| path.starts_with("repository/qualification/evidence"))
     );
 }
 

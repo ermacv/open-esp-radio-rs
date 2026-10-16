@@ -8,7 +8,6 @@
 //! - [`experiment`], [`lab`]: the A/B experiment and the laboratory cell a
 //!   run records;
 //! - [`observer`]: the observer's build identity a run records;
-//! - [`pending`]: a checkout's clean runs whose evidence is not recorded.
 //!
 //! The writer, the run store and the offline verification are
 //! `oer-hil-run-bundle`'s.
@@ -19,7 +18,6 @@ pub mod build;
 pub mod experiment;
 pub mod lab;
 pub mod observer;
-pub mod pending;
 pub mod read;
 pub mod run;
 

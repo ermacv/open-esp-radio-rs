@@ -430,7 +430,7 @@ esp32s31 store's `quarantine.json`: `run-all` then leaves it out, and a `run`
 that names it runs it with a warning; `release` takes it back. Quarantine
 changes no run's outcome or evidence.
 
-`prune` keeps pinned runs, runs cited by committed evidence shards, runs whose
+`prune` keeps pinned runs, runs whose
 firmware another run replayed, runs younger than `--days` (30), incomplete
 runs, the latest pass and the `--keep-failed` (5) newest failures of every
 scenario and image class. A run this build cannot read goes when its manifest
@@ -450,7 +450,8 @@ the bytes only they hold; hard-linked firmware shared with kept runs is not
 counted. Neither the rule nor the size budget touches the store's
 `revision-runs/`: a run that another revision's runner wrote in its own
 format (a [revision run](#a-revisions-scenario-set) or a bisection step on
-an older wire) is evidence a decision may cite. It stays until someone
+an older wire) is a record of that revision, kept for comparison; the
+evidence archive packs only runs of the store's `runs/`. It stays until someone
 deletes `<store>/revision-runs/<run>` by hand. Pins live in the store's `pins.json`. Pruning with `--apply`, and the
 automatic rule, also delete the observer builds in the store's `observers/`
 that no remaining run names and that were stored more than an hour ago; a
@@ -468,3 +469,19 @@ firmware is a hard link to its object, so an object with a single link serves
 no run and only saves a later identical archive a copy. Collection holds the
 store's lock exclusively, and archiving holds it shared, so no run reuses an
 object while it is deleted.
+
+A pin note keeps a hand reason (`runs pin RUN --reason TEXT`) and the
+evidence archive's holders side by side: `cargo hil archive ref` pins the
+runs it names for its own selection (`selection-<millis>-<process>-<n>`,
+written in the references file; `ref --selection SELECTION` adds runs to an
+existing one), `cargo hil archive pack` hands that
+selection's pins to its version, and publishing the version or `cargo hil
+archive unpin VERSION|SELECTION` drops that holder alone. `runs pin` keeps
+the holders, and `runs unpin` drops only the hand reason: a run an
+unpublished version holds stays pinned, and only `archive unpin` releases it
+(rule 5). `cargo hil archive holders` lists each holder with its runs, so a
+selection never packed is found and dropped. Every change of the pins is one
+read-modify-write under `pins.json.lock`, and pruning holds that lock shared
+from reading the pins until its last run deletion (not while it collects the
+shared observer builds and source objects), so no pin lands in between. A
+command that waits for the lock says so once and ends on Ctrl-C (exit 130).

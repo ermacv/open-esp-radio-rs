@@ -448,8 +448,9 @@ fn contained(path: &Path) -> Result<()> {
 }
 
 /// Repository directories whose untracked files are recorded outputs, which a
-/// snapshot neither requires nor archives.
-const EVIDENCE_OUTPUTS: &[&str] = &["hil/evidence"];
+/// snapshot neither requires nor archives: the evidence archive's pin, which
+/// `cargo hil archive publish` writes after the runs it cites.
+const EVIDENCE_OUTPUTS: &[&str] = &["qualification/evidence"];
 
 /// The Git state a snapshot archives: the checkout's index view
 /// ([`oer_repo::index::IndexSnapshot`]), which names a tracked file the
@@ -465,7 +466,7 @@ fn select(name: &str, root: &Path) -> Result<Selection> {
     let mut untracked: BTreeSet<PathBuf> = paths(index.untracked);
     tracked.retain(|path| !is_agent_guidance(path));
     untracked.retain(|path| !is_agent_guidance(path));
-    // Recorded evidence shards are outputs of earlier runs, not build inputs.
+    // A written evidence pin is an output of earlier runs, not a build input.
     untracked.retain(|path| {
         !EVIDENCE_OUTPUTS
             .iter()

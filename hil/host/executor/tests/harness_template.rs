@@ -5,8 +5,9 @@
 //!
 //! - **`port`: the port's conformance crate** (for Wi-Fi
 //!   `…-lower-mac-conformance`). It is `no_std`, depends only on
-//!   `oer-time` (with its `serde`/`schema` features under the crate's own
-//!   `wire` feature) and knows nothing of HIL: its `Bounds` with
+//!   `oer-time` and, under its own `wire` feature, `serde` and
+//!   `postcard-schema` (enabling `oer-time/serde` and `oer-time/schema`),
+//!   and knows nothing of HIL: its `Bounds` with
 //!   `CEILINGS` and `Bounds::within`, its cases (`Case::restarts`), traces,
 //!   its `Harness`, which returns the backend's `(Bounds, Trace)` or the
 //!   port's own error, and the pure `verify(case, &trace, &bounds)`.
@@ -29,7 +30,10 @@ use oer_hil_trace_header::{Clock, ClockDomain, Restart, RunHeaderError, TraceHea
 use port::{BoundField, Bounds, CEILINGS, Case, Trace, Violation, verify};
 use serde::{Deserialize, Serialize};
 
-/// The port's conformance crate: `no_std`, `oer-time` only, no HIL.
+/// The port's conformance crate: `no_std`, `oer-time`, and `serde` under
+/// its `wire` feature; no HIL. A port crate writes each wire derive as
+/// `cfg_attr(feature = "wire", derive(Serialize, Deserialize, Schema))`;
+/// here the test always needs the wire form, so the derives are plain.
 mod port {
     use oer_time::Duration;
     use serde::{Deserialize, Serialize};

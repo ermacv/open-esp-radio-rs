@@ -4,10 +4,12 @@
 //! for an [`Executor`]: [`Model`] around a [`ModelDriver`], or [`Stand`]
 //! around a [`StandDriver`] under the [`StandSession`] of a granted stand
 //! lease, which the stand executor holds. A conformance scenario is
-//! generic over its port's harness trait, so the model's harness and the
-//! stand's proxy (which asks the target to exercise a case and decodes the
-//! `(case, header, trace)` it reports) run the same scenario code, and the
-//! same pure verdict judges both.
+//! generic over a HIL trait of reports (`(header, trace)` for a case),
+//! which two HIL drivers implement: the model agent around the port's
+//! harness, which adds the trace header, and the stand's proxy, which asks
+//! the target to exercise a case and decodes the `(case, header, trace)` it
+//! reports. Both run the same scenario code, and the same pure verdict
+//! judges both. The port's conformance crate itself has no HIL dependency.
 //!
 //! [`execute`] admits a scenario only on an executor whose kind runs its
 //! purpose ([`RunsOn`]): the model runs conformance only. An interop

@@ -77,8 +77,9 @@ impl StandSession<'static> {
     }
 }
 
-/// A driver of the host model, such as a port's model harness. A port's
-/// model crate opts in for its model harness.
+/// A driver of the host model: a HIL agent around a port's model harness,
+/// which adds the trace header. The port's crates never implement it, as
+/// they have no HIL dependency.
 pub trait ModelDriver {}
 
 /// A driver of the stand, such as the proxy that asks the target to

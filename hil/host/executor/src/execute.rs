@@ -29,9 +29,10 @@ impl std::error::Error for Infrastructure {
 }
 
 /// Execution of a scenario by executor `X`. A scenario implements it for
-/// the executors whose driver it can use, typically generically over its
-/// port's harness trait, so that the host model and the stand run the same
-/// code; [`execute`] admits the pair only when the executor's kind
+/// the executors whose driver it can use, typically generically over a
+/// HIL trait of reports that the model agent (around the port's harness)
+/// and the stand's proxy implement, so that the host model and the stand
+/// run the same code; [`execute`] admits the pair only when the executor's kind
 /// [runs](RunsOn) the scenario's purpose.
 pub trait Run<X: Executor>: Spec {
     /// Drives the subject through `executor` and returns what it recorded.

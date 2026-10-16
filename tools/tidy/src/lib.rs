@@ -27,7 +27,9 @@
 //!   line numbers;
 //! - [`clippy_configs`]: every clippy configuration repeats the root's
 //!   `disallowed-*` entries, the copies of one group are identical, and
-//!   every HIL scenario package carries its copy.
+//!   every HIL scenario package carries its copy;
+//! - [`dev_features`]: features that exist only for tests are enabled
+//!   only by dev-dependencies.
 //!
 //! The checks are text policy over the repository model of `oer-repo`,
 //! which also answers the `workspaces` and `chips` commands.
@@ -41,6 +43,7 @@ pub mod classification;
 pub mod clippy_configs;
 pub mod components;
 pub mod dependencies;
+pub mod dev_features;
 pub mod fetch;
 pub mod layouts;
 pub mod lints;
@@ -163,6 +166,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "agent guidance",
             problems: agents::check(context.repo),
+        },
+        Outcome {
+            check: "dev-only features",
+            problems: dev_features::check(&context),
         },
         Outcome {
             check: "clippy configs",

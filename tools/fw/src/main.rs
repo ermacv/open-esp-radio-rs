@@ -38,7 +38,7 @@ struct Cli {
 enum Command {
     /// Build examples into image bundles below `target/firmware`.
     Build {
-        /// Examples by name (`station`) or `<chip>/<name>`.
+        /// Examples by name (`thread`) or `<chip>/<name>`.
         #[arg(required_unless_present = "all")]
         examples: Vec<String>,
         /// Every example of every chip.

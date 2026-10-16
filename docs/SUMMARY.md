@@ -15,7 +15,7 @@
 - [Manage issues and dependencies](issues.md)
 - [Documentation policy](documentation.md)
 
-# Station, network and PHY
+# PHY
 
 - [PHY compiled comparison](phy/README.md)
 

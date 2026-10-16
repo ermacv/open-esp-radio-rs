@@ -298,9 +298,7 @@ Rules:
   sample is not converted (`ProjectionError::StaleSample`).
 - A generation (`Generation<A, B>`) has no public constructor: only its
   relation owner's `GenerationSource` makes one, opening an epoch the owner
-  takes and jumping at each break of the relation. The S31 station's direct path carries a local
-  elapsed time into the access point's TSF at the nominal rate in one named
-  function (`tsf_elapsed_at_nominal_rate`), as the vendor does.
+  takes and jumping at each break of the relation.
 - Time-exact work stays in its domain: the station follows the access
   point's TSF by the MAC local time between a beacon's stamp and now, not
   through monotonic time. A software handoff bound is monotonic: the HE

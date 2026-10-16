@@ -91,9 +91,7 @@ handler and every table source is silent or routed to its level. An owner
 routes its source with `oer_esp32s31_soc_esp_hal::interrupt_table::enable` and
 its token, on the table's core only, and silences it with `disable`; the
 matrix lives in that adapter so that owners in `crates/` reach it. The stack analysis does not
-yet fail a table entry whose `enable` no root of the image reaches. HIL's
-`system-interrupt-table` checks that a source stays silent until enabled and
-after it is disabled. esp-hal's PMP region setup
+yet fail a table entry whose `enable` no root of the image reaches. esp-hal's PMP region setup
 (`ESP_HAL_CONFIG_ENABLE_PMP`) is off in the root Cargo configuration, because
 its single no-execute data region would span stage two's PSRAM code.
 

@@ -3,8 +3,8 @@
 
 //! Radio APIs, portable protocols and explicitly selected hardware compositions.
 //!
-//! The default Wi-Fi API builds on the host without a chip or executor.
-//! Firmware selects its chip and network composition through Cargo features.
+//! The default portable Wi-Fi protocols build on the host without a chip or
+//! executor. Firmware selects its chip and compositions through Cargo features.
 
 pub use {memory, network};
 

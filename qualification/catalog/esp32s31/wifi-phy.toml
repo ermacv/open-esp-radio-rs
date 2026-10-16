@@ -277,9 +277,6 @@ vendor-anchors = [
   "registers/esp32s31/model/peripherals/wifi-mac-rtc-timer-update.toml",
   "crates/hardware/esp32s31/hal/src/lib.rs",
 ]
-hil-requirements = [
-  { scenario = "boot-smoke", minimum-repetitions = 1 },
-]
 async-not-applicable = "no-asynchronous-runtime-boundary"
 gaps = [
   { axis = "vendor", id = "cold-start-root-contract-incomplete" },

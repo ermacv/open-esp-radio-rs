@@ -117,4 +117,4 @@ or explanation before proposing a change. Board-dependent RF behavior and
 vendor comparisons have additional prerequisites.
 
 Follow [CONTRIBUTING](../CONTRIBUTING.md) for checks and PR preparation.
-Neither tutorial claims vendor equivalence.
+This tutorial does not claim vendor equivalence.

@@ -25,8 +25,9 @@
 //! - [`agents`]: every `CLAUDE.md` has its `AGENTS.md` link, skills and
 //!   agent profiles have consistent frontmatter, and agent guidance cites no
 //!   line numbers;
-//! - [`clippy_configs`]: every `clippy.toml` repeats the root's disallowed
-//!   methods, and the copies of one group are identical.
+//! - [`clippy_configs`]: every clippy configuration repeats the root's
+//!   `disallowed-*` entries, the copies of one group are identical, and
+//!   every HIL scenario package carries its copy.
 //!
 //! The checks are text policy over the repository model of `oer-repo`,
 //! which also answers the `workspaces` and `chips` commands.
@@ -165,7 +166,7 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         },
         Outcome {
             check: "clippy configs",
-            problems: clippy_configs::check(context.repo),
+            problems: clippy_configs::check(&context),
         },
     ])
 }

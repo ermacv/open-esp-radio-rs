@@ -29,24 +29,25 @@ Read declarations without loading vendor results, HIL runs or Git state:
 ```console
 cargo qualification status \
   --catalog qualification/catalog/esp32s31/bluetooth-products.toml \
-  --capability secure-peripheral-gatt \
-  --json-report target/qualification/secure-gatt-map.json
+  --capability peripheral-acl \
+  --json-report target/qualification/peripheral-acl-map.json
 
 cargo qualification next \
   --catalog qualification/catalog/esp32s31/wifi-phy.toml \
   --capability runtime-phy-calibration
 ```
 
-Read existing evidence for a selected program, without running any checks:
+Read existing evidence for a selected program, without running any checks
+(no program exists since #770; `<chip>/<program>` names one when it does):
 
 ```console
 cargo qualification status \
-  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
-  --json-report target/qualification/bluetooth-le.json
+  --manifest qualification/targets/<chip>/<program>.toml \
+  --json-report target/qualification/<program>.json
 
 cargo qualification next \
-  --manifest qualification/targets/esp32s31/bluetooth-secure-gatt.toml \
-  --capability secure-peripheral-gatt
+  --manifest qualification/targets/<chip>/<program>.toml \
+  --capability <capability>
 ```
 
 Both commands accept multiple `--catalog` inputs, or one `--manifest`.
@@ -112,23 +113,11 @@ Focused links cover calibration/RFPLL and peripheral BLE
 maintenance/security. Other declarations remain visible with missing links;
 missing navigation is not an absent implementation or an unexplored chip.
 
-The focused product programs are BLE peripheral/ACL, followed by secure
-peripheral GATT; no Wi-Fi program exists. Their definitions share canonical capability declarations:
-
-| Program | Required product boundary |
-| --- | --- |
-| [BLE peripheral/ACL](targets/esp32s31/bluetooth-peripheral-acl.toml) | One LE 1M connection, bidirectional ACL, recovery and terminal powered release |
-| [Secure peripheral GATT](targets/esp32s31/bluetooth-secure-gatt.toml) | The complete peripheral/ACL boundary plus encrypted traffic, Secure Connections, protected ATT access and bonded reconnect |
-
-The AP-availability program keeps its reconnect, IP-exchange and control
-requirements while a port integration gap is open. Its catalog regression
-test preserves that gap instead of inferring completeness from selecting
-the focused program.
-
-The [full Bluetooth LE program](targets/esp32s31/bluetooth-le.toml) retains its
-wider role and feature requirements. [IEEE 802.15.4](targets/esp32s31/ieee802154.toml)
-is an independent program. Product selection does not change source coverage or
-make any hardware evidence current.
+No qualification program exists: the Bluetooth LE, peripheral/ACL, secure
+peripheral GATT and IEEE 802.15.4 programs went with the orchestration in
+#770 (tag `legacy-radio-2026-10-16`), and no Wi-Fi program exists. The
+catalogs keep their capability declarations; selecting none changes no
+source coverage and makes no hardware evidence current.
 
 
 ## Capability catalogs and program resolution
@@ -212,8 +201,8 @@ cargo qualification catalog render \
   --out target/qualification/catalog/wifi-phy-static
 
 cargo qualification catalog render \
-  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
-  --out target/qualification/catalog/bluetooth-le
+  --manifest qualification/targets/<chip>/<program>.toml \
+  --out target/qualification/catalog/<program>
 
 cargo qualification catalog check \
   --catalog qualification/catalog/esp32s31/wifi-phy.toml \
@@ -221,14 +210,14 @@ cargo qualification catalog check \
   --catalog qualification/catalog/esp32s31/bluetooth.toml
 
 cargo qualification catalog render \
-  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
-  --out target/qualification/catalog/bluetooth-le
+  --manifest qualification/targets/<chip>/<program>.toml \
+  --out target/qualification/catalog/<program>
 
 cargo qualification catalog check \
   --catalog qualification/catalog/esp32s31/ieee802154.toml
 
 cargo qualification catalog render \
-  --manifest qualification/targets/esp32s31/ieee802154.toml \
+  --manifest qualification/targets/<chip>/<program>.toml \
   --out target/qualification/catalog/ieee802154
 
 cargo qualification catalog render \
@@ -281,10 +270,7 @@ Validate each program from the repository root:
 
 ```console
 cargo qualification validate \
-  --manifest qualification/targets/esp32s31/bluetooth-le.toml
-
-cargo qualification validate \
-  --manifest qualification/targets/esp32s31/ieee802154.toml
+  --manifest qualification/targets/<chip>/<program>.toml
 ```
 
 The two commands have deliberately different contracts:
@@ -312,31 +298,15 @@ separate; the product criteria explicitly retain single-role IRQ, timer, list,
 capacity, cancellation and powered-cleanup obligations. Passing an ACL exchange
 or logical HCI Reset does not establish the complete product lifecycle.
 
-The peripheral program selects the existing recovery, local Disconnect, local
-Reset, RF-loss and soak scenarios, plus physical retirement, same-storage
-powered restart, and automatic maintenance with live ACL traffic. Qualified execution/restoration bounds and complete terminal-fault
-coverage remain gaps; active DTM is non-preemptible and has a separate
-hard-deadline fail-stop requirement. See the canonical
-[periodic maintenance contract](catalog/esp32s31/wifi-phy.toml).
-The secure program additionally requires key/counter/MIC handling, Numeric
-Comparison-only Secure Connections pairing, authenticated ATT, RAM-bond
-restoration and coordinated Host/Controller shutdown. Its automated secure
-GATT scenario checks pairing rejection, protected traffic, RAM-bonded reconnect
-after physical Controller cold restart, withheld Reset-reader retention and
-terminal cold close after injected bond-load failure. The separate HCI-reader
-failure scenario checks retained ownership, not successful cold close. Neither
-establishes human presence, bond retention across SoC reset or all terminal
-fault dispositions. The timing diagnostic uses boundary-only IRQ watermark
-sampling; it does not replace the required every-snapshot memory-stress scenario.
-The canonical catalog selects the required repetitions and retains
-the missing lifecycle evidence separately. Existing plaintext ACL scenarios do
-not supply encrypted or GATT evidence.
+No program selects these products since #770 (tag
+`legacy-radio-2026-10-16`); the catalog keeps their criteria and gaps,
+including the [periodic maintenance contract](catalog/esp32s31/wifi-phy.toml),
+and no HIL scenario serves them.
 
-Check the selected programs without scanning the evidence archive:
+Check a selected program without scanning the evidence archive:
 
 ```console
-cargo qualification catalog check --manifest qualification/targets/esp32s31/bluetooth-peripheral-acl.toml
-cargo qualification catalog check --manifest qualification/targets/esp32s31/bluetooth-secure-gatt.toml
+cargo qualification catalog check --manifest qualification/targets/<chip>/<program>.toml
 ```
 
 Use `evaluate --manifest PATH --json-report PATH` for a current evidence-backed
@@ -506,7 +476,8 @@ bound touches no file of a run's closure, so collected evidence stays current
 and is judged again. The thresholds the existing named checks derive from
 scenario documents move to this mechanism in #554.
 
-The secure GATT requirement, as the catalog declares it:
+The secure GATT requirement, as its catalog entry declared it until the entry
+went in #770 (tag `legacy-radio-2026-10-16`):
 
 ```toml
 hil-requirements = [
@@ -710,8 +681,8 @@ Use a JSON report for CI and downstream presentation:
 
 ```console
 cargo qualification evaluate \
-  --manifest qualification/targets/esp32s31/bluetooth-le.toml \
-  --json-report target/qualification/bluetooth-le.json
+  --manifest qualification/targets/<chip>/<program>.toml \
+  --json-report target/qualification/<program>.json
 ```
 
 The console `INPUT` row and JSON `evidence_inputs` object expose how many

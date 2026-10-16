@@ -315,22 +315,6 @@ pub fn run(context: &Checkout) -> Result<()> {
         let flags = profile.features.clone();
         let graph = if profile.manifest.starts_with("hil/") {
             cargo::metadata(context, &manifest, &flags, target, true)?
-        } else if profile.manifest.starts_with("examples/") {
-            // Binary examples cannot become a scratch consumer's dependency;
-            // they resolve in their chip's examples workspace. Its feature
-            // unification can only add to the example's graph, never hide a
-            // forbidden dependency, and the audit walks from the example's
-            // own package.
-            let chip = chip.ok_or("an example lies in its chip's directory")?;
-            let examples = chip.directory(&context.root, "examples").join("Cargo.toml");
-            if cargo::workspace_manifest(context, &manifest)? != examples.canonicalize()? {
-                return Err(format!(
-                    "example must belong to the examples workspace: {}",
-                    manifest.display()
-                )
-                .into());
-            }
-            cargo::metadata(context, &manifest, &flags, target, true)?
         } else {
             cargo::isolated_graph(context, &manifest, &flags, target)?
         };

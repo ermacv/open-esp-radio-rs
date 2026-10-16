@@ -17,6 +17,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod capabilities;
 pub mod channel;
 pub mod coex;
 pub mod engine;

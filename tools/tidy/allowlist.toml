@@ -259,27 +259,7 @@ dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
 [[unused-dependency]]
-manifest = "crates/runtime/bluetooth/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
-manifest = "crates/runtime/esp32s31/bluetooth/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
 manifest = "crates/runtime/ieee80211/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
-manifest = "crates/services/bluetooth/hci/transport/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
-manifest = "crates/adapters/trouble/bluetooth/gatt/Cargo.toml"
 dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
@@ -287,11 +267,6 @@ reason = "test builds select critical-section's std implementation for the crate
 manifest = "hil/agent/Cargo.toml"
 dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
-manifest = "crates/adapters/trouble/bluetooth/gatt/Cargo.toml"
-dependency = "embassy-time"
-reason = "test builds select embassy-time's std driver and generic timer queue for the crates that wait on time"
 
 [[unused-dependency]]
 manifest = "hil/agent/Cargo.toml"
@@ -302,23 +277,6 @@ reason = "test builds select embassy-time's std driver and generic timer queue f
 manifest = "verification/esp32s31/probes/bluetooth/library/Cargo.toml"
 dependency = "oer-esp32s31-phy"
 reason = "enables the PHY's validation-probes feature for the Bluetooth driver the probe compiles"
-
-# Dependencies another crate's macro expands to paths in.
-
-[[unused-dependency]]
-manifest = "hil/host/fixture/Cargo.toml"
-dependency = "bt-hci-transport"
-reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in bt_hci_transport"
-
-[[unused-dependency]]
-manifest = "hil/host/fixture/Cargo.toml"
-dependency = "embedded-io"
-reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in embedded_io"
-
-[[unused-dependency]]
-manifest = "hil/host/fixture/Cargo.toml"
-dependency = "embedded-io-async"
-reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in embedded_io_async"
 
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/command_request.rs"
@@ -749,10 +707,6 @@ path = "crates/radio/port/tests/ui/driver_loan_constructor.rs"
 reason = "cargo xtask check ui checks the single affine driver loan and its compiling twin on host and RV32"
 
 [[uncompiled]]
-path = "crates/runtime/espressif/ieee802154/tests/ui/durable_installation.rs"
-reason = "cargo xtask check ui checks durable installation storage and its compiling twin on host and RV32"
-
-[[uncompiled]]
 path = "crates/radio/port/tests/ui/driver_after_retire.rs"
 reason = "cargo xtask check ui checks the consumed driver handoff and its compiling twin on host and RV32"
 
@@ -772,17 +726,6 @@ reason = "cargo xtask check ui checks the affine loan/publication and its compil
 path = "crates/radio/port/tests/ui/driver_loan_escape.rs"
 reason = "cargo xtask check ui checks the affine loan/publication and its compiling twin on host and RV32"
 
-[[uncompiled]]
-path = "crates/runtime/espressif/ieee802154/tests/ui/quarantined_queue_reinstall.rs"
-reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
-
-[[uncompiled]]
-path = "crates/runtime/espressif/ieee802154/tests/ui/queue_once.rs"
-reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
-
-[[uncompiled]]
-path = "crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"
-reason = "cargo xtask check ui checks terminal quarantine and affine queue reuse with compiling twins"
 
 [[uncompiled]]
 path = "crates/hardware/esp32s31/driver/ieee80211/mac/tests/ui/batch_during_wait.rs"

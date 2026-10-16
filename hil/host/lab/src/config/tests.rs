@@ -393,3 +393,20 @@ fn a_board_is_named_by_its_mac() {
     let peer = with_c5_peer(lab).peer_resolving(&attached).unwrap();
     assert_eq!(peer.mac, "38:44:BE:00:00:01");
 }
+
+#[test]
+fn bluetooth_adapter_rejects_paths_options_and_reserved_index() {
+    for value in [
+        "../hci0", "--help", "hci-1", "hci65535", "hci01", "hci+1", "hci",
+    ] {
+        assert!(value.parse::<BluetoothAdapter>().is_err(), "{value}");
+    }
+    assert_eq!(
+        "hci0".parse::<BluetoothAdapter>().unwrap(),
+        BluetoothAdapter(0)
+    );
+    assert_eq!(
+        "hci65534".parse::<BluetoothAdapter>().unwrap(),
+        BluetoothAdapter(65534)
+    );
+}

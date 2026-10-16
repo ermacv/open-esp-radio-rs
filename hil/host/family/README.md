@@ -1,14 +1,12 @@
 # HIL radio families
 
 Each directory is one radio family's crate, `oer-hil-family-<family>`. A
-family owns one scenario table (`[bluetooth]` or `[system]` in a scenario
-document) and everything that
+family owns one scenario table (`[system]` in a scenario document) and everything that
 interprets it; the runner core names no family type.
 
 | Crate | Owns |
 | --- | --- |
 | `ieee80211-fixture/` | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host routes, air monitors), their `FixtureProvider`, and the air-capture and BSS-protection analyses |
-| `bluetooth/` | The `[bluetooth]` table, DTM, HCI, GATT and secure GATT workloads, the DTM peer and the Linux Bluetooth fixture |
 | `system/` | The `[system]` table: boot smoke, watchdogs, panic reset and stand recovery |
 | `phy/`, `phy-esp32s31/` | Not a scenario family: the PHY cross-check's comparison port, its ESP32-S31 implementation and the vendor reference firmware driver |
 
@@ -51,7 +49,7 @@ the network traffic crate, never on another family. A fixture provider implement
    workspace's manifest.
 
 ```console
-cargo test -p oer-hil-family-bluetooth -p oer-hil-family-system \
+cargo test -p oer-hil-family-system \
   -p oer-hil-family-ieee80211-fixture -p oer-hil-family-phy \
   -p oer-hil-family-phy-esp32s31
 ```

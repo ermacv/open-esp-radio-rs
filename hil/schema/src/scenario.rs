@@ -88,20 +88,30 @@ mod tests {
 
     #[test]
     fn variant_and_optional_defaults_apply_only_where_selected() {
+        let defaults = json!({"repetitions": 1, "?family": {"$kind": {
+            "secure": {"shutdown": "bond-load-failure"}}}});
+        let mut secure = json!({"family": {"kind": "secure"}});
+        fill(&mut secure, &defaults);
+        assert_eq!(secure["repetitions"], 1);
+        assert_eq!(secure["family"]["shutdown"], "bond-load-failure");
+        // Another variant holds none of the secure variant's defaults.
+        let mut plain = json!({"family": {"kind": "plain"}});
+        fill(&mut plain, &defaults);
+        assert!(plain["family"].get("shutdown").is_none());
+        // A document without the optional table gains none of it.
+        let mut other = json!({"system": {"kind": "boot-smoke"}});
+        fill(&mut other, &defaults);
+        assert!(other.get("family").is_none());
+    }
+
+    #[test]
+    fn presentation_fields_do_not_change_the_procedure() {
         let control = json!({"schema": 5, "id": "x", "description": "d", "tags": ["a"],
-            "bluetooth": {"kind": "secure-gatt"}});
+            "system": {"kind": "boot-smoke"}});
         let normalized = normalize(&control);
-        assert_eq!(normalized["repetitions"], 1);
         assert!(normalized.get("description").is_none() && normalized.get("tags").is_none());
         let mut unsupported = control.clone();
         unsupported["unsupported"] = json!("no image serves it");
         assert_eq!(normalize(&unsupported), normalized);
-        assert_eq!(normalized["bluetooth"]["shutdown"], "bond-load-failure");
-        // Another variant holds none of the secure-GATT defaults.
-        let dtm = normalize(&json!({"bluetooth": {"kind": "dtm"}}));
-        assert!(dtm["bluetooth"].get("shutdown").is_none());
-        // A document of another family holds no Bluetooth defaults.
-        let system = normalize(&json!({"system": {"kind": "boot-smoke"}}));
-        assert!(system.get("bluetooth").is_none());
     }
 }

@@ -217,6 +217,7 @@ fn a_document_names_exactly_one_known_family() {
     for family in [
         "",
         "[system]\nkind = 'boot-smoke'\n[bluetooth]\nkind = 'gatt'\n",
+        "[bluetooth]\nkind = 'gatt'\n",
         "[thread]\nkind = 'boot-smoke'\n",
         "image = 'boot-smoke'\n[system]\nkind = 'boot-smoke'\n",
     ] {
@@ -240,25 +241,20 @@ fn every_image_class_is_reached_by_a_family_plan() {
 }
 
 #[test]
-fn selection_requirements_union_every_family() {
+fn the_system_scenarios_need_no_fixture_service() {
     let catalog = catalog();
-    let selected = [
-        catalog.get("bluetooth-dtm-bidirectional").unwrap(),
-        catalog.get("boot-smoke").unwrap(),
-    ];
-    let required = requirements(&selected);
-    assert!(required.bluetooth_adapter);
-    assert!(requirements(&[catalog.get("boot-smoke").unwrap()]) == Requirements::default());
+    let selected = catalog.all().iter().collect::<Vec<_>>();
+    assert!(requirements(&selected) == Requirements::default());
 }
 
 #[test]
 fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
     let root = oer_process::built_root();
-    // A chip whose agent builds the radio classes.
+    // A chip whose agent builds every class.
     let staged = oer_chip_profile::Profile::all(&root)
         .unwrap()
         .into_iter()
-        .find(|profile| oer_hil_image_class::declares(&profile.id, "bluetooth-radio"))
+        .find(|profile| oer_hil_image_class::declares(&profile.id, "system-panic-reset"))
         .unwrap();
     let manifest: toml::Table =
         toml::from_str(&std::fs::read_to_string(staged.hil_agent_manifest(&root)).unwrap())
@@ -297,7 +293,7 @@ fn an_explicit_selection_refuses_an_unsupported_scenario_and_a_tag_skips_it() {
         std::fs::write(
             directory.path().join(format!("{id}.toml")),
             format!(
-                "schema = 5\nid = '{id}'\ndescription = 'd'\nrole = 'investigation'\ntags = ['shared']\n{unsupported}\n[bluetooth]\nkind = 'gatt'\n"
+                "schema = 5\nid = '{id}'\ndescription = 'd'\nrole = 'investigation'\ntags = ['shared']\n{unsupported}\n[system]\nkind = 'watchdog'\n"
             ),
         )
         .unwrap();

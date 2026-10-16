@@ -100,7 +100,7 @@ fn firmware_record_archives_the_exact_application() {
         .unwrap();
     firmware::record(
         &mut first_session,
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &test_artifacts(
             &application,
             &runtime_elf,
@@ -113,7 +113,7 @@ fn firmware_record_archives_the_exact_application() {
     let artifact = &first_session.manifest().firmware[0];
     assert_eq!(
         artifact.application_path,
-        PathBuf::from("firmware/bluetooth-gatt/application.bin")
+        PathBuf::from("firmware/system-watchdog/application.bin")
     );
     assert_eq!(artifact.application_size_bytes, 17);
     assert_eq!(
@@ -170,11 +170,11 @@ fn firmware_record_archives_the_exact_application() {
     // own recipe on it, which links no network.
     assert_eq!(
         provenance.parameters.network.as_deref(),
-        oer_hil_image_class::network_on(ImageClass::BluetoothGatt, TEST_CHIP)
+        oer_hil_image_class::network_on(ImageClass::SystemWatchdog, TEST_CHIP)
     );
     assert_eq!(
         provenance.parameters.runtime_features,
-        oer_hil_image_class::build_features_on(ImageClass::BluetoothGatt, TEST_CHIP)
+        oer_hil_image_class::build_features_on(ImageClass::SystemWatchdog, TEST_CHIP)
     );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
@@ -189,7 +189,7 @@ fn firmware_record_archives_the_exact_application() {
     assert!(
         firmware::record(
             &mut first_session,
-            ImageClass::BluetoothGatt,
+            ImageClass::SystemWatchdog,
             &test_artifacts(
                 &application,
                 &runtime_elf,
@@ -212,7 +212,7 @@ fn firmware_record_archives_the_exact_application() {
     fs::create_dir_all(run_directory.join(&artifacts)).unwrap();
     let result = oer_hil_run_bundle_format::run::ScenarioResult::from_repetitions(
         scenario.id().to_owned(),
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         scenario.repetitions(),
         vec![oer_hil_run_bundle_format::run::RepetitionResult {
             schema: oer_hil_run_bundle_format::run::RUN_SCHEMA,
@@ -248,7 +248,7 @@ fn firmware_record_archives_the_exact_application() {
         .unwrap();
     firmware::record(
         &mut second,
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &test_artifacts(
             &application,
             &runtime_elf,
@@ -302,7 +302,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
         .unwrap();
     firmware::record(
         &mut source,
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &test_artifacts(
             &application,
             &runtime_elf,
@@ -320,7 +320,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
         &root,
         "chip-a",
         "source-run",
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();

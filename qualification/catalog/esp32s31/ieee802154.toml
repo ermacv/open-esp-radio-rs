@@ -27,12 +27,10 @@ level = "lower-primitive"
 [source-facts.source-contract]
 id = "ieee802154-mac-operation-subset"
 composition = "production"
-scope = "The MAC engine ported from the public ESP-IDF driver owns RX with hardware and enhanced ACK, direct and CCA-gated TX with ACK reception, ED/CCA, timed TX/RX, the receive ring and the pending decision; the runtime serializes it with the MAC owners and queues its notifications"
-limits = "Host differential comparison with the compiled vendor driver covers the software sequence only; the arbiter-client composition is qualified on hardware only by HIL runs, and CSMA/CA, peer exchange and calibrated RF behavior are not implied"
+scope = "The MAC engine ported from the public ESP-IDF driver owns RX with hardware and enhanced ACK, direct and CCA-gated TX with ACK reception, ED/CCA, timed TX/RX, the receive ring and the pending decision"
+limits = "Host differential comparison with the compiled vendor driver covers the software sequence only; the runtime and arbiter-client composition went in #770 (tag `legacy-radio-2026-10-16`), and CSMA/CA, peer exchange and calibrated RF behavior are not implied"
 source-paths = [
   "crates/hardware/espressif/ieee802154/engine/src/engine.rs",
-  "crates/runtime/espressif/ieee802154/src/lib.rs",
-  "crates/composition/esp32s31/embassy/ieee802154/src/system.rs",
 ]
 
 [[capabilities]]
@@ -86,32 +84,6 @@ security = ["independent-of-link-security"]
 composition = "static-mac-policy"
 level = "lower-primitive"
 activation-boundary = "Checked channel CCA ACK control and primary PAN identity writes followed by one fail-closed semantic readback"
-limitations = "Only the exact declared source scope is represented; source coverage does not promote evidence axes, dependencies, calibrated RF behavior, or broader operational readiness."
-
-[[capabilities]]
-id = "polled-ed-cca"
-title = "Serialized route-detached polled ED and CCA"
-scope = "Finite raw ED or CCA command with exact event window abort evidence selected ED_DONE recovery and fail-stop owner disposition"
-implementation = "complete"
-host = "covered"
-async = "incomplete"
-depends-on = [
-  "static-mac-policy",
-]
-vendor-not-applicable = "masked-foundation-polled-ed-cca-has-no-esp-idf-counterpart"
-gaps = [
-  { axis = "hil", id = "cca-busy-operation-cell-missing" },
-  { axis = "async", id = "public-operation-runs-the-finite-poll-budget-synchronously" },
-]
-
-[capabilities.catalog-scope]
-chip = "esp32s31"
-role = "ieee802154-mac"
-phy = "ieee802154-2g4"
-security = ["independent-of-link-security"]
-composition = "polled-ed-cca"
-level = "lower-primitive"
-activation-boundary = "Finite raw ED or CCA command with exact event window abort evidence selected ED_DONE recovery and fail-stop owner disposition"
 limitations = "Only the exact declared source scope is represented; source coverage does not promote evidence axes, dependencies, calibrated RF behavior, or broader operational readiness."
 
 [[capabilities]]
@@ -209,32 +181,16 @@ id = "ieee802154-overview"
 domain = "ieee802154"
 title = "ESP32-S31 IEEE 802.15.4 source capabilities"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis inventory describes silicon features, source-owned operations and their\ncomposition limits. It does not claim a complete IEEE 802.15.4-2015 stack,\ncalibrated RF operation or on-air qualification.\n\n| Status | Meaning |\n| --- | --- |\n| IMPLEMENTED | A bounded source path owns the complete operation in the exact scope named by the row, including static policy or a polled MAC primitive. This is not an RF qualification result. |\n| PARTIAL | A source subset exists, but the named feature lacks a complete operational composition. |\n| FAIL-CLOSED | A typed boundary deliberately prevents the stated activation/publication. Known registers alone do not establish this status. |\n| ABSENT | No production protocol/runtime owner exists for the operation. |\n| HOST-ONLY | An upper-stack function, not a radio/MAC implementation claim. This label does not claim that a stack integration exists. |\n\nThe [qualification specification](../../../../../qualification/targets/esp32s31/ieee802154.toml)\nowns readiness and hardware-evidence requirements independently. It marks\nRF/channel readiness incomplete, and the RX/TX dataplane and the interrupt\nruntime incomplete on their asynchronous axis. Complete static MAC policy or raw ED/CCA does not supply those\nmissing boundaries."
-documents = [
-    "crates/hardware/esp32s31/driver/FEATURES.md",
-    "qualification/targets/esp32s31/ieee802154.toml",
-]
-
-[[sections]]
-id = "ieee802154-qualification-scope-mapping"
-domain = "ieee802154"
-title = "Qualification scope mapping"
-source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [program](../../../../../qualification/targets/esp32s31/ieee802154.toml) retains\nthese scopes and source contracts. Its capabilities do not include CSMA/CA or CSL:\nHIL cells exercise CSMA/CA with the vendor peer, but the program qualifies\nneither, and upper stacks remain outside the radio/MAC target."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
+overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis inventory describes silicon features, source-owned operations and their\ncomposition limits. It does not claim a complete IEEE 802.15.4-2015 stack,\ncalibrated RF operation or on-air qualification.\n\n| Status | Meaning |\n| --- | --- |\n| IMPLEMENTED | A bounded source path owns the complete operation in the exact scope named by the row, including static policy or a polled MAC primitive. This is not an RF qualification result. |\n| PARTIAL | A source subset exists, but the named feature lacks a complete operational composition. |\n| FAIL-CLOSED | A typed boundary deliberately prevents the stated activation/publication. Known registers alone do not establish this status. |\n| ABSENT | No production protocol/runtime owner exists for the operation. |\n| HOST-ONLY | An upper-stack function, not a radio/MAC implementation claim. This label does not claim that a stack integration exists. |\n\nNo qualification program selects these capabilities: the program went with\nthe orchestration in #770 (tag `legacy-radio-2026-10-16`). Readiness and\nhardware-evidence requirements stay independent of this inventory; complete\nstatic MAC policy or raw ED/CCA does not supply RF/channel readiness or an\nasynchronous dataplane."
+documents = ["crates/hardware/esp32s31/driver/FEATURES.md"]
 
 [[sections]]
 id = "ieee802154-capability-sources-and-publication-scope"
 domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The [radio role](../../../../roles/espressif/ieee802154/radio/src/lib.rs)\nadvertises the subset it implements, including `CSMA_CA`, `TRANSMIT_RETRIES` and\n`SECURITY_OFFLOAD` and `SOURCE_MATCH`. An advertised capability is source coverage,\nnot RF qualification.\n\nThe [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) admits portable\ncommands through the role, which starts the operations of the [MAC engine](../../../espressif/ieee802154/engine/src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service. The port's events consumer only takes\nevents: CSMA/CA backoffs and retry delays run in the port's joined driver\n(`PortBackend::drive`), which `run_port` polls beside the body."
-packages = [
-    "oer-ieee802154",
-    "oer-espressif-ieee802154-runtime",
-    "oer-espressif-ieee802154-radio",
-    "oer-espressif-ieee802154-engine",
-]
+overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The radio role\nadvertises the subset it implements, including `CSMA_CA`, `TRANSMIT_RETRIES` and\n`SECURITY_OFFLOAD` and `SOURCE_MATCH`. An advertised capability is source coverage,\nnot RF qualification.\n\nThe runtime admits portable\ncommands through the role, which starts the operations of the [MAC engine](../../../espressif/ieee802154/engine/src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service. The port's events consumer only takes\nevents: CSMA/CA backoffs and retry delays run in the port's joined driver\n(`PortBackend::drive`), which `run_port` polls beside the body."
+packages = ["oer-ieee802154", "oer-espressif-ieee802154-engine"]
 
 [[sections]]
 id = "ieee802154-phy-and-rf"
@@ -284,15 +240,7 @@ id = "ieee802154-ownership-and-readiness"
 domain = "ieee802154"
 title = "Ownership and readiness"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [composition](../../../../composition/esp32s31/embassy/ieee802154/src/system.rs)\nconnects these owners to the shared radio arbiter and the active IRQ route.\nQualification tracks the remaining implementation gaps, such as the shared\nPLL retune and tracking lifetime and joint PHY maintenance with other\nclients, and the on-air evidence independently of this inventory."
-
-[[items]]
-id = "ieee802154-phy-and-rf-2-4-ghz-o-qpsk-250-kbit-s"
-section = "ieee802154-phy-and-rf"
-title = "2.4 GHz O-QPSK / 250 kbit/s"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "MAC/PHY configuration and frame geometry exist. The composition's `start` registers or joins the shared PHY domain on the radio arbiter, runs the tracking due at the join and brings up the MAC, and the runtime serves the portable contract over it. Whole-radio operation is not qualified on air."
+overview = "The composition\nconnects these owners to the shared radio arbiter and the active IRQ route.\nQualification tracks the remaining implementation gaps, such as the shared\nPLL retune and tracking lifetime and joint PHY maintenance with other\nclients, and the on-air evidence independently of this inventory."
 
 [[items]]
 id = "ieee802154-phy-and-rf-channels-11-26"
@@ -302,15 +250,6 @@ status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Channel validation](../../hal/src/ieee802154/lifecycle.rs) and frequency-code publication exist, and the portable contract retunes the running radio. The HIL cell `ieee802154-channel-energy` retunes from channel 15 to 25 and back on air; the shared-PLL retune composition remains incomplete in qualification."
 packages = ["oer-esp32s31-hal", "oer-espressif-ieee802154-engine"]
-
-[[items]]
-id = "ieee802154-phy-and-rf-rssi"
-section = "ieee802154-phy-and-rf"
-title = "RSSI"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "The [engine](../../../espressif/ieee802154/engine/src/engine.rs) reports each received frame's hardware RSSI byte with the S31 compensation 0. The [runtime](../../../../runtime/espressif/ieee802154/src/backend.rs) reads the live baseband RSSI (`recent_rssi`, ESP-IDF's `esp_ieee802154_get_recent_rssi`) through the PAC's read-only baseband capability, and the OpenThread adapter answers `otPlatRadioGetRssi` with it; that byte reflects the most recent baseband reception of either protocol, as for the vendor. The HIL cell `ieee802154-channel-energy` compares the RSSI of the peer's burst frames with the channel energy on air. The HIL cell `ieee802154-live-rssi` reads it after the vendor peer's frames at 20 and -15 dBm: it agrees with the last frame's RSSI within 3 dB and follows the power step. Calibrated measurement is not established."
-packages = ["oer-espressif-ieee802154-engine", "oer-esp32s31-pac", "oer-espressif-ieee802154-runtime"]
 
 [[items]]
 id = "ieee802154-phy-and-rf-lqi"
@@ -328,23 +267,6 @@ status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) carries the S31 BTBB provider level set recovered from `bt_bb_get_tx_pwr_table` (-24 to 21 dBm in 3 dB steps) and the PIB publishes the resolved index before each operation. The portable contract sets it for every channel or for one (`esp_ieee802154_set_power_with_channel`). On-air output power is not measured."
 packages = ["oer-esp32s31-hal"]
-
-[[items]]
-id = "ieee802154-cca-and-channel-access-energy-detection-command"
-section = "ieee802154-cca-and-channel-access"
-title = "Energy Detection command"
-status = "implemented"
-level = "lower-primitive"
-scope-and-limitations = "[Polled operation](../../hal/src/ieee802154/operation.rs) owns a finite route-detached raw ED command, duration, event/completion and bounded recovery. It does not establish calibrated RF energy, a multi-channel scan or a nonblocking public service."
-packages = ["oer-esp32s31-hal"]
-
-[[items]]
-id = "ieee802154-cca-and-channel-access-standalone-cca-command"
-section = "ieee802154-cca-and-channel-access"
-title = "Standalone CCA command"
-status = "implemented"
-level = "lower-primitive"
-scope-and-limitations = "The same serialized polled boundary owns a finite MAC CCA operation. RF readiness and busy-channel HIL coverage remain separate requirements."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-four-cca-modes"
@@ -447,14 +369,6 @@ level = "composed-product"
 scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from the role's generator, a port of ESP-IDF's OpenThread generator: the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from the radio's MAC keys with engine-armed transmit security. Received frames report the frame-pending bit and the counter and key index of the secured ACK they were sent. With CSL the ACK carries the port's CSL IE, filled with period and phase at its SFD. For a Link Metrics probing initiator the ACK carries the Thread enhanced-ACK probing IE with the frame's LQI, link margin and RSSI, from the [portable probing table](../../../../protocols/ieee802154/src/mac/link_metrics.rs) the OpenThread adapter fills from `otPlatRadioConfigureEnhAckProbing`; link margins are measured from the reported receive sensitivity, where ESP-IDF's port leaves the noise floor at zero. Other header IEs are fixed caller bytes. The HIL cell `ieee802154-peer-exchange` has the vendor peer receive the device's enhanced ACK of a 2015 frame; secured, CSL and probing enhanced ACKs are not exercised on air."
 
 [[items]]
-id = "ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering"
-section = "ieee802154-filtering-addressing-and-mac-automation"
-title = "Hardware frame filtering"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "PAN identity, the PAN coordinator role and promiscuous control are configured through the portable contract. The HIL cell `ieee802154-peer-exchange` shows the device neither acknowledging nor reporting a peer frame to another short address; broadcast, PAN and extended-address filtering are not exercised on air."
-
-[[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-pan-id"
 section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "PAN ID"
@@ -501,14 +415,7 @@ title = "Four Multi-PAN contexts"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "A [multi-PAN engine](../../../espressif/ieee802154/engine/src/engine.rs) assigns each received frame to the interface it addresses and keeps pending mode, pending table, receive and sleep per interface, as the vendor multi-PAN build does. The portable contract addresses up to the engine's interfaces (`MULTI_PAN`, `Configuration::Interface`, `TxRequest::interface`, `RxMetadata::interface`); the role keeps MAC keys, the nonce address and enhanced-ACK security per interface, as ESP-IDF's multi-instance OpenThread port does, and the composition parks a multi-PAN engine. The OpenThread adapter serves one instance on interface zero; on-air multi-PAN filtering is not qualified."
-packages = [
-    "oer-espressif-ieee802154-engine",
-    "oer-esp32s31-pac",
-    "oer-ieee802154",
-    "oer-espressif-ieee802154-radio",
-    "oer-espressif-ieee802154-runtime",
-    "oer-esp32s31-ieee802154-system",
-]
+packages = ["oer-espressif-ieee802154-engine", "oer-esp32s31-pac", "oer-ieee802154"]
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-automatic-frame-pending"
@@ -573,7 +480,7 @@ section = "ieee802154-timing"
 title = "Coordinated Sampled Listening (CSL)"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "OpenThread owns CSL scheduling and synchronization; the radio serves it as ESP-IDF's OpenThread port does. The [portable CSL module](../../../../protocols/ieee802154/src/mac/csl.rs) ports the CSL IE template, OpenThread's CSL IE write and the port's phase; the role puts the IE into enhanced ACKs, writes period and phase into every CSL IE it sends at the frame's SFD through the engine, and secures retransmissions anew. The [OpenThread adapter](../../../../adapters/openthread/ieee802154/src/radio.rs) maps CSL windows to scheduled receive windows and delayed frames to scheduled transmissions over the fork's csl feature. No peer has exchanged CSL frames with the device; on-air CSL is not qualified."
+scope-and-limitations = "OpenThread owns CSL scheduling and synchronization; the radio serves it as ESP-IDF's OpenThread port does. The [portable CSL module](../../../../protocols/ieee802154/src/mac/csl.rs) ports the CSL IE template, OpenThread's CSL IE write and the port's phase; the role puts the IE into enhanced ACKs, writes period and phase into every CSL IE it sends at the frame's SFD through the engine, and secures retransmissions anew. The OpenThread adapter maps CSL windows to scheduled receive windows and delayed frames to scheduled transmissions over the fork's csl feature. No peer has exchanged CSL frames with the device; on-air CSL is not qualified."
 
 [[items]]
 id = "ieee802154-timing-network-time-sync"
@@ -581,8 +488,8 @@ section = "ieee802154-timing"
 title = "Thread network time synchronization (Time IE)"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "OpenThread owns time synchronization; the radio fills a transmitted frame's Time IE as ESP-IDF's OpenThread port does at the SFD: the [portable Time IE write](../../../../protocols/ieee802154/src/mac/time_sync.rs) puts the time sync sequence and the radio clock plus the network time offset into it, and the role writes it for the request's Time IE (`TIME_SYNC`) and never into an enhanced ACK. The [OpenThread adapter](../../../../adapters/openthread/ieee802154/src/radio.rs) passes OpenThread's Time IE over the fork's time-sync feature, whose `otPlatTimeGet` reads the same radio clock. No peer has synchronized with the device; on-air time synchronization is not qualified."
-packages = ["oer-ieee802154", "oer-espressif-ieee802154-radio", "oer-ieee802154-openthread"]
+scope-and-limitations = "OpenThread owns time synchronization; the radio fills a transmitted frame's Time IE as ESP-IDF's OpenThread port does at the SFD: the [portable Time IE write](../../../../protocols/ieee802154/src/mac/time_sync.rs) puts the time sync sequence and the radio clock plus the network time offset into it, and the role writes it for the request's Time IE (`TIME_SYNC`) and never into an enhanced ACK. The OpenThread adapter passes OpenThread's Time IE over the fork's time-sync feature, whose `otPlatTimeGet` reads the same radio clock. No peer has synchronized with the device; on-air time synchronization is not qualified."
+packages = ["oer-ieee802154"]
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-hardware-tx-security"
@@ -609,14 +516,6 @@ level = "composed-product"
 scope-and-limitations = "The radio sleeps in the MAC while RF stays open for the client's lifetime, as in ESP-IDF builds without tickless idle and modem retention, where IEEE802154_RF_DISABLE and IEEE802154_RF_ENABLE are empty; RF closes only when the last client stops. Closing RF while asleep, modem retention, light sleep and MAC or baseband power-down are absent."
 
 [[items]]
-id = "ieee802154-security-power-and-coexistence-powered-lifecycle"
-section = "ieee802154-security-power-and-coexistence"
-title = "Powered lifecycle"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "The composition's `start` and `stop` bring the client up and down on the shared radio arbiter: common radio power, module clocks, the PHY join and leave, BTBB, the MAC foundation and the interrupt route; its maintenance entry runs the shared PHY's tracking. Modem retention and light sleep are absent, and the lifecycle is not qualified on air."
-
-[[items]]
 id = "ieee802154-security-power-and-coexistence-wifi-bluetooth-coexistence"
 section = "ieee802154-security-power-and-coexistence"
 title = "Wi-Fi/Bluetooth coexistence"
@@ -624,14 +523,6 @@ status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. The composed client publishes the software-coexistence PTIs of the pinned driver: the ACK and TX/RX scene priorities read from the arbiter's shared table ([scene priorities](../../hal/src/ieee802154/coex.rs)). The static foundation and MAC policy still prove both PTIs disabled before operation. The HIL cell `ieee802154-peer-exchange-coex` runs the acknowledged peer exchange with the device in coexistence with Wi-Fi and the coexistence schedule running. Complete multi-radio request/grant/release operation under Wi-Fi load is not composed, and PTI arbitration is not measured on air. External coexistence is absent: its TX and RX stages do nothing on the pinned ESP32-S31 libcoexist, and the force-RX and arbitration-delay writes its builds make at MAC init and deinit wait for an external-coexistence owner in the coexistence driver."
 packages = ["oer-esp32s31-coex", "oer-esp32s31-hal"]
-
-[[items]]
-id = "ieee802154-product-stacks-thread"
-section = "ieee802154-product-stacks"
-title = "Thread"
-status = "host-only"
-level = "composed-product"
-scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. OpenThread is built with CSL, and the radio serves its scheduled windows, delayed frames and CSL IEs. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread minimal or synchronized sleepy end device, and the `oer` facade's `openthread` feature exposes the adapter. The former HIL cell `ieee802154-thread-exchange` (tag `legacy-wifi-2026-10-16`) attached a minimal end device to a network ESP-IDF's OpenThread leads and exchanged UDP both ways on air; no HIL scenario runs it now; this matrix does not claim a production Thread integration."
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"
@@ -660,54 +551,6 @@ id = "ieee802154-mac-operation-subset-source-fact"
 section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Lower IEEE 802.15.4 MAC operation subset"
 source-fact = "ieee802154-mac-operation-subset"
-
-[[references]]
-id = "ieee802154-qualification-scope-mapping-clocks-reset-and-masked-foundation"
-section = "ieee802154-qualification-scope-mapping"
-title = "Clocks, reset and masked foundation"
-kind = "qualification-mapping"
-details = "Qualification capability: `clock-reset-foundation`\n\nAgreement: Complete finite source transition; hardware evidence is separate."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
-
-[[references]]
-id = "ieee802154-qualification-scope-mapping-cca-modes-threshold-and-primary-pan-identity"
-section = "ieee802154-qualification-scope-mapping"
-title = "CCA modes, threshold and primary PAN identity"
-kind = "qualification-mapping"
-details = "Qualification capability: `static-mac-policy`\n\nAgreement: Complete static policy/readback, not a complete receive service."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
-
-[[references]]
-id = "ieee802154-qualification-scope-mapping-raw-ed-standalone-cca"
-section = "ieee802154-qualification-scope-mapping"
-title = "Raw ED / standalone CCA"
-kind = "qualification-mapping"
-details = "Qualification capability: `polled-ed-cca`\n\nAgreement: Implementation is complete; async remains incomplete because the public path runs a finite synchronous poll budget."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
-
-[[references]]
-id = "ieee802154-qualification-scope-mapping-registered-phy-and-protocol-timing-channel-operation"
-section = "ieee802154-qualification-scope-mapping"
-title = "Registered PHY and protocol timing / channel operation"
-kind = "qualification-mapping"
-details = "Qualification capability: `rf-channel-readiness`\n\nAgreement: `ieee802154-registered-timing-entry` exists; shared PLL, RF retune and tracking lifetime composition remain incomplete."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
-
-[[references]]
-id = "ieee802154-qualification-scope-mapping-active-irq-service"
-section = "ieee802154-qualification-scope-mapping"
-title = "Active IRQ service"
-kind = "qualification-mapping"
-details = "Qualification capability: `active-interrupt-runtime`\n\nAgreement: Lower IRQ machinery does not close whole-radio route/runtime composition."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
-
-[[references]]
-id = "ieee802154-qualification-scope-mapping-mac-engine-and-runtime-public-dataplane"
-section = "ieee802154-qualification-scope-mapping"
-title = "MAC engine and runtime / public dataplane"
-kind = "qualification-mapping"
-details = "Qualification capability: `rx-tx-dataplane`\n\nAgreement: `ieee802154-mac-operation-subset` exists. Implementation is complete; async remains incomplete, and RF readiness is bounded by the `rf-channel-readiness` dependency."
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-hal"
@@ -760,10 +603,9 @@ packages = ["oer-esp32s31-hal"]
 [[references]]
 id = "ieee802154-ownership-and-readiness-runtime"
 section = "ieee802154-ownership-and-readiness"
-title = "[Runtime](../../../../runtime/espressif/ieee802154/src/lib.rs)"
+title = "Runtime"
 kind = "source-reference"
 details = "Authority: Engine and MAC owners under one lock, interrupt entry and bounded event queue"
-packages = ["oer-espressif-ieee802154-runtime"]
 
 [[references]]
 id = "ieee802154-source-esp32-s31-datasheet"
@@ -785,7 +627,7 @@ section = "ieee802154-capability-sources-and-publication-scope"
 title = "Portable `RadioCapabilities` vocabulary"
 kind = "source-reference"
 details = "The portable capability dictionary is a vocabulary; the radio role advertises the engine-backed subset as source coverage, not RF qualification."
-packages = ["oer-ieee802154", "oer-espressif-ieee802154-radio"]
+packages = ["oer-ieee802154"]
 
 [[references]]
 id = "ieee802154-source-lower-runtime-entry-points"
@@ -793,8 +635,4 @@ section = "ieee802154-capability-sources-and-publication-scope"
 title = "Runtime operation entry points"
 kind = "source-reference"
 details = "Portable commands start the ported vendor operations through the role; they do not establish a complete public RF-ready service. CSMA/CA transmissions back off in the runtime's runner `Ieee802154Runtime::run` (published as `Ieee802154System::run`), not in its event wait."
-packages = [
-    "oer-espressif-ieee802154-runtime",
-    "oer-espressif-ieee802154-radio",
-    "oer-espressif-ieee802154-engine",
-]
+packages = ["oer-espressif-ieee802154-engine"]

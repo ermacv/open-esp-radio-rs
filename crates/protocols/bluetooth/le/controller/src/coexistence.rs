@@ -16,7 +16,7 @@ use oer_bluetooth_radio::{CoexistenceLevel, RadioDuration};
 /// interval of at most 40 units of 625 us raises every third event, at most
 /// 80 units every second one and a longer interval every event. The start
 /// also raises the level until the first update.
-pub(crate) const fn advertising_period(interval: RadioDuration<LeRadio>) -> u16 {
+pub const fn advertising_period(interval: RadioDuration<LeRadio>) -> u16 {
     let units = interval.as_micros() / 625;
     if units <= 40 {
         3
@@ -37,7 +37,7 @@ pub(crate) const fn advertising_period(interval: RadioDuration<LeRadio>) -> u16 
 /// before that update, so an event carries the level of the count before
 /// the previous event ended, and the first two carry the start level.
 // CAPABILITY: coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority
-pub(crate) const fn advertising_level(period: u16, ended: u16) -> CoexistenceLevel {
+pub const fn advertising_level(period: u16, ended: u16) -> CoexistenceLevel {
     if ended <= 1 || (ended - 1).is_multiple_of(period) {
         CoexistenceLevel::Elevated
     } else {
@@ -63,7 +63,7 @@ const CONNECTION_OPENING_EVENTS: u16 = 6;
 /// one starts), raise the level. `r_sym_coexConn_8zwo11wSByltviHFU8eN`
 /// counts receptions from event zero when the connection is created.
 // CAPABILITY: coex-coexistence-policy-and-scheduler-ble-connection-dynamic-priority
-pub(crate) const fn peripheral_connection_level(
+pub const fn peripheral_connection_level(
     event_counter: u16,
     last_reception: Option<u16>,
     interval_micros: u32,

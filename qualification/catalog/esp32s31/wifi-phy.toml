@@ -6,79 +6,46 @@ hil-catalog = "hil/scenarios"
 
 [[source-facts]]
 id = "bluetooth-initial-phy-handoff"
-status = "implemented"
+status = "partial"
 level = "lower-primitive"
 
 [source-facts.source-contract]
 id = "bluetooth-initial-phy-handoff"
 composition = "production"
 scope = "Common radio power and Bluetooth module clocks through the shared radio arbiter, arbiter-owned PHY registration or RF wake, then Bluetooth-client and BTBB membership with initial tracking at once under the arbiter lease when due at the join"
-limits = "This bounded handoff retains fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
+limits = "The PHY client and driver steps remain; the shared radio arbiter and the Bluetooth composition that ran them went in #770 (tag `legacy-radio-2026-10-16`), so nothing composes the handoff now. It retained fail-stop ownership after the first Controller write; the parent also requires periodic maintenance and final physical release"
 source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
-  "crates/composition/esp32s31/embassy/bluetooth/src/system.rs",
 ]
 
 [[source-facts]]
 id = "bluetooth-idle-phy-maintenance"
-status = "implemented"
-level = "composed-product"
+status = "partial"
+level = "lower-primitive"
 
 [source-facts.source-contract]
 id = "bluetooth-idle-phy-maintenance"
 composition = "production"
-scope = "Run due shared-PHY tracking while the idle Bluetooth Controller is a PHY client, as the vendor does: the radio system's periodic tracking timer runs the tracking transaction under the PHY lock and grant protection without stopping the Controller's HCI, role or interrupt epochs"
-limits = "Thermal and RF qualification remain separate"
+scope = "Run due shared-PHY tracking while the idle Bluetooth Controller is a PHY client, as the vendor does: a periodic tracking timer runs the tracking transaction under the PHY lock and grant protection without stopping the Controller's HCI, role or interrupt epochs"
+limits = "The tracking transaction remains; the radio system whose timer ran it went in #770 (tag `legacy-radio-2026-10-16`). Thermal and RF qualification remain separate"
 source-paths = [
-  "crates/runtime/esp32s31/radio/src/system.rs",
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
 ]
 
 [[source-facts]]
 id = "bluetooth-periodic-phy-maintenance"
-status = "implemented"
-level = "composed-product"
+status = "partial"
+level = "lower-primitive"
 
 [source-facts.source-contract]
 id = "bluetooth-periodic-phy-maintenance"
 composition = "production"
 scope = "Periodic shared-PHY tracking throughout the Bluetooth Controller lifetime as ESP-IDF's phy_track_pll timer does, without pausing advertising, scanning, connection or Direct Test Mode events"
-limits = "Tracking does not wait for a gap between Bluetooth events; the vendor admission relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
+limits = "The tracking transaction remains; the radio system whose timer ran it went in #770 (tag `legacy-radio-2026-10-16`). Tracking does not wait for a gap between Bluetooth events; the vendor admission relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
 source-paths = [
-  "crates/runtime/esp32s31/radio/src/system.rs",
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
-]
-
-[[source-facts]]
-id = "bluetooth-idle-powered-release"
-status = "implemented"
-level = "composed-product"
-
-[source-facts.source-contract]
-id = "bluetooth-idle-powered-release"
-composition = "production"
-scope = "Stop one Controller epoch in any role state: stop the scheduler with any events still listed, settle the source-127 task, remove the CPU routes and recover both interrupt owners, release the Controller output, leave the shared PHY domain and BTBB, reset the Controller, release its clocks and leave common power, returning the parked partition with the controller memory at its allocation-time image"
-limits = "A failed step leaves the Controller unable to run again in this boot. RF closes only when the last PHY client leaves the shared radio"
-source-paths = [
-  "crates/composition/esp32s31/embassy/bluetooth/src/system.rs",
-  "crates/runtime/esp32s31/bluetooth/src/runtime.rs",
-]
-
-[[source-facts]]
-id = "bluetooth-same-storage-powered-restart"
-status = "implemented"
-level = "composed-product"
-
-[source-facts.source-contract]
-id = "bluetooth-same-storage-powered-restart"
-composition = "production"
-scope = "Start the next Controller epoch from the parked partition that the previous epoch returned, reusing the same controller memory allocations, while the HCI service retires the drained Host end and restarts with a fresh Controller core"
-limits = "The controller memory is claimed once per boot. Host bonds and connections do not survive the restart"
-source-paths = [
-  "crates/composition/esp32s31/embassy/bluetooth/src/system.rs",
-  "crates/composition/esp32s31/embassy/bluetooth/src/hci.rs",
 ]
 
 [[source-facts]]
@@ -148,24 +115,22 @@ source-paths = [
 [[capabilities.source-contracts]]
 id = "phy-cache-cold-replay"
 composition = "production"
-scope = "The radio system hands a retained cache to the shared domain's first registration, which validates the retained semantic calibration, restores it into a cold state owner, regenerates frequency memory, republishes gain state and skips the completed full-calibration prefix"
-limits = "Invalid or incomplete caches fall back to full calibration; the partial path still performs RXIQ and the common cold tail, and does not claim retained wake or broad RF qualification"
+scope = "A retained cache handed to the shared domain's first registration which validates the retained semantic calibration, restores it into a cold state owner, regenerates frequency memory, republishes gain state and skips the completed full-calibration prefix"
+limits = "No radio system hands the cache over since #770 (tag `legacy-radio-2026-10-16`). Invalid or incomplete caches fall back to full calibration; the partial path still performs RXIQ and the common cold tail, and does not claim retained wake or broad RF qualification"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
   "crates/hardware/esp32s31/phy/src/state.rs",
   "crates/hardware/esp32s31/phy/src/target_port/concurrent.rs",
-  "crates/runtime/esp32s31/radio/src/system.rs",
 ]
 
 [[capabilities.source-contracts]]
 id = "phy-final-state-cache-handoff"
 composition = "production"
-scope = "Capture the registered shared domain's final post-tracking calibration state, with RF open or closed, as the cache for the next cold registration under the radio system's platform-derived identity"
-limits = "The domain stays registered across RF close and wake, so a radio restart wakes RF without registering; the captured cache feeds the first registration of a later radio system. Broad RF behavior remains outside this source contract"
+scope = "Capture the registered shared domain's final post-tracking calibration state, with RF open or closed, as the cache for the next cold registration under a platform-derived identity"
+limits = "The domain stays registered across RF close and wake, so a radio restart wakes RF without registering; the captured cache feeds the first registration of a later radio composition, which no code builds since #770. Broad RF behavior remains outside this source contract"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
-  "crates/runtime/esp32s31/radio/src/system.rs",
 ]
 
 
@@ -343,8 +308,8 @@ id = "phy-qualification-boundary"
 domain = "phy"
 title = "Qualification boundary"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
-overview = "There is no standalone PHY qualification target. Current readiness requirements\nare carried by [Bluetooth](../../../../qualification/targets/esp32s31/bluetooth-le.toml) and\n[IEEE 802.15.4](../../../../qualification/targets/esp32s31/ieee802154.toml).\nThis inventory does not promote their proof states. No Wi-Fi program exists, and\nno composition currently registers the PHY for Wi-Fi.\n\nPLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,\nand calibration stability across sleep/wake require their own hardware evidence.\nA completed source transition or protocol cold start cannot substitute for those\nmeasurements. Broad RF qualification remains a separate readiness requirement."
-documents = ["qualification/catalog/esp32s31/wifi-phy.toml", "qualification/targets/esp32s31/bluetooth-le.toml", "qualification/targets/esp32s31/ieee802154.toml"]
+overview = "There is no standalone PHY qualification target, and no radio program carries\nPHY readiness requirements since the orchestration went in #770 (tag\n`legacy-radio-2026-10-16`). This inventory promotes no proof state, and no\ncomposition currently registers the PHY for any radio.\n\nPLL lock, channel correctness, calibrated TX power, RX sensitivity after retune,\nand calibration stability across sleep/wake require their own hardware evidence.\nA completed source transition or protocol cold start cannot substitute for those\nmeasurements. Broad RF qualification remains a separate readiness requirement."
+documents = ["qualification/catalog/esp32s31/wifi-phy.toml"]
 
 [[items]]
 id = "phy-rf-and-analog-primitives-common-cold-registration"
@@ -894,12 +859,6 @@ level = "composed-product"
 scope-and-limitations = "the production Wi-Fi supervisor quiesces an idle role frontier, releases the final client, executes target RF close, restores the captured route-owned clock/reset baseline during cold-owner reunion, and can cold-restart with the final-state cache"
 
 [[items]]
-id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-bluetooth"
-section = "phy-protocol-consumer-composition"
-title = "Idle last-client RF/analog shutdown — Bluetooth"
-source-fact = "bluetooth-idle-powered-release"
-
-[[items]]
 id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Complete last-client RF/analog shutdown — IEEE 802.15.4"
@@ -985,8 +944,3 @@ section = "phy-protocol-consumer-composition"
 title = "Idle Bluetooth PHY maintenance"
 source-fact = "bluetooth-idle-phy-maintenance"
 
-[[items]]
-id = "phy-protocol-consumer-bluetooth-same-storage-powered-restart"
-section = "phy-protocol-consumer-composition"
-title = "Bluetooth cold restart with original storage"
-source-fact = "bluetooth-same-storage-powered-restart"

@@ -272,8 +272,8 @@ impl ConcurrentPhy {
 /// registered, RF open and settled, and its registration describes the
 /// lease. It borrows that lease exclusively, so nothing can close RF or start
 /// tracking before the client's join consumes it; the join gives the lease
-/// back. Whoever prepared the domain (the radio system's preparation, or
-/// another client before), a client enters only a domain that is ready.
+/// back. Whoever prepared the domain (the shared radio's owner, or another
+/// client before), a client enters only a domain that is ready.
 ///
 /// It cannot be copied for a second client:
 ///

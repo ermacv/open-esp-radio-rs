@@ -15,7 +15,7 @@ link, and refuses a checkout whose own run directory holds runs. Qualification r
 per bundle whether it applies to that checkout's sources.
 
 ```console
-cargo hil runs list --scenario bluetooth-trouble-gatt --outcome failed --since 7d
+cargo hil runs list --scenario system-watchdog --outcome failed --since 7d
 cargo hil runs show <run-id>          # where its artifacts are
 cargo hil runs why <run-id>
 cargo hil runs compare <run-a> <run-b> --measurement mbps
@@ -339,7 +339,7 @@ no evidence.
 
 ```console
 cargo hil ab --a 'rev=main' --b 'rev=main;override:esp-hal=/home/me/src/esp-hal' \
-  --scenario bluetooth-dtm-bidirectional --repetitions 3 --layout-seeds 2 \
+  --scenario system-watchdog --repetitions 3 --layout-seeds 2 \
   --order-seed 7
 ```
 

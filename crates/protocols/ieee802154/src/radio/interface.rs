@@ -5,8 +5,8 @@
 ///
 /// Every radio has the [`Interface::PRIMARY`] interface; a radio with
 /// [`RadioCapabilities::MULTI_PAN`](crate::RadioCapabilities::MULTI_PAN)
-/// has as many as its state machine was built with
-/// ([`RadioStateMachine::with_interfaces`](crate::RadioStateMachine::with_interfaces)).
+/// has as many as its capabilities state
+/// ([`Ieee802154Capabilities::interfaces`](crate::Ieee802154Capabilities::interfaces)).
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Interface(u8);

@@ -342,12 +342,6 @@ fn resource_keys(
 ) -> Result<Vec<String>> {
     use super::config::StationFixtureConfig;
     let mut keys = Vec::new();
-    if required.bluetooth_adapter {
-        keys.push(bluetooth_key(
-            lab.bluetooth_adapter
-                .ok_or("missing Bluetooth fixture adapter")?,
-        )?);
-    }
     if required.local_radio() {
         keys.push(local_radio_key(Path::new("/sys/class/net/wlan0"))?);
     }
@@ -414,39 +408,3 @@ fn local_radio_key(interface: &Path) -> Result<String> {
 
 #[cfg(test)]
 mod tests;
-
-fn bluetooth_key(adapter: oer_hil_fixture::bluetooth::model::Adapter) -> Result<String> {
-    Ok(format!(
-        "bluetooth:{}",
-        Path::new("/sys/class/bluetooth")
-            .join(adapter.to_string())
-            .canonicalize()?
-            .display()
-    ))
-}
-
-/// The Bluetooth adapter alone, under the stand's lease.
-pub struct BluetoothLease {
-    _resource: ResourceLock,
-    _grant: oer_stand_arbiter::Grant,
-}
-
-pub fn acquire_bluetooth(
-    adapter: oer_hil_fixture::bluetooth::model::Adapter,
-) -> Result<BluetoothLease> {
-    let key = bluetooth_key(adapter)?;
-    let grant = acquire_stand(
-        &oer_stand_arbiter::Arbiter::open()?,
-        vec![
-            oer_stand_claims::Claim::exclusive(&key),
-            oer_stand_claims::Claim::shared(oer_stand_claims::AIR),
-        ],
-        &[],
-        None,
-        false,
-    )?;
-    Ok(BluetoothLease {
-        _resource: ResourceLock::acquire(&key)?,
-        _grant: grant,
-    })
-}

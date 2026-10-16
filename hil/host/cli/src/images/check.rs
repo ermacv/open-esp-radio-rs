@@ -443,7 +443,7 @@ mod tests {
         for class in ImageClass::ALL {
             record(class, &["crates/common/src/lib.rs"]);
         }
-        let [wifi, bluetooth] = [ImageClass::BluetoothSecureGatt, ImageClass::BluetoothGatt];
+        let [wifi, other] = [ImageClass::SystemPanicReset, ImageClass::SystemWatchdog];
         record(
             wifi,
             &["crates/common/src/lib.rs", "crates/wifi/src/lib.rs"],
@@ -460,7 +460,7 @@ mod tests {
             changed(&["crates/common/src/lib.rs"]).len(),
             ImageClass::ALL.len()
         );
-        assert!(!changed(&["crates/wifi/src/lib.rs"]).contains(&bluetooth));
+        assert!(!changed(&["crates/wifi/src/lib.rs"]).contains(&other));
         // Configuration and builder files are inputs like any other: a
         // class is rebuilt when its record names one.
         record(
@@ -489,12 +489,12 @@ mod tests {
         assert_eq!(changed(&["docs/guide.md"]), [wifi]);
         std::fs::remove_dir_all(builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
-            bluetooth.id(),
+            other.id(),
             oer_hil_image_class::NETWORK
         )))
         .unwrap();
         assert!(
-            changed(&["docs/guide.md"]).contains(&bluetooth),
+            changed(&["docs/guide.md"]).contains(&other),
             "no record: build it"
         );
     }
@@ -553,22 +553,22 @@ mod tests {
         let graph = |packages: &[&str]| packages.iter().map(|p| (*p).to_owned()).collect();
         let graphs = vec![
             (
-                ImageClass::BluetoothGatt,
-                graph(&["agent", "oer-bluetooth-radio"]),
+                ImageClass::SystemWatchdog,
+                graph(&["agent", "oer-watchdog"]),
             ),
-            (ImageClass::SystemWatchdog, graph(&["agent", "oer-system"])),
             (
-                ImageClass::BluetoothDtm,
-                graph(&["agent", "oer-bluetooth-radio"]),
+                ImageClass::SystemPanicReset,
+                graph(&["agent", "oer-system"]),
             ),
+            (ImageClass::BootSmoke, graph(&["agent", "oer-watchdog"])),
         ];
         assert_eq!(
-            image_classes(&BTreeSet::from(["oer-bluetooth-radio"]), &graphs),
-            [ImageClass::BluetoothGatt, ImageClass::BluetoothDtm]
+            image_classes(&BTreeSet::from(["oer-watchdog"]), &graphs),
+            [ImageClass::SystemWatchdog, ImageClass::BootSmoke]
         );
         assert_eq!(
             image_classes(&BTreeSet::from(["oer-system"]), &graphs),
-            [ImageClass::SystemWatchdog]
+            [ImageClass::SystemPanicReset]
         );
         assert!(image_classes(&BTreeSet::from(["oer-other"]), &graphs).is_empty());
     }

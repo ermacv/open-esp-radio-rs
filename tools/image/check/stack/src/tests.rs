@@ -211,14 +211,6 @@ top_symbol = "stack_top"
 minimum_free_bytes = 64
 "#;
 
-const CPU1: &str = r#"
-[cpu1_task_stack]
-root = "runtime_main"
-storage_symbol = "cpu1_stack"
-minimum_free_bytes = 128
-optional = true
-"#;
-
 const ASM_REVIEW: &str = r#"
 [[reviewed]]
 symbols = ["asm_entry"]
@@ -272,7 +264,6 @@ fn the_policy_names_each_stack_root_and_its_reserve() {
             top: "stack_top"
         }
     );
-    assert_eq!(base.cpu1_task_stack, None);
     assert_eq!(
         base.runtime_environment(),
         [
@@ -280,12 +271,12 @@ fn the_policy_names_each_stack_root_and_its_reserve() {
             ("OPEN_RADIO_IRQ_STACK_MINIMUM_FREE_BYTES", "256".to_owned()),
         ]
     );
-    // An extension adds the second core's stack to its base.
+    // An extension reuses its base unchanged.
     let nested = directory.path().join("hil");
     std::fs::create_dir(&nested).unwrap();
     std::fs::write(
         nested.join("stack.toml"),
-        format!("schema = 5\nextends = \"../stack.toml\"\n{CPU1}"),
+        "schema = 5\nextends = \"../stack.toml\"\n",
     )
     .unwrap();
     let extended = StackPolicy::load(&nested.join("stack.toml")).unwrap();
@@ -302,13 +293,15 @@ fn the_policy_names_each_stack_root_and_its_reserve() {
             .canonicalize()
             .unwrap()
     );
-    assert!(extended.cpu1_task_stack.as_ref().unwrap().optional);
-    assert_eq!(extended.runtime_task_stacks().len(), 2);
-    assert!(
-        extended
-            .runtime_environment()
-            .contains(&("OPEN_RADIO_CPU1_STACK_MINIMUM_FREE_BYTES", "128".to_owned()))
-    );
+    assert_eq!(extended.runtime_task_stacks().len(), 1);
+    assert_eq!(extended.runtime_environment(), base.runtime_environment());
+    // An extension adds nothing of its own.
+    std::fs::write(
+        nested.join("stack.toml"),
+        "schema = 5\nextends = \"../stack.toml\"\nmax_move_bytes = 1\n",
+    )
+    .unwrap();
+    assert!(StackPolicy::load(&nested.join("stack.toml")).is_err());
 }
 
 #[test]
@@ -344,7 +337,7 @@ fn a_policy_out_of_its_schema_fails() {
     assert!(
         load(BASE.replace(
             "minimum_free_bytes = 512",
-            "minimum_free_bytes = 512\noptional = true"
+            "minimum_free_bytes = 512\nunknown = true"
         ))
         .is_err()
     );
@@ -361,17 +354,10 @@ fn a_policy_out_of_its_schema_fails() {
     assert!(
         load("schema = 5\nmax_move_bytes = 4096\ncoverage_policy = \"c.toml\"\n".into()).is_err()
     );
-    // An extension may not set the second core's stack twice, nor extend an
-    // extension.
+    // An extension may not extend an extension.
     let base = directory.path().join("base.toml");
-    std::fs::write(&base, format!("{BASE}{CPU1}")).unwrap();
-    assert!(load(format!("schema = 5\nextends = \"base.toml\"\n{CPU1}")).is_err());
-    std::fs::write(
-        &base,
-        format!("schema = 5\nextends = \"stack.toml\"\n{CPU1}"),
-    )
-    .unwrap();
-    assert!(load(format!("schema = 5\nextends = \"base.toml\"\n{CPU1}")).is_err());
+    std::fs::write(&base, "schema = 5\nextends = \"stack.toml\"\n").unwrap();
+    assert!(load("schema = 5\nextends = \"base.toml\"\n".to_owned()).is_err());
 }
 
 #[test]
@@ -452,19 +438,8 @@ fn a_root_the_image_lacks_fails() {
 }
 
 #[test]
-fn only_an_optional_stack_may_be_unlinked() {
-    let (_directory, policy) = policy_with(&format!("{BASE}{CPU1}"), ASM_REVIEW);
-    let image = image(&program(false), &[("cpu0_stack", 0, 1024)]);
-    let audit_cpu1 = audit(&policy, &image, |policy| {
-        policy.cpu1_task_stack.as_ref().unwrap()
-    })
-    .unwrap();
-    assert!(audit_cpu1.check().unwrap().is_empty());
-    assert!(
-        audit_cpu1
-            .render()
-            .contains("test stack: not linked (`cpu1_stack`)")
-    );
+fn a_stack_the_image_does_not_link_fails() {
+    let (_directory, policy) = policy_with(BASE, ASM_REVIEW);
     let unlinked = image_without_storage();
     let error = audit(&policy, &unlinked, |policy| {
         policy.cpu0_task_stack.as_ref().unwrap()
@@ -638,11 +613,10 @@ fn the_repository_policies_load() {
         if let Some(coverage) = &hil.coverage_policy {
             CoveragePolicy::load(coverage).unwrap();
         }
-        // A platform policy the HIL one extends adds no second core.
+        // The HIL policy is the platform's.
         let platform = chip.platform_workspace(&root).join("stack.toml");
         if platform.is_file() {
             let platform = StackPolicy::load(&platform).unwrap();
-            assert_eq!(platform.cpu1_task_stack, None);
             assert_eq!(hil.cpu0_task_stack, platform.cpu0_task_stack);
         }
     }

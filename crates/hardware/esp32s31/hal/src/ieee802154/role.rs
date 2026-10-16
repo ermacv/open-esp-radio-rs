@@ -23,18 +23,6 @@ use oer_esp32s31_pac::{
     RadioPhyRegisters,
 };
 
-#[cfg(feature = "validation-probes")]
-use crate::ieee802154::validation::{
-    ed_event::{
-        Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence,
-        Ieee802154EdEventProbeIsolation, run_ieee802154_ed_event_probe,
-    },
-    event_status::{
-        Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
-        Ieee802154EventStatusProbeIsolation, run_ieee802154_event_status_probe,
-    },
-};
-
 use crate::{
     ieee802154::{
         backend::Ieee802154PacHal,
@@ -45,11 +33,6 @@ use crate::{
             Ieee802154ResetPort, Ieee802154ResetReadback, state as lifecycle_state,
         },
         mac::{Ieee802154InterruptSetupOwner, Ieee802154TaskOwner},
-        operation::{
-            Ieee802154OperationPollBudget, Ieee802154PolledOperation,
-            Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
-            run_ieee802154_polled_operation,
-        },
         policy::{
             Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154MacControl, Ieee802154MacPolicy,
             Ieee802154MacPolicyBackend, Ieee802154MacPolicyCheckpoint,
@@ -334,52 +317,6 @@ pub struct Ieee802154FoundationConfigured {
     inner: Ieee802154Lifecycle<Ieee802154Mac, lifecycle_state::FoundationConfigured>,
 }
 
-/// Terminal owner after the validation-only status experiment.
-///
-/// The reset-isolated discriminator remains validation-only and terminal.
-/// Production acknowledgement uses a separate affine full-snapshot W1C owner;
-/// this probe's raw paired-bit writes still cannot preserve a normal lifecycle
-/// proof. This type exposes only evidence and deliberately provides no route
-/// back to foundation, policy, or operational transitions. The
-/// reset-isolation capability remains consumed for the rest of the process.
-#[cfg(feature = "validation-probes")]
-#[must_use = "the terminal validation owner retains the partition and isolation capability"]
-pub struct Ieee802154EventStatusProbeFinished {
-    evidence: Ieee802154EventStatusProbeEvidence,
-    _foundation: Ieee802154FoundationConfigured,
-    _isolation: Ieee802154EventStatusProbeIsolation,
-}
-
-#[cfg(feature = "validation-probes")]
-impl Ieee802154EventStatusProbeFinished {
-    /// Borrow the complete raw evidence retained by the terminal owner.
-    pub const fn evidence(&self) -> &Ieee802154EventStatusProbeEvidence {
-        &self.evidence
-    }
-}
-
-/// Terminal owner after the validation-only ED event experiment.
-///
-/// The probe rechecks historical selective clearing with fixed ED-DONE and
-/// TIMER0 validation writes. Production acknowledgement uses the generated
-/// affine W1C snapshot instead. The experimental cleanup still ends the normal
-/// lifecycle, so this owner cannot be promoted to an operational state.
-#[cfg(feature = "validation-probes")]
-#[must_use = "the terminal validation owner retains the partition and isolation capability"]
-pub struct Ieee802154EdEventProbeFinished {
-    evidence: Ieee802154EdEventProbeEvidence,
-    _policy: Ieee802154MacPolicyConfigured,
-    _isolation: Ieee802154EdEventProbeIsolation,
-}
-
-#[cfg(feature = "validation-probes")]
-impl Ieee802154EdEventProbeFinished {
-    /// Borrow the complete raw evidence retained by the terminal owner.
-    pub const fn evidence(&self) -> &Ieee802154EdEventProbeEvidence {
-        &self.evidence
-    }
-}
-
 impl Ieee802154MacPolicyWrites for Ieee802154FoundationConfigured {
     fn set_channel(&mut self, channel: crate::ieee802154::Ieee802154Channel) {
         self.inner.backend_mut().mac_hal().set_frequency_code(
@@ -429,8 +366,7 @@ impl Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured {
 
 /// Foundation owner after the known static MAC policy passed readback.
 ///
-/// Event and abort delivery is masked between finite polled operations. This
-/// state supports only serialized raw ED and CCA; it is not PHY/RF or BTBB
+/// Event and abort delivery stay masked. This state is not PHY/RF or BTBB
 /// readiness, does not route an IRQ, owns no DMA buffer, and is not an
 /// operational RX/TX MAC. It is not a complete vendor PIB because TX-power
 /// mapping remains opaque.
@@ -438,50 +374,6 @@ impl Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured {
 pub struct Ieee802154MacPolicyConfigured {
     foundation: Ieee802154FoundationConfigured,
     policy: Ieee802154MacPolicy,
-}
-
-/// Successfully recovered finite ED/CCA operation with the reusable owner
-/// retained.
-///
-/// The evidence is MAC-level only. An ED RSS code is uncalibrated and neither
-/// result proves RFPLL tuning, RF performance, PHY conformance, or a complete
-/// operational IEEE 802.15.4 dataplane.
-#[must_use = "a completed IEEE 802.15.4 operation retains the reusable owner"]
-pub struct Ieee802154OperationCompleted {
-    owner: Ieee802154MacPolicyConfigured,
-    evidence: Ieee802154PolledOperationEvidence,
-}
-
-impl Ieee802154OperationCompleted {
-    /// Return the finite operation evidence retained across exact recovery.
-    pub const fn evidence(&self) -> &Ieee802154PolledOperationEvidence {
-        &self.evidence
-    }
-
-    /// Consume the evidence wrapper and recover the same static-policy owner
-    /// for a subsequent serialized operation.
-    pub fn into_owner(self) -> Ieee802154MacPolicyConfigured {
-        self.owner
-    }
-}
-
-/// Terminal failed ED/CCA operation retaining the partition without a
-/// recovery transition.
-///
-/// Abort and timeout can leave hardware activity unresolved. Invariant
-/// failures mean the exact detached polling contract was not preserved. The
-/// retained owner therefore cannot be reused through safe code.
-#[must_use = "a failed IEEE 802.15.4 operation retains a terminal owner"]
-pub struct Ieee802154OperationFailed {
-    failure: Ieee802154PolledOperationFailure,
-    _owner: Ieee802154MacPolicyConfigured,
-}
-
-impl Ieee802154OperationFailed {
-    /// Return complete typed failure evidence.
-    pub const fn failure(&self) -> Ieee802154PolledOperationFailure {
-        self.failure
-    }
 }
 
 /// Failed private-reset readback retaining the clocked owner.
@@ -692,29 +584,6 @@ impl Ieee802154Reset {
 }
 
 impl Ieee802154FoundationConfigured {
-    /// Run the closed `EVENT_STATUS` access-class discriminator.
-    ///
-    /// This consuming validation transition requires the foundation's proved
-    /// zero `EVENT_ENABLE` image and the dedicated image's unique route-
-    /// isolation capability. It returns a terminal owner with raw evidence;
-    /// even a `Complete` stop cannot re-enter the normal lifecycle or create a
-    /// general acknowledgement or active IRQ capability. Production uses the
-    /// separate generated affine W1C transaction.
-    #[cfg(feature = "validation-probes")]
-    pub fn validation_probe_event_status(
-        mut self,
-        config: Ieee802154EventStatusProbeConfig,
-        isolation: Ieee802154EventStatusProbeIsolation,
-    ) -> Ieee802154EventStatusProbeFinished {
-        let mut hal = self.inner.backend_mut().mac_hal();
-        let evidence = run_ieee802154_event_status_probe(&mut hal, config);
-        Ieee802154EventStatusProbeFinished {
-            evidence,
-            _foundation: self,
-            _isolation: isolation,
-        }
-    }
-
     /// Configure and prove the known, interrupt-masked static MAC policy.
     ///
     /// This deterministic subset omits the vendor TX-power step because its
@@ -781,92 +650,6 @@ impl Ieee802154FoundationConfigured {
 }
 
 impl Ieee802154MacPolicyConfigured {
-    /// Run one finite energy-detection command on the policy's proved channel.
-    ///
-    /// The returned signed code is raw and uncalibrated. The transaction owns
-    /// no DMA buffer, installs no CPU interrupt route, and polls only while
-    /// both complete source-132 route words remain at reset. Success proves
-    /// a reusable owner only when the complete snapshot actually consumed by
-    /// W1C acknowledgement is exactly lone `ED_DONE`; every other acknowledged
-    /// image or terminal condition is retained diagnostically and fails stop.
-    ///
-    /// # Errors
-    ///
-    /// Abort, timeout or an invariant mismatch; the owner is terminal.
-    pub fn energy_detection_raw(
-        self,
-        duration: u16,
-        budget: Ieee802154OperationPollBudget,
-    ) -> Result<Ieee802154OperationCompleted, Ieee802154OperationFailed> {
-        let operation =
-            Ieee802154PolledOperation::energy_detection(self.policy.channel(), duration);
-        self.run_polled_operation(operation, budget)
-    }
-
-    /// Run one finite CCA command using the complete proved static CCA policy.
-    ///
-    /// The result is the source-confirmed `CCA_BUSY` bit. It is not an RF
-    /// sensitivity, timing-conformance, coexistence, IRQ, or dataplane claim.
-    ///
-    /// # Errors
-    ///
-    /// Abort, timeout or an invariant mismatch; the owner is terminal.
-    pub fn clear_channel_assessment(
-        self,
-        budget: Ieee802154OperationPollBudget,
-    ) -> Result<Ieee802154OperationCompleted, Ieee802154OperationFailed> {
-        let operation = Ieee802154PolledOperation::clear_channel_assessment(
-            self.policy.channel(),
-            self.policy.cca_mode(),
-            self.policy.cca_threshold_code(),
-        );
-        self.run_polled_operation(operation, budget)
-    }
-
-    fn run_polled_operation(
-        mut self,
-        operation: Ieee802154PolledOperation,
-        budget: Ieee802154OperationPollBudget,
-    ) -> Result<Ieee802154OperationCompleted, Ieee802154OperationFailed> {
-        let result = {
-            let hal = self.foundation.inner.backend_mut().mac_hal();
-            run_ieee802154_polled_operation(hal, operation, budget)
-        };
-        match result {
-            Ok(evidence) => Ok(Ieee802154OperationCompleted {
-                owner: self,
-                evidence,
-            }),
-            Err(failure) => Err(Ieee802154OperationFailed {
-                failure,
-                _owner: self,
-            }),
-        }
-    }
-
-    /// Run the closed ED-DONE/TIMER0 event discriminator.
-    ///
-    /// Requiring this state proves that an explicit IEEE channel and the
-    /// reviewed static MAC policy read back before ED starts. The transition
-    /// still starts no DMA and installs no CPU interrupt route. It returns a
-    /// terminal evidence owner even on success. Its fixed validation writes do
-    /// not create another production acknowledgement API, active IRQ,
-    /// concurrency, or RF-readiness claim.
-    #[cfg(feature = "validation-probes")]
-    pub fn validation_probe_ed_event_status(
-        mut self,
-        config: Ieee802154EdEventProbeConfig,
-        isolation: Ieee802154EdEventProbeIsolation,
-    ) -> Ieee802154EdEventProbeFinished {
-        let mut hal = self.foundation.inner.backend_mut().mac_hal();
-        let evidence = run_ieee802154_ed_event_probe(&mut hal, config);
-        Ieee802154EdEventProbeFinished {
-            evidence,
-            _policy: self,
-            _isolation: isolation,
-        }
-    }
-
     /// Return the semantically proved static policy.
     pub const fn policy(&self) -> Ieee802154MacPolicy {
         self.policy

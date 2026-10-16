@@ -5,37 +5,9 @@ use core::num::NonZeroU64;
 use oer_radio_coex::CoexPriority;
 
 use crate::{
-    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeCapabilities, LeInstant, LePhy,
-    LeRadio, LeWindow, NonZeroRadioDuration, RadioDuration, Supported, TestChannel,
-    TestPayloadType, channel::AdvertisingChannel,
+    AdvertisingChannels, AdvertisingPdu, DataChannel, LeInstant, LePhy, LeRadio, LeWindow,
+    NonZeroRadioDuration, RadioDuration, TestChannel, TestPayloadType, channel::AdvertisingChannel,
 };
-
-/// Caller-assigned identifier correlating one event with its outcomes.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct EventId(u32);
-
-impl oer_radio_port::Correlation for EventId {
-    fn from_raw(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    fn raw(self) -> u32 {
-        self.0
-    }
-}
-
-impl EventId {
-    /// Preserve one caller-owned identifier.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// The caller-owned identifier.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
 
 macro_rules! role_id {
     ($(#[$doc:meta])* $name:ident) => {
@@ -125,7 +97,7 @@ pub struct AdvertisingConfiguration<'pdu> {
 /// How urgently one event needs the shared antenna.
 ///
 /// A radio that shares the antenna with other protocols raises the event's
-/// coexistence priority with the level. The Controller core derives it from
+/// coexistence priority with the level. A Controller derives it from
 /// the role's state: an advertising set periodically, a connection when it
 /// is new, has missed receptions or runs a control procedure.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd, Ord)]
@@ -188,8 +160,6 @@ impl TryFrom<CoexPriority> for CoexistenceLevel {
 /// covers the lead, the packet and any response.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdvertisingEvent {
-    /// Correlation.
-    pub id: EventId,
     /// The set.
     pub set: AdvertisingSetId,
     /// Air anchor of the first channel.
@@ -285,8 +255,6 @@ pub enum ScanType {
 /// One scan window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScanWindow {
-    /// Correlation.
-    pub id: EventId,
     /// The scanner.
     pub scanner: ScannerId,
     /// Channel listened on.
@@ -337,8 +305,6 @@ pub enum ConnectionEventTiming {
 /// One connection event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectionEvent {
-    /// Correlation.
-    pub id: EventId,
     /// The connection.
     pub connection: ConnectionId,
     /// Data channel of the event.
@@ -360,8 +326,6 @@ pub struct ConnectionEvent {
 /// One Direct Test Mode transmitter event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TestTransmit<'payload> {
-    /// Correlation.
-    pub id: EventId,
     /// RF channel.
     pub channel: TestChannel,
     /// PHY.
@@ -379,8 +343,6 @@ pub struct TestTransmit<'payload> {
 /// One Direct Test Mode receiver event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TestReceive {
-    /// Correlation.
-    pub id: EventId,
     /// RF channel.
     pub channel: TestChannel,
     /// PHY.
@@ -496,80 +458,11 @@ impl RadioTiming {
     }
 }
 
-/// One request to the radio backend. Every value it carries was checked
-/// against the capabilities `K` when it was built, and every timed one was
-/// placed within their horizon ([`Supported`]).
-#[derive(Debug, PartialEq)]
-pub enum RadioRequest<'data, K: LeCapabilities> {
-    /// Configure an advertising set; its events may follow.
-    ConfigureAdvertising(Supported<K, AdvertisingConfiguration<'data>>),
-    /// Schedule one advertising event.
-    Advertise(Supported<K, AdvertisingEvent>),
-    /// Release an advertising set without pending events.
-    RemoveAdvertising(AdvertisingSetId),
-    /// Configure a scanner.
-    ConfigureScanner(Supported<K, ScannerConfiguration>),
-    /// Schedule one scan window.
-    Scan(Supported<K, ScanWindow>),
-    /// Release a scanner without pending windows.
-    RemoveScanner(ScannerId),
-    /// Open a connection.
-    OpenConnection(Supported<K, ConnectionConfiguration>),
-    /// Schedule one connection event.
-    ConnectionEvent(Supported<K, ConnectionEvent>),
-    /// Queue one PDU on a connection.
-    Transmit {
-        /// The connection.
-        connection: ConnectionId,
-        /// The PDU.
-        pdu: Supported<K, DataPdu<'data>>,
-    },
-    /// Close a connection without pending events.
-    CloseConnection(ConnectionId),
-    /// Schedule one Direct Test Mode transmitter event.
-    TestTransmit(Supported<K, TestTransmit<'data>>),
-    /// Schedule one Direct Test Mode receiver event.
-    TestReceive(Supported<K, TestReceive>),
-    /// End Direct Test Mode after its last event ended.
-    EndTest,
-    /// Change the filter accept list.
-    FilterAcceptList(Supported<K, AcceptListChange>),
-}
-
-/// Why the backend refused a request. Nothing changed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RequestError {
-    /// The backend could not read its clock to admit the request; a later
-    /// request may succeed.
-    ClockUnavailable,
-    /// The radio epoch is exhausted: the port admits no timed work again,
-    /// and its clock reports [`ClockError::EpochExhausted`].
-    ///
-    /// [`ClockError::EpochExhausted`]: crate::ClockError::EpochExhausted
-    EpochExhausted,
-    /// No instance of the role is free.
-    NoInstance,
-    /// The set, scanner or connection is not configured.
-    Unknown,
-    /// The set, scanner or connection is already configured.
-    AlreadyConfigured,
-    /// The set, scanner or connection has a pending event or packet.
-    Busy,
-    /// The window starts sooner than the backend prepares it: time passed
-    /// between the instant the request was placed at and its admission.
-    /// The work never existed.
-    Late,
-    /// The filter accept list has no free entry.
-    ListFull,
-    /// The filter accept list does not hold the device to remove.
-    NotListed,
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         AdvertisingEvent, AdvertisingSetId, CoexPriority, CoexistenceLevel, ConnectionAllowances,
-        EventId, IdlePriority, RadioTiming,
+        IdlePriority, RadioTiming,
     };
     use crate::{
         AdvertisingChannel, AdvertisingChannels, LeInstant, LeWindow, NonZeroRadioDuration,
@@ -602,7 +495,6 @@ mod tests {
     #[test]
     fn advertising_channels_follow_one_spacing_apart() {
         let event = AdvertisingEvent {
-            id: EventId::new(1),
             set: AdvertisingSetId::new(0),
             anchor: LeInstant::from_micros(1_000),
             channels: AdvertisingChannels::new(false, true, true).unwrap(),

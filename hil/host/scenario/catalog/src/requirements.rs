@@ -11,8 +11,6 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct Requirements {
     pub station_network: bool,
-    #[serde(default)]
-    pub bluetooth_adapter: bool,
     /// The IEEE 802.15.4 reference peer.
     #[serde(default)]
     pub peer: bool,
@@ -43,7 +41,6 @@ impl Requirements {
             .into_iter()
             .fold(Self::default(), |required, next| Self {
                 station_network: required.station_network | next.station_network,
-                bluetooth_adapter: required.bluetooth_adapter | next.bluetooth_adapter,
                 peer: required.peer | next.peer,
                 station_control: required.station_control | next.station_control,
                 station_udp_rx_capture: required.station_udp_rx_capture

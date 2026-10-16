@@ -339,9 +339,8 @@ pub struct StackBound {
     /// The storage symbol, or the bottom and top symbols.
     pub storage: String,
     pub minimum_free_bytes: u64,
-    /// The stack's bytes and its root's bound; `None` for an optional stack
-    /// the image does not link.
-    pub linked: Option<(u64, Bound)>,
+    /// The stack's bytes and its root's bound.
+    pub linked: (u64, Bound),
     /// The deepest path, root first: each function's frame and name.
     pub path: Vec<(u64, String)>,
     /// Each unresolved site (or function) the root reaches: its reason, its
@@ -363,21 +362,8 @@ impl StackAudit {
                 Storage::Symbol(symbol) => format!("`{symbol}`"),
                 Storage::Range { bottom, top } => format!("`{bottom}`..`{top}`"),
             };
-            let mut bound = StackBound {
-                name,
-                root: stack.root.clone(),
-                storage,
-                minimum_free_bytes: u64::from(stack.minimum_free_bytes),
-                linked: None,
-                path: Vec::new(),
-                unresolved: Vec::new(),
-            };
             let Some(capacity) = image.capacity(stack.storage())? else {
-                if !stack.optional {
-                    return Err(format!("the image links no {name} ({})", bound.storage).into());
-                }
-                bounds.push(bound);
-                continue;
+                return Err(format!("the image links no {name} ({storage})").into());
             };
             let root = image.symbol(&stack.root).ok_or_else(|| {
                 format!(
@@ -386,19 +372,26 @@ impl StackAudit {
                 )
             })?;
             let walked = image.analysis.bound_with(root, &image.resolutions)?;
-            bound.path = walked
+            let path = walked
                 .path
                 .iter()
                 .map(|&(function, frame)| (frame, image.function_at(function)))
                 .collect();
-            bound.unresolved = walked
+            let mut unresolved = walked
                 .unresolved
                 .iter()
                 .map(|&(site, reason)| (reason, site, image.function_at(site)))
-                .collect();
-            bound.unresolved.sort();
-            bound.linked = Some((capacity, walked));
-            bounds.push(bound);
+                .collect::<Vec<_>>();
+            unresolved.sort();
+            bounds.push(StackBound {
+                name,
+                root: stack.root.clone(),
+                storage,
+                minimum_free_bytes: u64::from(stack.minimum_free_bytes),
+                linked: (capacity, walked),
+                path,
+                unresolved,
+            });
         }
         Ok(Self {
             coverage,
@@ -422,9 +415,7 @@ impl StackAudit {
         }
         let mut warnings = Vec::new();
         for stack in &self.stacks {
-            let Some((capacity, bound)) = &stack.linked else {
-                continue;
-            };
+            let (capacity, bound) = &stack.linked;
             let budget = capacity
                 .checked_sub(stack.minimum_free_bytes)
                 .filter(|budget| *budget != 0)
@@ -513,14 +504,7 @@ impl StackBound {
     /// This stack's section of the report.
     pub fn render(&self) -> String {
         let mut out = String::new();
-        let Some((capacity, bound)) = &self.linked else {
-            let _ = writeln!(
-                out,
-                "{}: not linked ({}); the image does not run it",
-                self.name, self.storage
-            );
-            return out;
-        };
+        let (capacity, bound) = &self.linked;
         let budget = capacity.saturating_sub(self.minimum_free_bytes);
         let (bytes, state) = match bound.bytes {
             Some(bytes) if bound.assumptions.is_empty() => (bytes.to_string(), "proven"),

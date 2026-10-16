@@ -139,7 +139,7 @@ pub fn classify_flashed(chip: &str, image_keys: &DeviceImageKeys) -> Option<Imag
 
 #[cfg(test)]
 mod tests {
-    use oer_hil_protocol::{Message, base, bluetooth, network, phy, system};
+    use oer_hil_protocol::{Message, base, network, system};
 
     use super::*;
 
@@ -207,14 +207,14 @@ mod tests {
 
     #[test]
     fn a_key_set_no_class_builds_is_no_class() {
-        let gatt = keys(ImageClass::BluetoothGatt);
-        let mut foreign = gatt.keys().clone();
-        foreign.insert(<bluetooth::Dtm as Message>::KEY);
+        let watchdog = keys(ImageClass::SystemWatchdog);
+        let mut foreign = watchdog.keys().clone();
+        foreign.insert(<network::Udp as Message>::KEY);
         assert_eq!(
             classify_flashed(full_agent(), &DeviceImageKeys::of_keys(foreign)),
             None
         );
-        let mut missing = gatt.keys().clone();
+        let mut missing = watchdog.keys().clone();
         assert!(missing.remove(&<base::Hello as Message>::KEY));
         assert_eq!(
             classify_flashed(full_agent(), &DeviceImageKeys::of_keys(missing)),
@@ -232,15 +232,13 @@ mod tests {
 
     #[test]
     fn the_classes_report_their_active_handlers() {
-        let gatt = keys(ImageClass::BluetoothGatt);
-        assert!(gatt.has::<bluetooth::Gatt>() && !gatt.has::<bluetooth::Trace>());
-        assert!(keys(ImageClass::DiagnosticBluetoothGattTrace).has::<bluetooth::Trace>());
-        let dtm = keys(ImageClass::BluetoothDtm);
-        assert!(dtm.has::<bluetooth::Dtm>() && dtm.has::<bluetooth::Hci>());
-        assert!(!dtm.has::<network::Udp>());
         let watchdog = keys(ImageClass::SystemWatchdog);
-        assert!(watchdog.has::<system::WatchdogTest>());
+        assert!(watchdog.has::<system::WatchdogTest>() && !watchdog.has::<system::DisableUsb>());
         assert!(!watchdog.has::<network::Udp>());
+        let usb_off = keys(ImageClass::DiagnosticUsbJtagOff);
+        assert!(usb_off.has::<system::WatchdogTest>() && usb_off.has::<system::DisableUsb>());
+        let panic = keys(ImageClass::SystemPanicReset);
+        assert!(panic.has::<system::InjectPanic>() && !panic.has::<system::WatchdogTest>());
     }
 
     #[test]
@@ -260,16 +258,24 @@ mod tests {
     #[test]
     fn an_arm_without_an_instrument_reports_its_class_s_keys_less_the_instrument_s() {
         let chip = full_agent();
-        let without: FeatureDelta = "-phy-rx-hot-sram".parse().unwrap();
-        let class = keys(ImageClass::BluetoothDtm);
-        let arm = image_keys_with(ImageClass::BluetoothDtm, chip, &without).unwrap();
-        assert!(class.has::<phy::RxHotSram>() && !arm.has::<phy::RxHotSram>());
-        assert!(!class.has::<network::Udp>() && !arm.has::<network::Udp>());
-        assert!(classify_flashed(chip, &arm).is_none());
+        let without: FeatureDelta = "-usb-jtag-off".parse().unwrap();
+        let class = keys(ImageClass::DiagnosticUsbJtagOff);
+        let arm = image_keys_with(ImageClass::DiagnosticUsbJtagOff, chip, &without).unwrap();
+        assert!(class.has::<system::DisableUsb>() && !arm.has::<system::DisableUsb>());
+        assert!(arm.has::<system::WatchdogTest>());
+        // Less the instrument, the arm reports another class's keys.
+        assert_eq!(
+            classify_flashed(chip, &arm),
+            Some(ImageClass::SystemWatchdog)
+        );
         assert!(
-            image_keys_with(ImageClass::BluetoothDtm, chip, &FeatureDelta::default())
-                .unwrap()
-                .same_keys(&class)
+            image_keys_with(
+                ImageClass::DiagnosticUsbJtagOff,
+                chip,
+                &FeatureDelta::default()
+            )
+            .unwrap()
+            .same_keys(&class)
         );
     }
 }

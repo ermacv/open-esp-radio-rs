@@ -85,16 +85,14 @@ for the runtime ELF (`audit_runtime_stacks`) and one for the bootstrap ELF
 the pinned ROM and its summaries, and resolves indirect sites with the same
 facts (waker vtables, IPC posts, function-pointer field types). The policy is
 a chip's `platform/<chip>/stack.toml` (schema 5), extended by the HIL
-target's policy. S31 HIL adds the second core's task stack; C5 uses the same
-coverage and interrupt-stack gates on its single hart. Each stack names the function that runs on
+target's policy unchanged; every image runs one hart. Each stack names the function that runs on
 it from its top (its root, by symbol), its storage (a sized symbol, or a
 linker script's bottom and top symbols) and `minimum_free_bytes`: the root's
 worst-case call chain (`Analysis::bound_with`) must leave the storage that
-many bytes. The runtime's roots are `runtime_main` on CPU0's task stack and
-`runtime_cpu1_psram_main` on CPU1's, which the platform runtime's assembly
-enters at each stack's top; the bootstrap's is riscv-rt's `_start_rust`. A
-root the image lacks fails, as does a non-optional stack without storage (an
-`optional` stack, CPU1's in a single-core image, is reported as not linked).
+many bytes. The runtime's root is `runtime_main` on CPU0's task stack, which
+the platform runtime's assembly enters at the stack's top; the bootstrap's is
+riscv-rt's `_start_rust`. A root the image lacks fails, as does a stack
+without storage.
 A task stack's bound may be `partial + ?`: an executor's task polls and trait
 objects leave sites no fact resolves. It passes with a warning when the part
 it proves fits, and the report lists every unresolved site with its reason

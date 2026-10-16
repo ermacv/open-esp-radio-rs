@@ -3,8 +3,8 @@ use super::*;
 #[test]
 fn union_includes_every_selected_owner_and_empty_needs_nothing() {
     assert_eq!(Requirements::union([]), Requirements::default());
-    let bluetooth = Requirements {
-        bluetooth_adapter: true,
+    let peer = Requirements {
+        peer: true,
         ..Requirements::default()
     };
     let station = Requirements {
@@ -19,10 +19,10 @@ fn union_includes_every_selected_owner_and_empty_needs_nothing() {
         probe_load: true,
         ..Requirements::default()
     };
-    let union = Requirements::union([bluetooth, station, access_point]);
-    assert!(union.bluetooth_adapter && union.station_network && union.station_udp_rx_capture);
+    let union = Requirements::union([peer, station, access_point]);
+    assert!(union.peer && union.station_network && union.station_udp_rx_capture);
     assert!(union.laptop_client && union.openwrt_client && union.probe_load);
     assert!(!union.station_udp_tx_capture && !union.laptop_air_monitor);
     assert!(union.network() && union.local_radio());
-    assert!(!bluetooth.network());
+    assert!(!peer.network());
 }

@@ -31,7 +31,10 @@ pub struct LabConfig {
     peer_chip: Option<String>,
     /// The device under test of `chip`.
     pub dut: DeviceConfig,
-    pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
+    /// The stand's Bluetooth adapter (`[bluetooth] adapter`): stand
+    /// inventory each run's lab provenance records; no current scenario
+    /// drives it.
+    pub bluetooth_adapter: Option<BluetoothAdapter>,
     pub station: StationConfig,
     pub access_point: AccessPointConfig,
     pub station_fixture: StationFixtureConfig,
@@ -74,6 +77,29 @@ pub struct BoardChoice {
 #[serde(deny_unknown_fields)]
 struct RawBluetoothConfig {
     adapter: String,
+}
+
+/// A Linux Bluetooth adapter, `hciN` in canonical decimal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BluetoothAdapter(pub u16);
+
+impl std::str::FromStr for BluetoothAdapter {
+    type Err = String;
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        let invalid = || "adapter must be hci0 through hci65534 (canonical decimal)".to_owned();
+        let number = value.strip_prefix("hci").ok_or_else(invalid)?;
+        let index = number.parse::<u16>().map_err(|_| invalid())?;
+        if index == u16::MAX || number != index.to_string() {
+            return Err(invalid());
+        }
+        Ok(Self(index))
+    }
+}
+
+impl std::fmt::Display for BluetoothAdapter {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(output, "hci{}", self.0)
+    }
 }
 
 /// A peer board of a run: its stand-file id and its serial port. Each

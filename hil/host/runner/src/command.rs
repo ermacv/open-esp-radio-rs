@@ -34,18 +34,6 @@ pub(crate) fn run() -> Result<()> {
 
     match command {
         CliCommand::Fixture {
-            command:
-                crate::cli::FixtureCommand::BluetoothCheck {
-                    adapter,
-                    dtm_version,
-                },
-        } => {
-            let _software = oer_hil_lab::software::SoftwareLease::acquire_one(
-                oer_stand_fixture_install::Provider::LinuxBluetooth,
-            )?;
-            oer_hil_family_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
-        }
-        CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id, chip },
         } => {
             let catalog = Catalog::load(&catalog_path)?;

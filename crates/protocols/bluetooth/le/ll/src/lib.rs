@@ -7,9 +7,9 @@
 //! one connection: advertising and scan-response PDUs, advertising report
 //! parsing and duplicate filtering, connection indication, channel selection
 //! and instants, control procedures, encryption and the Direct Test Mode
-//! session planner. It has no HCI, MMIO, DMA, interrupt, executor, allocator,
-//! ESP32-S31, vendor-archive or ROM-ABI dependency. The Controller core
-//! schedules roles and composes these pieces.
+//! test planner. It has no HCI, MMIO, DMA, interrupt, executor, allocator,
+//! ESP32-S31, vendor-archive or ROM-ABI dependency. A Controller schedules
+//! roles and composes these pieces.
 //!
 //! [`connection::maintenance`] admits provisional budgeted event omissions on
 //! the same connection owner, retaining initial acknowledgement, Instant and

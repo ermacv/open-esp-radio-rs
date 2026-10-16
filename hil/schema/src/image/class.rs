@@ -9,13 +9,7 @@ pub enum ImageClass {
     /// The radio-free image with the product panic entry alone, without the
     /// HIL panic report: a panic records itself and resets the chip.
     SystemPanicReset,
-    BluetoothDtm,
-    BluetoothGatt,
-    BluetoothSecureGatt,
     BootSmoke,
-    /// The plaintext Trouble GATT image recording the Bluetooth LE trace
-    /// (`bluetooth-trace`), for the scenario that checks the trace.
-    DiagnosticBluetoothGattTrace,
     /// The system watchdog image that, on request, switches its USB
     /// Serial/JTAG off its pads: the board leaves USB, for the stand's
     /// recovery scenario.
@@ -29,13 +23,7 @@ impl ImageClass {
     pub fn build_features(self, network: &str) -> String {
         if matches!(
             self,
-            Self::SystemWatchdog
-                | Self::SystemPanicReset
-                | Self::DiagnosticUsbJtagOff
-                | Self::BluetoothGatt
-                | Self::DiagnosticBluetoothGattTrace
-                | Self::BluetoothSecureGatt
-                | Self::BluetoothDtm
+            Self::SystemWatchdog | Self::SystemPanicReset | Self::DiagnosticUsbJtagOff
         ) {
             self.runtime_features().to_owned()
         } else {
@@ -43,48 +31,33 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 8] = [
-        Self::BluetoothSecureGatt,
-        Self::BluetoothGatt,
+    pub const ALL: [Self; 4] = [
         Self::SystemWatchdog,
         Self::SystemPanicReset,
-        Self::BluetoothDtm,
         Self::BootSmoke,
-        Self::DiagnosticBluetoothGattTrace,
         Self::DiagnosticUsbJtagOff,
     ];
 
     /// Whether the image adds observers or probes that the product does
     /// not carry. Its observations can never qualify a product.
     pub const fn diagnostic(self) -> bool {
-        matches!(
-            self,
-            Self::DiagnosticBluetoothGattTrace | Self::DiagnosticUsbJtagOff
-        )
+        matches!(self, Self::DiagnosticUsbJtagOff)
     }
 
     pub const fn id(self) -> &'static str {
         match self {
             Self::SystemWatchdog => "system-watchdog",
             Self::SystemPanicReset => "system-panic-reset",
-            Self::BluetoothDtm => "bluetooth-dtm",
-            Self::BluetoothGatt => "bluetooth-gatt",
-            Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::BootSmoke => "boot-smoke",
-            Self::DiagnosticBluetoothGattTrace => "diagnostic-bluetooth-gatt-trace",
             Self::DiagnosticUsbJtagOff => "diagnostic-usb-jtag-off",
         }
     }
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
-            Self::BluetoothGatt => "bluetooth-gatt",
-            Self::DiagnosticBluetoothGattTrace => "bluetooth-gatt,bluetooth-trace",
-            Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::SystemWatchdog => "system-watchdog",
             Self::SystemPanicReset => "system-panic-reset",
             Self::DiagnosticUsbJtagOff => "system-watchdog,usb-jtag-off",
-            Self::BluetoothDtm => "bluetooth-hil,phy-rx-hot-sram",
             Self::BootSmoke => "boot-smoke",
         }
     }

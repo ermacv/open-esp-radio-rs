@@ -140,7 +140,7 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     multiple["firmware"]
         .as_array_mut()
         .unwrap()
-        .push(json!({"image": "bluetooth-gatt"}));
+        .push(json!({"image": "system-watchdog"}));
     write(&run.join("manifest.json"), &multiple);
     check(false);
     let mut escaping = good_manifest;

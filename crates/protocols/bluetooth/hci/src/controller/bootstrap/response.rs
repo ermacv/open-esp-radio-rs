@@ -35,7 +35,7 @@ impl BootstrapCommandCompleteEvent {
     }
 
     /// Command Complete refusing a bootstrap command with `error`, as the
-    /// Controller core does when its role state forbids the command.
+    /// Controller does when its role state forbids the command.
     pub fn error(opcode: Opcode, error: HciError) -> Self {
         command_error(opcode, error)
     }

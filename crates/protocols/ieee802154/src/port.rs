@@ -1,6 +1,6 @@
 //! The IEEE 802.15.4 radio values every backend shares: its capabilities
-//! ([`Ieee802154Capabilities`]) and the radio configuration outside the
-//! command state machine ([`RadioSetting`]): the state the backend reads
+//! ([`Ieee802154Capabilities`]) and the radio configuration
+//! ([`RadioSetting`]): the state the backend reads
 //! from its own interrupt context (MAC keys and frame counters, the CSL
 //! receiver, the enhanced-ACK generator), and the transmit power and
 //! clear-channel assessment the next operation publishes. The port itself
@@ -8,7 +8,6 @@
 
 pub use oer_radio_port::{CancelError, ClockError};
 pub use oer_radio_port::{ClockInfo, EventsLost, Poisoned, PortResult};
-pub use oer_radio_port::{LifecycleCommand, LifecycleError, LifecycleEvent};
 
 use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{
@@ -30,9 +29,8 @@ pub struct Ieee802154Capabilities {
     /// [`RadioCapabilities::MULTI_PAN`].
     pub interfaces: u8,
     /// The transmit power it radiates, for [`RadioSetting::TransmitPowerDbm`],
-    /// [`RadioSetting::ChannelTransmitPowerDbm`] and a request's
-    /// [`TxRequest::transmit_power_dbm`](crate::TxRequest::transmit_power_dbm);
-    /// `None` when the power is fixed.
+    /// [`RadioSetting::ChannelTransmitPowerDbm`] and a transmission's own
+    /// power; `None` when the power is fixed.
     pub transmit_power: Option<TransmitPowerCapability>,
     /// The clear-channel assessment energy thresholds it accepts
     /// ([`RadioSetting::CcaThresholdDbm`]); `None` when it has none.
@@ -92,7 +90,7 @@ pub struct EnhancedAckGeneration {
     pub noise_floor_dbm: i8,
 }
 
-/// A radio setting outside the command state machine.
+/// A radio setting: state outside an operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RadioSetting<'a> {
     /// Replace the MAC keys of `interface` (`otPlatRadioSetMacKey`),

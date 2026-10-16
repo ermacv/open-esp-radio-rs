@@ -270,12 +270,7 @@ fn chip_code_type_checks_images_and_full_adds_the_chip_audits() {
         &["crates/driver/src/lib.rs"],
         Tier::Full,
     )));
-    for id in [
-        "images-type-check",
-        "architecture",
-        "examples-type-check",
-        "provenance",
-    ] {
+    for id in ["images-type-check", "architecture", "provenance"] {
         assert!(full.contains(&id), "{id} missing from {full:?}");
     }
 }
@@ -298,8 +293,8 @@ fn a_change_never_runs_a_whole_tier_check_or_one_above_its_tier() {
         );
     }
     let selected = ids(of_change(&everything));
-    assert!(selected.contains(&"docs") && selected.contains(&"example-link"));
-    assert!(!selected.contains(&"final-images") && !selected.contains(&"image-classes"));
+    assert!(selected.contains(&"docs") && selected.contains(&"final-images"));
+    assert!(!selected.contains(&"image-classes"));
 }
 
 #[test]

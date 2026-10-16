@@ -115,7 +115,7 @@ impl fmt::Debug for WifiPhyLeaveFailure {
 
 /// Leave the shared PHY domain: `esp_phy_disable(PHY_MODEM_WIFI)`. Returns
 /// whether Wi-Fi was the last PHY client; the caller then closes RF through
-/// the radio system. No register access happens here.
+/// the shared radio's owner. No register access happens here.
 ///
 /// # Errors
 ///
@@ -184,8 +184,8 @@ impl fmt::Debug for WifiPhySuspendedFailure {
 /// Put Wi-Fi's RF to sleep: the vendor modem sleep's `wifi_rf_phy_disable`,
 /// which is `esp_phy_disable(PHY_MODEM_WIFI)`. The registration and its
 /// calibration stay. Returns whether Wi-Fi was the last PHY client; the
-/// caller then closes RF through the radio system. No register access
-/// happens here.
+/// caller then closes RF through the shared radio's owner. No register
+/// access happens here.
 ///
 /// # Errors
 ///
@@ -209,8 +209,8 @@ pub fn suspend_wifi(
 }
 
 /// Wake Wi-Fi's RF: the vendor modem wake's `wifi_rf_phy_enable`, which is
-/// `esp_phy_enable(PHY_MODEM_WIFI)`. The radio system must have woken closed
-/// RF first, which `ready` proves. The returned [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain
+/// `esp_phy_enable(PHY_MODEM_WIFI)`. The shared radio's owner must have woken
+/// closed RF first, which `ready` proves. The returned [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain
 /// must run its tracking before the MAC uses RF.
 ///
 /// # Errors

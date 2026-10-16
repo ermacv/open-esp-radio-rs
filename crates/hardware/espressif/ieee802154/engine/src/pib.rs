@@ -72,7 +72,7 @@ impl Default for Ieee802154PibDefaults {
     fn default() -> Self {
         Self {
             cca_mode: Ieee802154CcaMode::EnergyDetection,
-            cca_threshold_dbm: -75,
+            cca_threshold_dbm: crate::capabilities::CCA_RESET_DBM,
         }
     }
 }

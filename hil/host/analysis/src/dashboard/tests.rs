@@ -27,7 +27,7 @@ fn a_running_run_reports_its_step_scenario_and_finished_count() {
     )
     .unwrap();
     let entry = |scenario: &str, disposition: &str| {
-        json!({"scenario": scenario, "image": "bluetooth-gatt", "repetitions": 1,
+        json!({"scenario": scenario, "image": "system-watchdog", "repetitions": 1,
                "disposition": disposition, "reason": null})
     };
     std::fs::write(

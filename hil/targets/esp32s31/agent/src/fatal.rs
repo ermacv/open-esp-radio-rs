@@ -13,6 +13,7 @@ use core::ffi::c_char;
 use esp_hal::system::Cpu;
 
 const MAGIC: u32 = u32::from_le_bytes(*b"OFTL");
+#[cfg(feature = "panic-hook")]
 const PANIC: u32 = 1;
 const EXCEPTION: u32 = 2;
 /// The interrupt matrix's sources, in 32-bit words.
@@ -112,6 +113,7 @@ unsafe impl Sync for Retained {}
 static SLOT: Retained = Retained(UnsafeCell::new(Slot::EMPTY));
 
 /// Record a panic's machine state; the platform resets the chip next.
+#[cfg(feature = "panic-hook")]
 #[unsafe(link_section = ".rwtext.fatal")]
 pub(crate) fn record_panic(stage: u32) {
     record(PANIC, 0, stage);

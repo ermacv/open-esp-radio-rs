@@ -158,7 +158,6 @@ const CI: WorkflowSpec = WorkflowSpec {
             ..tree_job("isa-conformance")
         },
         tree_job("images"),
-        tree_job("example-link"),
         tree_job("verification"),
     ],
 };

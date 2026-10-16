@@ -1,6 +1,5 @@
 use oer_hil_protocol::base::{ImageKeyPage, sorted_keys};
-use oer_hil_protocol::system::GetInterruptStacks;
-use oer_hil_protocol::system::{WatchdogTest, WatchdogTestMode};
+use oer_hil_protocol::system::{InjectPanic, WatchdogTest, WatchdogTestMode};
 use oer_hil_protocol::{Envelope, FrameEncoder, Key};
 
 use super::*;
@@ -92,12 +91,7 @@ fn image_key_discovery_needs_no_boot_but_every_other_request_does() {
 fn a_request_of_no_served_type_is_unsupported() {
     let mut intake = intake();
     assert!(matches!(
-        answer(send::<_, NoRequests>(
-            &mut intake,
-            BOOT,
-            0,
-            GetInterruptStacks
-        )),
+        answer(send::<_, NoRequests>(&mut intake, BOOT, 0, InjectPanic)),
         Answer::Rejected(RejectReason::Unsupported)
     ));
 }
@@ -131,12 +125,12 @@ fn the_image_serves_its_own_requests_outside_sessions() {
 fn an_image_with_sessions_keeps_them() {
     crate::requests! {
         enum Sessioned (sessions = true) {
-            Stacks(GetInterruptStacks),
+            Panic(InjectPanic),
         }
     }
     let mut intake = intake();
-    match send::<_, Sessioned>(&mut intake, BOOT, 9, GetInterruptStacks) {
-        Request::Serve(identity, Sessioned::Stacks(GetInterruptStacks)) => {
+    match send::<_, Sessioned>(&mut intake, BOOT, 9, InjectPanic) {
+        Request::Serve(identity, Sessioned::Panic(InjectPanic)) => {
             assert_eq!(identity.session_id, 9);
         }
         _ => panic!("an image with sessions serves a request of one"),

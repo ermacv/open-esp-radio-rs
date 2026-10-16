@@ -23,13 +23,10 @@ oer-stand-file = { path = "../../../stand/file" }
 oer-stand-board = { path = "../../../stand/board" }
 oer-stand-ssh = { path = "../../../stand/ssh" }
 oer-durable = { path = "../../../tools/durable" }
-oer-hil-fixture = { path = "../fixture" }
 oer-stand-fixture-install = { path = "../../../stand/fixture-install" }
 oer-hil-link = { path = "../link" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
-oer-hil-trace = { path = "../../trace", features = ["describe"] }
 oer-process = { path = "../../../tools/process" }
-oer-trace = { path = "../../../crates/trace" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3"
@@ -40,11 +37,6 @@ oer-device-lock = { path = "../../../tools/device/lock" }
 oer-stand-claims = { path = "../../../stand/claims" }
 oer-stand-journal = { path = "../../../stand/journal" }
 oer-stand-resource-lock = { path = "../../../stand/resource-lock" }
-[dev-dependencies]
-oer-ieee80211-trace = { path = "../../../crates/protocols/ieee80211/trace" }
-oer-phy-trace = { path = "../../../crates/hardware/radio/trace" }
-oer-ieee802154-trace = { path = "../../../crates/hardware/ieee802154/trace" }
-
 [lints]
 workspace = true
 

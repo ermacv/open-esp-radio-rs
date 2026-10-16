@@ -314,27 +314,6 @@ pub const CHECKS: &[Check] = &[
         run: chip_doctests,
     },
     Check {
-        id: "examples-type-check",
-        tier: Tier::Full,
-        job: "firmware",
-        summary: "every example's runtime type-checked with its image flags",
-        trigger: Some(|change| {
-            touches(change, &["platform/", EXAMPLES])
-                || !gate::chip_code(&change.tree, &change.affected).is_empty()
-        }),
-        run: |ctx, _| fw(ctx, &["build", "--all", "--type-check"]),
-    },
-    Check {
-        id: "example-link",
-        tier: Tier::Full,
-        job: "example-link",
-        summary: "the Thread example built, audited and encoded into a bundle",
-        trigger: Some(|change| touches(change, &["platform/"])),
-        // The interrupt-stack gate fetches the pinned ROM it bounds the
-        // image with.
-        run: |ctx, _| fw(ctx, &["build", "thread", "--check", "all"]),
-    },
-    Check {
         id: "firmware-host-tests",
         tier: Tier::Full,
         job: "firmware",
@@ -457,7 +436,8 @@ pub const CHECKS: &[Check] = &[
         tier: Tier::Full,
         job: "images",
         summary: "the staged boot smoke image built with every gate",
-        trigger: None,
+        // The boot path a chip profile places is this image's.
+        trigger: Some(|change| touches(change, &["platform/"])),
         run: |ctx, _| hil(ctx, &["images", "check", "--class", "boot-smoke"]),
     },
     Check {
@@ -469,17 +449,9 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| hil(ctx, &["images", "check", "--all"]),
     },
     Check {
-        id: "examples",
-        tier: Tier::Nightly,
-        job: "examples",
-        summary: "every example built and audited, keeping only its outputs",
-        trigger: None,
-        run: examples,
-    },
-    Check {
         id: "decoder-reference",
         tier: Tier::Nightly,
-        job: "examples",
+        job: "classes",
         summary: "the RV32 decoder's accepted encodings against the toolchain's llvm-objdump",
         trigger: None,
         run: |ctx, _| {
@@ -1329,20 +1301,6 @@ fn verification(ctx: &Checkout, args: &[&str]) -> Result<()> {
             .arg("verification")
             .args(args),
     )
-}
-
-fn examples(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    // The examples share the host's one image compile cache.
-    fw(ctx, &["build", "--all"])
-}
-
-/// The example workspaces' directory prefix.
-const EXAMPLES: &str = "examples/";
-
-/// Run the dev kit, `cargo fw ARGS`, in the checkout: it owns the
-/// examples' images.
-fn fw(ctx: &Checkout, args: &[&str]) -> Result<()> {
-    process::run(oer_toolchain::cargo_in(&ctx.root).arg("fw").args(args))
 }
 
 #[cfg(test)]

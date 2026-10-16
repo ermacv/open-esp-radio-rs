@@ -1,8 +1,8 @@
 use std::vec::Vec;
 
 use oer_bluetooth_radio::{
-    ConnectionAllowances, EventId, EventResult, LeInstant, RadioDuration, RadioOutcome,
-    RadioTiming, TestChannel, TestPhy, TestReport, TxPower,
+    ConnectionAllowances, EventResult, LeInstant, RadioDuration, RadioTiming, TestChannel, TestPhy,
+    TestReport, TxPower,
 };
 
 use super::{
@@ -44,10 +44,6 @@ fn transmit() -> DtmTest {
     }
 }
 
-fn ended(session: &mut DtmSession, id: EventId, result: EventResult) {
-    session.observe(RadioOutcome::EventEnded { id, result });
-}
-
 #[test]
 fn prbs_patterns_match_the_vendor_table_fingerprints() {
     let mut payload = [0; 255];
@@ -71,7 +67,7 @@ fn prbs_patterns_match_the_vendor_table_fingerprints() {
 
 #[test]
 fn transmitter_packets_stay_on_the_interval_grid() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 10);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     session.start(transmit()).unwrap();
     assert_eq!(session.start(transmit()), Err(DtmStartError::Active));
     let mut payload = [0; DTM_MAX_PAYLOAD];
@@ -88,7 +84,7 @@ fn transmitter_packets_stay_on_the_interval_grid() {
         assert_eq!(test.payload.len(), 37);
         assert_eq!(test.payload[..2], [0xff, 0xc1]);
         anchors.push(test.window.start().as_micros());
-        let (id, end) = (test.id, test.window.end().as_micros());
+        let end = test.window.end().as_micros();
         let mut other = [0; DTM_MAX_PAYLOAD];
         assert!(
             session
@@ -96,7 +92,7 @@ fn transmitter_packets_stay_on_the_interval_grid() {
                 .unwrap()
                 .is_none()
         );
-        ended(&mut session, id, EventResult::Executed { anchor: None });
+        session.ended(EventResult::Executed { anchor: None });
         // The next plan happens after the packet: late grid points are skipped.
         now = end + 900;
     }
@@ -111,7 +107,7 @@ fn transmitter_packets_stay_on_the_interval_grid() {
 
 #[test]
 fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 10);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     session
         .start(DtmTest::Transmit {
             channel: TestChannel::new(0).unwrap(),
@@ -129,12 +125,11 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
     };
     // 192 us of LE 2M air make I(L) = 625 us.
     assert_eq!(first.window.duration(), RadioDuration::from_micros(192));
-    let (id, start, end) = (
-        first.id,
+    let (start, end) = (
         first.window.start().as_micros(),
         first.window.end().as_micros(),
     );
-    ended(&mut session, id, EventResult::Executed { anchor: None });
+    session.ended(EventResult::Executed { anchor: None });
     // Planned 150 us after the packet, the next slot is still reachable
     // (150 + 107 + 40 + 100 = 397 us < 433 us): the planning slack of the
     // first packet does not push it one interval later.
@@ -145,11 +140,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
         panic!("the second packet")
     };
     assert_eq!(second.window.start().as_micros(), start + 625);
-    ended(
-        &mut session,
-        second.id,
-        EventResult::Executed { anchor: None },
-    );
+    session.ended(EventResult::Executed { anchor: None });
     // Planned too late for the next slot, the packet takes the one after.
     let Some(DtmEvent::Transmit(third)) = session
         .next_request(
@@ -166,7 +157,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
 
 #[test]
 fn a_receiver_counts_packets_and_drains_before_it_stops() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     session
         .start(DtmTest::Receive {
             channel: TestChannel::new(0).unwrap(),
@@ -187,24 +178,17 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
             panic!("a receiver plans its next window")
         };
         recurring.push(test.recurring);
-        session.observe(RadioOutcome::TestReport {
-            id: test.id,
-            report,
-        });
-        ended(
-            &mut session,
-            test.id,
-            EventResult::Executed { anchor: None },
-        );
+        session.report(report);
+        session.ended(EventResult::Executed { anchor: None });
     }
     assert_eq!(recurring, [false, true, true]);
-    let Some(DtmEvent::Receive(test)) = session
+    let Some(DtmEvent::Receive(_)) = session
         .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
         .unwrap()
     else {
         panic!("the receiver keeps listening")
     };
-    assert_eq!(session.end(), DtmStop::Draining(test.id));
+    assert_eq!(session.end(), DtmStop::Draining);
     assert_eq!(session.drained(), None);
     assert!(
         session
@@ -212,7 +196,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
             .unwrap()
             .is_none()
     );
-    ended(&mut session, test.id, EventResult::NotExecuted);
+    session.ended(EventResult::NotExecuted);
     assert_eq!(session.drained(), Some(2));
     assert!(!session.is_active());
     assert_eq!(session.counters().empty, 1);
@@ -220,7 +204,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
 
 #[test]
 fn coded_transmitters_are_refused_and_refusals_replan() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     assert_eq!(
         session.start(DtmTest::Transmit {
             channel: TestChannel::new(0).unwrap(),
@@ -248,9 +232,9 @@ fn coded_transmitters_are_refused_and_refusals_replan() {
 }
 
 #[test]
-fn planning_failure_retains_the_test_history_payload_and_identity() {
+fn planning_failure_retains_the_test_history_and_payload() {
     use super::{DtmCalculation, DtmEpochExhausted};
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 42);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     session.start(transmit()).unwrap();
     let last = oer_bluetooth_radio::LeWindow::new(
         LeInstant::from_micros(u64::MAX - 400),
@@ -268,8 +252,7 @@ fn planning_failure_retains_the_test_history_payload_and_identity() {
     ));
     assert_eq!(payload, [0xa5; DTM_MAX_PAYLOAD]);
     assert_eq!(session.last, Some(last));
-    assert_eq!(session.next_id, 42);
-    assert_eq!(session.outstanding(), None);
+    assert!(!session.in_progress());
     assert_eq!(session.counters(), counters);
     assert!(session.is_active());
     assert_eq!(session.end(), DtmStop::Stopped { received: 0 });
@@ -281,7 +264,7 @@ fn planning_failure_retains_the_test_history_payload_and_identity() {
 
 #[test]
 fn a_recurring_packet_near_epoch_end_needs_only_recurring_slack() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 42);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     session.start(transmit()).unwrap();
     session.last = Some(
         oer_bluetooth_radio::LeWindow::new(
@@ -302,7 +285,7 @@ fn a_recurring_packet_near_epoch_end_needs_only_recurring_slack() {
 
 #[test]
 fn failed_reservation_changes_neither_receiver_recurrence_nor_history() {
-    let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
     session
         .start(DtmTest::Receive {
             channel: TestChannel::new(0).unwrap(),
@@ -319,14 +302,14 @@ fn failed_reservation_changes_neither_receiver_recurrence_nor_history() {
     );
     assert!(!session.recurring);
     assert_eq!(session.last, None);
-    assert_eq!(session.outstanding(), None);
+    assert!(!session.in_progress());
     assert_eq!(payload, [0x55; DTM_MAX_PAYLOAD]);
 }
 
 #[test]
 fn uncertain_events_are_counted_apart_and_the_next_test_event_follows() {
     for result in [EventResult::Aborted, EventResult::Indeterminate] {
-        let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
+        let mut session = DtmSession::new(TxPower::from_dbm(0));
         session
             .start(DtmTest::Receive {
                 channel: TestChannel::new(19).unwrap(),
@@ -334,14 +317,14 @@ fn uncertain_events_are_counted_apart_and_the_next_test_event_follows() {
             })
             .unwrap();
         let mut payload = [0; 255];
-        let DtmEvent::Receive(first) = session
+        let DtmEvent::Receive(_) = session
             .next_request(LeInstant::from_micros(1_000), TIMING, &mut payload)
             .unwrap()
             .unwrap()
         else {
             panic!("receiver event")
         };
-        ended(&mut session, first.id, result);
+        session.ended(result);
         assert_eq!(
             session.counters.aborted,
             u32::from(result == EventResult::Aborted)
@@ -359,4 +342,28 @@ fn uncertain_events_are_counted_apart_and_the_next_test_event_follows() {
                 .is_some()
         );
     }
+}
+
+/// Without an event in progress, a report or an end counts nothing and the
+/// session plans as before.
+#[test]
+fn reports_without_an_event_in_progress_count_nothing() {
+    let mut session = DtmSession::new(TxPower::from_dbm(0));
+    session
+        .start(DtmTest::Receive {
+            channel: TestChannel::new(0).unwrap(),
+            phy: TestPhy::Le1M,
+        })
+        .unwrap();
+    session.report(TestReport::Received { rssi_dbm: -40 });
+    session.ended(EventResult::Executed { anchor: None });
+    assert_eq!(session.counters(), super::DtmCounters::default());
+    let mut payload = [0; DTM_MAX_PAYLOAD];
+    assert!(
+        session
+            .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
+            .unwrap()
+            .is_some()
+    );
+    assert!(session.in_progress());
 }

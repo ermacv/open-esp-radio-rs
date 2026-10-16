@@ -134,18 +134,14 @@ fn a_diagnostic_image_serves_only_an_investigation_scenario() {
             std::path::Path::new("exit.toml"),
         )
     };
-    for image in ["diagnostic-bluetooth-gatt-trace", "diagnostic-usb-jtag-off"] {
-        assert!(scenario(image, "investigation", "").is_ok(), "{image}");
-        assert!(scenario(image, "qualification", "").is_err(), "{image}");
-        assert!(
-            scenario(image, "investigation", "\"performance\"").is_err(),
-            "{image}"
-        );
-    }
-    assert!(scenario("bluetooth-gatt", "qualification", "").is_ok());
-    assert!(scenario("bluetooth-gatt", "investigation", "").is_ok());
+    let image = "diagnostic-usb-jtag-off";
+    assert!(scenario(image, "investigation", "").is_ok());
+    assert!(scenario(image, "qualification", "").is_err());
+    assert!(scenario(image, "investigation", "\"performance\"").is_err());
+    assert!(scenario("system-watchdog", "qualification", "").is_ok());
+    assert!(scenario("system-watchdog", "investigation", "").is_ok());
     assert!(
-        scenario("bluetooth-gatt", "triage", "").is_err(),
+        scenario("system-watchdog", "triage", "").is_err(),
         "an unknown role"
     );
 }
@@ -173,24 +169,10 @@ fn a_profile_needs_a_sampling_image_a_period_in_range_and_a_diagnostic_scenario(
     };
     // No image class samples the program counter, so every profile
     // request is refused.
-    assert!(
-        parse(document(
-            "diagnostic-bluetooth-gatt-trace",
-            "\"diagnostic\"",
-            1999
-        ))
-        .is_err()
-    );
-    assert!(parse(document("bluetooth-gatt", "\"diagnostic\"", 1999)).is_err());
-    assert!(
-        parse(document(
-            "diagnostic-bluetooth-gatt-trace",
-            "\"diagnostic\"",
-            50
-        ))
-        .is_err()
-    );
+    assert!(parse(document("diagnostic-usb-jtag-off", "\"diagnostic\"", 1999)).is_err());
+    assert!(parse(document("system-watchdog", "\"diagnostic\"", 1999)).is_err());
+    assert!(parse(document("diagnostic-usb-jtag-off", "\"diagnostic\"", 50)).is_err());
     for gated in ["\"performance\"", "\"qualification\""] {
-        assert!(parse(document("diagnostic-bluetooth-gatt-trace", gated, 1999)).is_err());
+        assert!(parse(document("diagnostic-usb-jtag-off", gated, 1999)).is_err());
     }
 }

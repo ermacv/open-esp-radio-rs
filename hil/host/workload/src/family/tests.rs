@@ -21,7 +21,7 @@ impl ScenarioFamily for Quiet {
         oer_hil_scenario_catalog::bounded(self.boots, 1, 3, "boots")
     }
     fn plan(&self) -> Plan {
-        Plan::target_only(ImageClass::BluetoothGatt)
+        Plan::target_only(ImageClass::SystemWatchdog)
     }
     fn air_use(&self) -> Vec<AirUse> {
         Vec::new()
@@ -46,7 +46,7 @@ impl ScenarioFamily for Radio {
         Ok(())
     }
     fn plan(&self) -> Plan {
-        Plan::target_only(ImageClass::BluetoothGatt)
+        Plan::target_only(ImageClass::SystemWatchdog)
     }
     fn peer_image(&self) -> Option<PeerImage> {
         Some(PeerImage {

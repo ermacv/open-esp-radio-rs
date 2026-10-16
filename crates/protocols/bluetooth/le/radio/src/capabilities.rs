@@ -68,9 +68,8 @@ impl LePhys {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LinkAcknowledgement {
     /// The radio hardware. The backend receives only the LLID and payload of
-    /// each queued PDU, reports [`crate::RadioOutcome::TransmitAcknowledged`]
-    /// when the peer acknowledged it and reports only new, non-empty
-    /// receptions.
+    /// each queued PDU, reports when the peer acknowledged it and reports
+    /// only new, non-empty receptions.
     Hardware,
     /// Backend software in its time-critical context, for example with
     /// `oer-bluetooth-ll`'s `connection::acknowledgement` state machine. The
@@ -174,10 +173,10 @@ impl LeRadioCapabilities {
     }
 }
 
-/// A backend's capabilities, known when the image is built: the marker the
-/// Controller core is generic over and every [`Supported`](crate::Supported)
+/// A backend's capabilities, known when the image is built: the marker a
+/// Controller is generic over and every [`Supported`](crate::Supported)
 /// value is branded by. A composition names one per backend
-/// configuration; the core never names the backend.
+/// configuration; the Controller never names the backend.
 pub trait LeCapabilities: 'static {
     /// What the backend serves.
     const CAPS: LeRadioCapabilities;

@@ -1,9 +1,9 @@
 # Versioned scenario catalog
 
-Folders identify the workload domain: system and Bluetooth. No IEEE 802.11,
+Folders identify the workload domain: system. No IEEE 802.11, Bluetooth,
 IEEE 802.15.4, coexistence or PHY scenario exists: they were deleted with the
-images they ran on (#762, tag `legacy-wifi-2026-10-16`) and return with the
-HIL architecture of #761.
+images they ran on (#762, tag `legacy-wifi-2026-10-16`; #770, tag
+`legacy-radio-2026-10-16`) and return with the HIL architecture of #761.
 Scenario IDs are stable across folder moves. Tags select overlapping
 diagnostic and characterization uses; they do not assign ownership or make a
 hardware-readiness claim.
@@ -36,25 +36,13 @@ repetitions = 3                 # default 1
 tags = ["smoke"]
 unsupported = "..."             # optional; see Unsupported scenarios
 
-[system]                        # or [bluetooth]
+[system]
 kind = "boot-smoke"
 ```
 
 The family owns every executable value:
 
-- `[system]` and `[bluetooth]` are tagged workloads whose kind
-  implies the firmware image.
-- `[bluetooth]` `kind = "gatt"` with `trace = true` runs the plaintext GATT
-  cycles on `diagnostic-bluetooth-gatt-trace`: before each connection the
-  workload restarts the trace with the indication, opening, closing,
-  lifecycle, role-request, role-event-end and role-PDU channels, stops and
-  drains it after the disconnection, and publishes
-  `bluetooth.trace.connection-steps` once every cycle holds, in order, an
-  accepted indication, the opening, admitted connection events with anchored
-  ends and the closing (`bluetooth-trouble-gatt-trace`, an `investigation`
-  scenario). A failed cycle stops the trace, so the repetition's post-mortem
-  holds that cycle's records; its ten repetitions are the traced sample that
-  catches a connection lost before its first ATT exchange (#364).
+- `[system]` is a tagged workload whose kind implies the firmware image.
 Every table rejects unknown fields. Relations that remain between the image,
 the data path and the workload are validated by the family.
 
@@ -73,8 +61,8 @@ under test from the stand file.
 ## Stand claims
 
 A run claims the boards and fixtures its scenarios require and the frequency
-ranges their radio work occupies. The range follows the family: Bluetooth and
-system scenarios occupy the 2.4 GHz band, and the radio-free watchdog none. By default a
+ranges their radio work occupies. The range follows the family: system
+scenarios occupy the 2.4 GHz band, and the radio-free watchdog none. By default a
 scenario tolerates other protocol traffic in its range and transmits
 normally. Tags change that:
 

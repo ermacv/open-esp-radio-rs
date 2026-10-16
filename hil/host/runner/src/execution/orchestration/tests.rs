@@ -111,6 +111,27 @@ impl SuiteEffects for FakeSuite {
     }
 }
 
+/// A catalog of two scenarios on one image class, which no two scenarios of
+/// the tree's catalog share, and one on another.
+fn shared_image_catalog() -> (tempfile::TempDir, Catalog) {
+    let directory = tempfile::tempdir().unwrap();
+    let watchdog = include_str!("../../../../../scenarios/system/system-watchdog.toml");
+    for id in ["watchdog-a", "watchdog-b"] {
+        std::fs::write(
+            directory.path().join(format!("{id}.toml")),
+            watchdog.replace("id = \"system-watchdog\"", &format!("id = \"{id}\"")),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        directory.path().join("system-panic-reset.toml"),
+        include_str!("../../../../../scenarios/system/system-panic-reset.toml"),
+    )
+    .unwrap();
+    let catalog = Catalog::load(directory.path()).unwrap();
+    (directory, catalog)
+}
+
 fn two_same_image(catalog: &Catalog) -> [&Scenario; 2] {
     for class in ImageClass::ALL {
         let candidates = catalog
@@ -128,7 +149,7 @@ fn two_same_image(catalog: &Catalog) -> [&Scenario; 2] {
 
 #[test]
 fn successful_group_prepares_once_and_preserves_scenario_order() {
-    let catalog = catalog();
+    let (_scenarios, catalog) = shared_image_catalog();
     let selected = two_same_image(&catalog);
     let root = tempfile::tempdir().unwrap();
     let mut session = session(root.path());
@@ -157,7 +178,7 @@ fn image_build_and_flash_failures_block_the_group_but_continue_later_classes() {
     let first = catalog
         .all()
         .iter()
-        .find(|scenario| scenario.image() == ImageClass::BluetoothGatt)
+        .find(|scenario| scenario.image() == ImageClass::SystemWatchdog)
         .expect("Bluetooth GATT scenario");
     let second = catalog
         .all()
@@ -198,7 +219,7 @@ fn preflight_failure_has_no_image_or_workload_side_effect() {
 
 #[test]
 fn cancellation_stops_before_the_next_scenario() {
-    let catalog = catalog();
+    let (_scenarios, catalog) = shared_image_catalog();
     let selected = two_same_image(&catalog);
     let root = tempfile::tempdir().unwrap();
     let mut session = session(root.path());
@@ -333,7 +354,7 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
     let selected = crate::cli::Selection {
         scenario: None,
         tag: Vec::new(),
-        role: Some(String::from("qualification")),
+        role: Some(String::from("investigation")),
         chip: None,
     }
     .resolve(&catalog)
@@ -341,7 +362,7 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
     assert!(
         selected
             .iter()
-            .all(|scenario| scenario.header.role == oer_hil_scenario_catalog::Role::Qualification)
+            .all(|scenario| scenario.header.role == oer_hil_scenario_catalog::Role::Investigation)
     );
     let groups = group_selected_scenarios(&selected);
     let flattened = groups
@@ -366,7 +387,7 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
 
 #[test]
 fn named_scenarios_keep_their_order_and_replay_needs_one_image_class() {
-    let catalog = catalog();
+    let (_scenarios, catalog) = shared_image_catalog();
     let [first, second] = two_same_image(&catalog);
     let ids = [second.id().to_owned(), first.id().to_owned()];
     let selected = named_scenarios(&catalog, &ids).unwrap();
@@ -390,7 +411,7 @@ fn named_scenarios_keep_their_order_and_replay_needs_one_image_class() {
 
 #[test]
 fn a_series_offers_to_yield_before_each_image_and_between_scenarios() {
-    let catalog = catalog();
+    let (_scenarios, catalog) = shared_image_catalog();
     let selected = two_same_image(&catalog);
     let root = tempfile::tempdir().unwrap();
     let mut session = session(root.path());
@@ -417,7 +438,7 @@ fn a_series_offers_to_yield_before_each_image_and_between_scenarios() {
 
 #[test]
 fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
-    let catalog = catalog();
+    let (_scenarios, catalog) = shared_image_catalog();
     let selected = two_same_image(&catalog);
     let root = tempfile::tempdir().unwrap();
     let mut session = session(root.path());
@@ -433,7 +454,7 @@ fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
 #[test]
 fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     use oer_hil_lab::lock::{BAND_2G4, Emits, Need, Spectrum};
-    let catalog = catalog();
+    let (_scenarios, catalog) = shared_image_catalog();
     let lab = LabConfig::for_test();
     let lease_request = |selected: &[&Scenario]| lease_request(&lab, selected);
     let [first, second] = two_same_image(&catalog);
@@ -451,8 +472,8 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
             Emits::Noisy
         )));
     }
-    // Scenario ranges follow the family through the registry: a radio-free
-    // image none, Bluetooth the band.
+    // Scenario ranges follow the family through the registry: the watchdog
+    // none, another system scenario the band.
     let find = |key: &str, predicate: &dyn Fn(&serde_json::Value) -> bool| {
         catalog
             .all()
@@ -462,10 +483,9 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     };
     let watchdog = find("system", &|table| table["kind"] == "watchdog");
     assert!(lease_request(&[watchdog]).air.is_empty());
-    let bluetooth = find("bluetooth", &|_| true);
-    // Need and emission follow the scenario's air tags; the range is the band.
-    let [range] = air_use(&lab, bluetooth)[..] else {
-        panic!("a Bluetooth scenario occupies one range");
+    let panic = find("system", &|table| table["kind"] == "panic-reset");
+    let [range] = air_use(&lab, panic)[..] else {
+        panic!("a system scenario on the radio occupies one range");
     };
     assert_eq!((range.low_khz, range.high_khz), BAND_2G4);
 }
@@ -494,19 +514,21 @@ fn the_then_command_joins_the_lease_and_names_the_run() {
 fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
     let catalog = catalog();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let gatt = catalog.get("bluetooth-trouble-gatt").unwrap();
+    let panic = catalog.get("system-panic-reset").unwrap();
     let watchdog = catalog.get("system-watchdog").unwrap();
     let building = |classes: &[ImageClass]| oer_hil_image::chips_building(&root, classes).unwrap();
-    // Exactly one chip's agent builds the Bluetooth GATT image.
-    let [full] = building(&[ImageClass::BluetoothGatt]).try_into().unwrap();
-    assert_eq!(select_chip(&root, &[gatt], None).unwrap(), full);
+    // Exactly one chip's agent builds the panic-reset image.
+    let [full] = building(&[ImageClass::SystemPanicReset])
+        .try_into()
+        .unwrap();
+    assert_eq!(select_chip(&root, &[panic], None).unwrap(), full);
     let others: Vec<String> = oer_chip_profile::supported(&root)
         .unwrap()
         .into_iter()
         .filter(|chip| *chip != full)
         .collect();
     for other in &others {
-        assert!(select_chip(&root, &[gatt], Some(other)).is_err());
+        assert!(select_chip(&root, &[panic], Some(other)).is_err());
     }
     // Several chips build the watchdog image: the run names one.
     let watchdogs = building(&[ImageClass::SystemWatchdog]);
@@ -521,7 +543,7 @@ fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
     for chip in &watchdogs {
         assert_eq!(select_chip(&root, &[watchdog], Some(chip)).unwrap(), *chip);
     }
-    assert_eq!(select_chip(&root, &[gatt, watchdog], None).unwrap(), full);
+    assert_eq!(select_chip(&root, &[panic, watchdog], None).unwrap(), full);
 }
 
 #[test]

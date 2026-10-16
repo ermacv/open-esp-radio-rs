@@ -228,13 +228,9 @@ SECTIONS
     . = . + CPU0_PSRAM_TASK_STACK_BYTES;
     __runtime_cpu0_task_stack_top = ABSOLUTE(.);
     . = ALIGN(64);
-    __runtime_cpu1_task_stack_bottom = ABSOLUTE(.);
-    KEEP(*(.psram.task_stack.cpu1));
-    __runtime_cpu1_task_stack_top = ABSOLUTE(.);
-    . = ALIGN(64);
   } > PSRAM_RUNTIME
 
-  .bss ALIGN(__runtime_cpu1_task_stack_top, 64) (NOLOAD) :
+  .bss ALIGN(__runtime_cpu0_task_stack_top, 64) (NOLOAD) :
   {
     __runtime_data_bss_start = ABSOLUTE(.);
     _bss_start = ABSOLUTE(.);
@@ -292,7 +288,7 @@ ASSERT(_rtc_fast_persistent_end <= ORIGIN(RTC_FAST) + LENGTH(RTC_FAST) - RETAINE
        "runtime RTC-fast data reaches ESP-IDF's reserved LP RAM tail");
 ASSERT(__runtime_psram_noinit_end <= ORIGIN(PSRAM_RUNTIME) + LENGTH(PSRAM_RUNTIME),
        "runtime explicit no-init storage does not fit");
-ASSERT(__runtime_cpu1_task_stack_top <= ORIGIN(PSRAM_RUNTIME) + LENGTH(PSRAM_RUNTIME),
+ASSERT(__runtime_cpu0_task_stack_top <= ORIGIN(PSRAM_RUNTIME) + LENGTH(PSRAM_RUNTIME),
        "runtime task stacks do not fit");
 ASSERT(__runtime_data_bss_end <= ORIGIN(PSRAM_RUNTIME) + LENGTH(PSRAM_RUNTIME),
        "runtime data/BSS does not fit PSRAM");
@@ -342,9 +338,6 @@ ASSERT(__runtime_cpu0_irq_stack_top - __runtime_cpu0_irq_stack_bottom == IRQ_STA
        "runtime requires one exact SRAM IRQ stack per hart");
 ASSERT(__runtime_cpu0_task_stack_top - __runtime_cpu0_task_stack_bottom == CPU0_PSRAM_TASK_STACK_BYTES,
        "runtime requires one exact CPU0 PSRAM task stack");
-ASSERT(HART_COUNT > 1 ||
-       __runtime_cpu1_task_stack_top == __runtime_cpu1_task_stack_bottom,
-       "a single-hart runtime has no CPU1 task stack");
 ASSERT(SIZEOF(.runtime.header) == STAGE_TWO_HEADER_BYTES,
        "stage-two header does not match the platform layout");
 ASSERT(_runtime_start >= __runtime_text_start && _runtime_start < __runtime_text_end,

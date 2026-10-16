@@ -367,30 +367,6 @@ cases = [
 ]
 
 [[suite]]
-name = "ieee802154-durable-installation"
-packages = ["oer-espressif-ieee802154-runtime", "oer-espressif-ieee802154-engine", "embassy-sync", "oer-time"]
-features = []
-targets = ["host", "esp32s31"]
-cases = ["crates/runtime/espressif/ieee802154/tests/ui/durable_installation.rs"]
-
-[[suite]]
-name = "ieee802154-terminal-quarantine"
-packages = ["oer-espressif-ieee802154-runtime", "oer-espressif-ieee802154-engine", "embassy-sync", "oer-time"]
-features = []
-targets = ["host", "esp32s31"]
-cases = [
-    "crates/runtime/espressif/ieee802154/tests/ui/quarantined_queue_reinstall.rs",
-    "crates/runtime/espressif/ieee802154/tests/ui/queue_once.rs",
-]
-
-[[suite]]
-name = "bluetooth-terminal-quarantine"
-packages = ["oer-esp32s31-bluetooth-runtime"]
-features = []
-targets = ["esp32s31"]
-cases = ["crates/runtime/esp32s31/bluetooth/tests/ui/queue_once.rs"]
-
-[[suite]]
 name = "s31-irq-owner"
 packages = ["oer-esp32s31-ieee80211-mac", "oer-esp32s31-hal"]
 features = []

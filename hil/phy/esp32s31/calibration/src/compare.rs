@@ -683,7 +683,7 @@ mod tests {
         }];
         let images = Images {
             started_unix_seconds: 1_790_467_200,
-            production_image: "bluetooth-dtm".into(),
+            production_image: "boot-smoke".into(),
             ..Images::default()
         };
         let summary = compare(

@@ -300,3 +300,17 @@ fn clock_configuration_domains_match_vendor_validation() {
     // The vendor bounds the divisor only from below.
     assert!(CoexClockSelector::Selector1.accepts_divisor(4097));
 }
+
+#[test]
+fn recovered_status_bits_and_wifi_events_keep_their_vendor_values() {
+    assert_eq!(crate::EXTERNAL_COEX_STATUS, 0x03);
+    assert_eq!(crate::IEEE802154_COEX_STATUS, 0x01);
+    for (event, value) in [
+        (crate::wifi_events::BEACON, 0),
+        (crate::wifi_events::SLICE, 1),
+        (crate::wifi_events::CONNECTION, 46),
+    ] {
+        assert_eq!(event.value(), value);
+        assert_eq!(CoexEventId::new(value), Some(event));
+    }
+}

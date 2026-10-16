@@ -1,6 +1,4 @@
 use super::*;
-mod bluetooth;
-mod maintenance;
 use crate::{
     hil::{HilEvidenceIndex, RepositoryState, ScenarioCatalog},
     model::{
@@ -775,101 +773,7 @@ fn implemented_source_fact_does_not_promote_an_incomplete_parent() {
 }
 
 #[test]
-fn bluetooth_catalog_migration_preserves_program_and_full_source_inventory() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap();
-    let manifest = root.join("qualification/targets/esp32s31/bluetooth-le.toml");
-    let validated = ManifestDocument::load_and_validate(&manifest, &root).unwrap();
-    let document = &validated.document;
-    // The catalog grows; its program and inventory keep their shape, not counts.
-    assert!(!document.capabilities.is_empty());
-    assert_eq!(
-        document
-            .capabilities
-            .iter()
-            .map(|capability| capability.id.as_str())
-            .collect::<BTreeSet<_>>(),
-        document
-            .required_capabilities
-            .iter()
-            .map(String::as_str)
-            .collect::<BTreeSet<_>>()
-    );
-    assert!(!document.direct_catalog_capabilities.is_empty());
-    assert!(
-        document.direct_catalog_capabilities.len() <= document.capabilities.len(),
-        "direct selections are part of the program"
-    );
-
-    let catalog = &document.catalog;
-    let bluetooth_document = Path::new("crates/hardware/esp32s31/driver/bluetooth/FEATURES.md");
-    let bluetooth_sections = catalog
-        .sections
-        .iter()
-        .filter(|section| section.source_document == bluetooth_document)
-        .map(|section| section.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let source_rows = catalog
-        .items
-        .iter()
-        .filter(|item| {
-            bluetooth_sections.contains(item.section.as_str()) && item.source_fact.is_none()
-        })
-        .count();
-    let bluetooth_projections = catalog
-        .items
-        .iter()
-        .filter(|item| {
-            bluetooth_sections.contains(item.section.as_str()) && item.source_fact.is_some()
-        })
-        .count();
-    assert!(source_rows > 0 && bluetooth_projections > 0);
-    assert!(
-        catalog
-            .references
-            .iter()
-            .filter(|reference| { reference.kind == InventoryReferenceKind::QualificationMapping })
-            .count()
-            > 0
-    );
-    assert!(
-        catalog
-            .references
-            .iter()
-            .filter(|reference| {
-                bluetooth_sections.contains(reference.section.as_str())
-                    && reference.kind == InventoryReferenceKind::SourceReference
-            })
-            .count()
-            > 0
-    );
-    let classic_rows = catalog
-        .items
-        .iter()
-        .filter(|item| item.section.starts_with("bluetooth-classic-"))
-        .count();
-    let host_only_rows = catalog
-        .items
-        .iter()
-        .filter(|item| item.status == SourceStatus::HostOnly)
-        .count();
-    assert!(classic_rows > 0 && host_only_rows > 0);
-
-    let handoff = &catalog.source_facts["bluetooth-initial-phy-handoff"];
-    let parent = &catalog.capabilities["common-phy-baseband"];
-    assert_eq!(handoff.status, SourceStatus::Implemented);
-    assert_eq!(
-        parent.implementation,
-        crate::model::ImplementationProof::Incomplete
-    );
-    assert!(parent.source_fact_refs.iter().any(|id| id == &handoff.id));
-    assert_eq!(parent.source_contracts[0], handoff.source_contract);
-}
-
-#[test]
-fn bluetooth_lifecycle_facts_reach_all_views_without_promoting_products() {
+fn bluetooth_maintenance_facts_reach_all_views_without_promoting_products() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -883,17 +787,11 @@ fn bluetooth_lifecycle_facts_reach_all_views_without_promoting_products() {
     )
     .unwrap();
     let domains = BTreeSet::from(["bluetooth", "phy", "whole-radio"]);
+    // The radio system that composed the maintenance went in #770: the
+    // tracking transactions remain, so the facts are partial.
     for (fact_id, expected) in [
-        ("bluetooth-idle-phy-maintenance", SourceStatus::Implemented),
-        (
-            "bluetooth-periodic-phy-maintenance",
-            SourceStatus::Implemented,
-        ),
-        ("bluetooth-idle-powered-release", SourceStatus::Implemented),
-        (
-            "bluetooth-same-storage-powered-restart",
-            SourceStatus::Implemented,
-        ),
+        ("bluetooth-idle-phy-maintenance", SourceStatus::Partial),
+        ("bluetooth-periodic-phy-maintenance", SourceStatus::Partial),
     ] {
         let fact = &catalog.source_facts[fact_id];
         assert_eq!(fact.status, expected);
@@ -928,16 +826,6 @@ fn bluetooth_lifecycle_facts_reach_all_views_without_promoting_products() {
         teardown.implementation,
         crate::model::ImplementationProof::Incomplete
     );
-    for fact_id in [
-        "bluetooth-idle-powered-release",
-        "bluetooth-same-storage-powered-restart",
-    ] {
-        assert!(
-            teardown
-                .source_contracts
-                .contains(&catalog.source_facts[fact_id].source_contract)
-        );
-    }
 }
 
 #[test]
@@ -1070,101 +958,6 @@ fn coex_and_whole_radio_catalogs_preserve_facets_without_program_promotion() {
 }
 
 #[test]
-fn ieee802154_catalog_migration_preserves_program_and_full_source_inventory() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap();
-    let manifest = root.join("qualification/targets/esp32s31/ieee802154.toml");
-    let validated = ManifestDocument::load_and_validate(&manifest, &root).unwrap();
-    let document = &validated.document;
-    // The catalog grows; its program and inventory keep their shape, not counts.
-    assert!(!document.capabilities.is_empty());
-    assert_eq!(
-        document
-            .capabilities
-            .iter()
-            .map(|capability| capability.id.as_str())
-            .collect::<BTreeSet<_>>(),
-        document
-            .required_capabilities
-            .iter()
-            .map(String::as_str)
-            .collect::<BTreeSet<_>>()
-    );
-    assert!(!document.direct_catalog_capabilities.is_empty());
-
-    let catalog = &document.catalog;
-    assert_eq!(catalog.sources.len(), 1);
-    let source_document = Path::new("crates/hardware/esp32s31/driver/ieee802154/FEATURES.md");
-    let sections = catalog
-        .sections
-        .iter()
-        .filter(|section| section.source_document == source_document)
-        .map(|section| section.id.as_str())
-        .collect::<BTreeSet<_>>();
-    assert!(!sections.is_empty());
-    let source_rows = catalog
-        .items
-        .iter()
-        .filter(|item| sections.contains(item.section.as_str()) && item.source_fact.is_none())
-        .count();
-    let projections = catalog
-        .items
-        .iter()
-        .filter(|item| sections.contains(item.section.as_str()) && item.source_fact.is_some())
-        .count();
-    assert!(source_rows > 0 && projections > 0);
-    assert!(
-        catalog
-            .items
-            .iter()
-            .filter(|item| item.status == SourceStatus::HostOnly)
-            .count()
-            > 0
-    );
-    assert!(
-        catalog
-            .references
-            .iter()
-            .filter(|reference| reference.kind == InventoryReferenceKind::QualificationMapping)
-            .count()
-            > 0
-    );
-    assert!(
-        catalog
-            .references
-            .iter()
-            .filter(|reference| reference.kind == InventoryReferenceKind::SourceReference)
-            .count()
-            > 0
-    );
-
-    for (fact_id, parent_id, implementation) in [
-        (
-            "ieee802154-registered-timing-entry",
-            "rf-channel-readiness",
-            crate::model::ImplementationProof::Incomplete,
-        ),
-        (
-            "ieee802154-mac-operation-subset",
-            "rx-tx-dataplane",
-            crate::model::ImplementationProof::Complete,
-        ),
-    ] {
-        let fact = &catalog.source_facts[fact_id];
-        let parent = &catalog.capabilities[parent_id];
-        assert_eq!(fact.status, SourceStatus::Implemented);
-        assert_eq!(parent.implementation, implementation);
-        assert_eq!(parent.source_fact_refs, [fact_id]);
-        assert_eq!(
-            parent.source_contracts.as_slice(),
-            std::slice::from_ref(&fact.source_contract),
-        );
-    }
-}
-
-#[test]
 fn imported_catalogs_resolve_transitively_once_and_preserve_provenance() {
     let root = TestRoot::new("imports");
     let base = format!("schema = 4\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
@@ -1290,70 +1083,4 @@ fn explicit_catalog_closure_follows_new_dependencies_without_relaxing_exact_prog
         )
         .is_err()
     );
-}
-
-#[test]
-fn peripheral_products_retain_lifecycle_and_security_without_other_radio_roles() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap();
-    let load = |name: &str| {
-        ManifestDocument::load_and_validate(
-            &root.join(format!("qualification/targets/esp32s31/{name}.toml")),
-            &root,
-        )
-        .unwrap()
-        .document
-    };
-    let acl = load("bluetooth-peripheral-acl");
-    let secure = load("bluetooth-secure-gatt");
-    let ids = |program: &ManifestDocument| {
-        program
-            .required_capabilities
-            .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>()
-    };
-    let acl_ids = ids(&acl);
-    let secure_ids = ids(&secure);
-    assert!(acl_ids.is_subset(&secure_ids));
-    for required in [
-        "cold-ownership",
-        "common-phy-baseband",
-        "ble-phy-engine",
-        "hci-controller-endpoints",
-        "peripheral-acl",
-    ] {
-        assert!(acl_ids.contains(required), "missing {required}");
-    }
-    for required in ["peripheral-link-security", "secure-peripheral-gatt"] {
-        assert!(secure_ids.contains(required), "missing {required}");
-    }
-    for unrelated in [
-        "central-initiator",
-        "coexistence",
-        "host-eatt-and-gatt",
-        "iso-dataplane",
-        "le-audio-profiles",
-    ] {
-        assert!(!secure_ids.contains(unrelated), "unexpected {unrelated}");
-    }
-    let product = acl
-        .capabilities
-        .iter()
-        .find(|c| c.id == "peripheral-acl")
-        .unwrap();
-    assert_eq!(
-        product.implementation,
-        crate::model::ImplementationProof::Incomplete
-    );
-    assert!(
-        product
-            .gaps
-            .iter()
-            .any(|g| g.axis == crate::model::Axis::Hil)
-    );
-    // No scenario drives the peripheral role; the HIL gap records it.
-    assert!(product.hil_requirements.is_empty());
 }

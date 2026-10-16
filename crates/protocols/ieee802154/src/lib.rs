@@ -4,20 +4,20 @@
 
 //! Hardware-independent IEEE 802.15.4 radio boundary.
 //!
-//! This crate owns bounded MAC bytes, normalized metadata, portable radio
-//! values and a finite command/event state machine. It contains no PHR/FCS DMA
+//! This crate owns bounded MAC bytes, normalized metadata and portable radio
+//! values. It contains no PHR/FCS DMA
 //! image, ESP register layout, interrupt owner, allocator or executor. It
 //! declares the port's owner shape ([`owner`]) a backend implements, but
 //! never waits on it. Platform adapters translate these contracts to their own
 //! hardware ownership model; OpenThread- and Zephyr-facing code can use them
 //! through the port without inheriting that platform representation.
 //!
-//! Start with [`RadioStateMachine`], which distinguishes accepted commands
-//! from terminal [`RadioEvent`] values while retaining bounded [`Frame`]
-//! storage. The ESP32-S31 lower crates separately implement timing,
-//! energy-detection/CCA, DMA, IRQ and affine MAC-operation boundaries. There is
-//! currently no public RF-ready IEEE 802.15.4 service composition: these types
-//! must not be read as an application start API or as hardware readiness.
+//! Start with the owner shape ([`owner`]) and its port ([`port`]). The
+//! ESP32-S31 lower crates separately implement timing, energy-detection/CCA,
+//! DMA, IRQ and affine MAC-operation boundaries. There is no IEEE 802.15.4
+//! service composition: the former role, runtime and composition were
+//! deleted (#770, tag `legacy-radio-2026-10-16`), so these types must not be
+//! read as an application start API or as hardware readiness.
 
 #[cfg(any(test, feature = "model"))]
 extern crate alloc;
@@ -48,7 +48,7 @@ pub mod mac {
     pub mod time_sync;
 }
 
-/// Hardware-independent radio command/event and state contracts.
+/// Hardware-independent radio values.
 pub mod radio;
 
 #[cfg(any(test, feature = "model"))]
@@ -75,25 +75,19 @@ pub use oer_radio_port::ClockRelation;
 pub use oer_radio_port::{Correlation, CorrelationIds};
 pub use port::{
     CancelError, ClockError, ClockInfo, CslCapability, CslReceiver, EnhancedAckGeneration,
-    EventsLost, FrameCounterUpdate, Ieee802154Capabilities, LifecycleCommand, LifecycleError,
-    LifecycleEvent, Poisoned, PortResult, RadioSetting, SettingError,
+    EventsLost, FrameCounterUpdate, Ieee802154Capabilities, Poisoned, PortResult, RadioSetting,
+    SettingError,
 };
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
-pub use radio::command::{
-    CcaMode, CommandKind, Configuration, EnergyScanRequest, InterfaceSetting, PendingTableHalf,
-    RadioCommand, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
-};
+pub use radio::command::{CcaMode, TxMode, TxSecurity};
 pub use radio::event::{
-    AppliedSecurity, FcsStatus, FramePending, RadioEvent, RadioFault, ReceivedFrame, RxMetadata,
-    SecurityStatus, SentAcknowledgement, TxStatus,
+    AppliedSecurity, FcsStatus, FramePending, ReceivedFrame, RxMetadata, SecurityStatus,
+    SentAcknowledgement, TxStatus,
 };
 pub use radio::interface::Interface;
 pub use radio::power::{
     CcaThresholdCapability, CcaThresholdError, TransmitPowerCapability, TransmitPowerError,
     TransmitPowerLevels, TransmitPowerLevelsError,
-};
-pub use radio::state::{
-    AcceptedCommand, CommandError, EventError, RadioState, RadioStateMachine, RestingState,
 };
 pub use radio::{Ieee802154Instant, Ieee802154Radio, RequestId};

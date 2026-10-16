@@ -55,6 +55,7 @@ fn hart() -> u8 {
 }
 
 /// Take what the previous boot left and start this boot's record.
+#[cfg(feature = "system-watchdog")]
 pub(crate) fn begin() {
     let previous = with_record(Record::begin_boot);
     critical_section::with(|cs| *PREVIOUS.borrow_ref_mut(cs) = previous);
@@ -78,6 +79,7 @@ pub(crate) fn checkpoint(name: &str, arg: u32) {
 /// Record the panic being handled. The other hart may hold the critical
 /// section while this one panics, so the record is written without it; a
 /// checkpoint racing this write can at worst fail its own CRC.
+#[cfg(feature = "system-watchdog")]
 #[unsafe(link_section = ".flash.critical.text.panic_hook")]
 pub(crate) fn record_panic(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
     // SAFETY: see above; the halted boot never reads the record again.

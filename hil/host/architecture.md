@@ -7,9 +7,6 @@ contract. Operational setup and commands are in the
 The runner owns the typed CLI, scenario catalog and build/flash
 orchestration; the family crates own their workloads, and the link owns the
 UART evidence. `linux-net/` contains only privileged fixture operations.
-[Linux Bluetooth setup](linux-bluetooth/README.md) installs the privileged helper
-for finite DTM adapter checks and the connection and key-failure central
-operations.
 
 Separate Cargo packages bound the privilege and radio-family scopes:
 
@@ -27,7 +24,7 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
 | `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, the check of a device's reported keys against them, and where a chip's HIL images are built from (`agent`: the agent's workspace, package and manifest, the bootstrap) |
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
-| `family/bluetooth/`, `family/system/` (`oer-hil-family-*`) | none | One radio family: its scenario table (`ScenarioFamily`: validation, plan, requirements, image keys, peer image, air use), its `Workload` and its target exchanges; each depends on `oer-hil-workload`, never on another family |
+| `family/system/` (`oer-hil-family-system`) | none | One scenario family: its scenario table (`ScenarioFamily`: validation, plan, requirements, image keys, peer image, air use), its `Workload` and its target exchanges; each depends on `oer-hil-workload`, never on another family |
 | `family/phy/` (`oer-hil-family-phy`) | none | The host half of the PHY vendor calibration cross-check: the comparison port and the vendor IEEE 802.15.4 reference firmware driver; no scenario family registers it; it names no chip |
 | `family/phy-esp32s31/` (`oer-hil-family-phy-esp32s31`) | none | The ESP32-S31 comparison port: `oer-esp32s31-phy-vendor-calibration` behind it |
 | `family/ieee80211-fixture/` (`oer-hil-family-ieee80211-fixture`) | none | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host network routes, air monitors), their `FixtureProvider`, and the air-capture and BSS-protection analyses |
@@ -37,10 +34,10 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `../../stand/arbiter/` (`oer-stand-arbiter`) | none | Claims, the queue and its job tickets, balances, preemption, maintenance; a board whose device lock a foreign process holds is busy |
 | `flash/` (`oer-hil-flash`) | none | The flash operation of HIL: lease, write, journal, start; and the ESP-IDF catalog flash |
 | `../../stand/discover/`, `../../stand/doctor/`, `../../stand/ssh/` | none | The stand's host: discovery of its boards, the host doctor, fixture reachability and the one SSH helper to its OpenWrt hosts |
-| `fixture/` (`oer-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
-| `../../stand/fixture-install/` (`oer-stand-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
+| `fixture/` (`oer-hil-fixture`) | `open-radio-probe` | Finite Linux helper; the library is its versioned request/report contract with the runner |
+| `../../stand/fixture-install/` (`oer-stand-fixture-install`) | `open-radio-fixture-install` and the two fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
 
-The installer package depends on no radio, Bluetooth or HIL execution crate, so
+The installer package depends on no radio or HIL execution crate, so
 its dependency graph is the whole root-executed installation surface.
 
 The three packages deny `unsafe_code` at their crate roots, and the helper and
@@ -65,7 +62,7 @@ exclusive lease. Each persistent provider lease is a stable inode under that
 provider's installation state. Operational admission checks the journal,
 selector, receipt and selected artifact under the shared lease. Fixed finite
 launchers perform this admission and bind a concrete generation before direct
-network, probe or Bluetooth helper execution; they neither recover nor install.
+network or probe helper execution; they neither recover nor install.
 These locks never acquire a device or replace the physical fixture leases below.
 The stand's arbiter orders both sides: a run claims
 `fixture-software:<provider>` shared and takes the software lease only once
@@ -126,10 +123,7 @@ fixture installation are described in [stand](stand.md), [runs](runs.md) and
 ```console
 cargo hil doctor
 cargo stand fixture install --provider linux-net --dry-run
-cargo stand fixture install --provider linux-bluetooth --dry-run
 cargo stand fixture install --provider linux-net
-cargo stand fixture install --provider linux-bluetooth
-cargo hil fixture bluetooth-check --adapter hci0
 cargo hil doctor boot-smoke
 cargo hil plan boot-smoke
 cargo hil scenario list
@@ -461,7 +455,7 @@ The host packages follow the roles of the
 - `context` gives one workload repetition its laboratory, target settings,
   capture lifecycle and measurements; workloads that control the AP receive
   the prepared fixture explicitly.
-- Each family's `workload` module owns its operations: system and Bluetooth LE.
+- Each family's `workload` module owns its operations: the system family's.
   They report scenario outcomes, not product readiness.
 - The stand's `post_mortem` asks a failed repetition's target, attached
   without a reset, for its boot evidence and trace, and classifies hangs and

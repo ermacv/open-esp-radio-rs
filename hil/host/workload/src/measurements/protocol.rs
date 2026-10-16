@@ -55,58 +55,6 @@ pub(super) fn observations(
             message.decode()
         {
             link(&mut records, &session, value);
-        } else if let Some(oer_hil_protocol::system::InterruptStacks { cpu0, cpu1 }) =
-            message.decode()
-        {
-            stack_values(
-                &mut records,
-                &request,
-                [("cpu0-irq", cpu0), ("cpu1-irq", cpu1)],
-            );
-        } else if let Some(oer_hil_protocol::ieee802154::AirCheckCompleted(value)) =
-            message.decode()
-        {
-            add(
-                &mut records,
-                &request,
-                "ieee802154.air-check.completed-cycles",
-                value.completed_cycles.into(),
-                Unit::Count,
-            );
-        } else if let Some(oer_hil_protocol::ieee802154::EventStatusProbed(_)) = message.decode() {
-            add(
-                &mut records,
-                &request,
-                "ieee802154.event-status.responses",
-                1,
-                Unit::Count,
-            );
-        } else if let Some(oer_hil_protocol::ieee802154::EdEventProbed(value)) = message.decode() {
-            add(
-                &mut records,
-                &request,
-                "ieee802154.ed-event.responses",
-                1,
-                Unit::Count,
-            );
-            for (attempt, outcome) in [
-                ("first", Some(value.production_ed_first)),
-                ("second", value.production_ed_second),
-            ] {
-                use oer_hil_protocol::ieee802154::Ieee802154PolledEdOutcome as Ed;
-                if let Some(
-                    Ed::Complete { polls, .. } | Ed::Aborted { polls, .. } | Ed::Timeout { polls },
-                ) = outcome
-                {
-                    add(
-                        &mut records,
-                        &request,
-                        &format!("ieee802154.ed.{attempt}.polls"),
-                        polls.into(),
-                        Unit::Count,
-                    );
-                }
-            }
         }
         // Qualifying raw register images, metadata or a radio feature is
         // outside this numeric projection. Those typed events remain in

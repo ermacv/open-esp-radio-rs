@@ -1021,7 +1021,6 @@ name = "oer-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
  "oer-radio-coex",
- "oer-radio-port",
  "oer-time",
 ]
 
@@ -1233,14 +1232,10 @@ dependencies = [
 name = "oer-esp32s31-radio-esp-hal"
 version = "0.1.0"
 dependencies = [
- "critical-section",
  "esp-hal",
  "oer-bluetooth-hci",
- "oer-esp32s31-bluetooth",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
- "oer-espressif-interrupt-table-esp-hal",
- "oer-interrupt-table",
 ]
 
 [[package]]
@@ -1271,14 +1266,6 @@ dependencies = [
  "oer-ieee802154",
  "oer-ieee802154-trace",
  "oer-trace",
-]
-
-[[package]]
-name = "oer-espressif-interrupt-table-esp-hal"
-version = "0.1.0"
-dependencies = [
- "esp-hal",
- "oer-interrupt-table",
 ]
 
 [[package]]
@@ -1403,10 +1390,6 @@ version = "0.1.0"
 dependencies = [
  "oer-trace",
 ]
-
-[[package]]
-name = "oer-interrupt-table"
-version = "0.1.0"
 
 [[package]]
 name = "oer-memory"

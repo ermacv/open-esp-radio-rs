@@ -47,6 +47,21 @@ impl CoexEventId {
     }
 }
 
+/// The table events whose priority Wi-Fi reads (`coex_pti_get`).
+pub mod wifi_events {
+    use super::CoexEventId;
+
+    /// The event whose priority Wi-Fi's power management reads on every
+    /// beacon (`coex_pti_get(0)`).
+    pub const BEACON: CoexEventId = CoexEventId(0);
+    /// The slice event (`coex_pti_get(1)`), whose priority bounds a
+    /// connection frame's scheduler priority.
+    pub const SLICE: CoexEventId = CoexEventId(1);
+    /// The event a connection frame requests under the reconnect policy,
+    /// whose priority it then carries (`coex_pti_get(46)`).
+    pub const CONNECTION: CoexEventId = CoexEventId(46);
+}
+
 /// One four-bit coexistence priority, the shared-table domain every
 /// supported chip's MAC PTI fields accept.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

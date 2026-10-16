@@ -10,8 +10,7 @@ use oer::ieee80211::sta::association::{PhyMode, Preference};
 
 The default `wifi` feature exposes the portable IEEE 802.11
 protocols and their executor-independent drivers (`ieee80211::services`).
-`bluetooth` exposes `bluetooth::hci`, the in-process `bluetooth::hci_transport`
-and `bluetooth::le::ll`;
+`bluetooth` exposes `bluetooth::hci` and `bluetooth::le::ll`;
 `ieee802154` exposes the IEEE 802.15.4 contracts. These features build without
 a chip or executor. Memory and network value contracts are always available.
 
@@ -22,27 +21,19 @@ Chip selection and protocol backends are separate:
 | `esp32s31` | `chips::esp32s31::hal`; no radio driver selection |
 | `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine |
 | `esp32s31-ieee802154` | IEEE 802.15.4 contracts and `chips::esp32s31::driver::ieee802154`: the MAC engine |
-| `embassy-ieee802154` | The engine, `systems::esp32s31::embassy::radio` and `systems::esp32s31::embassy::ieee802154`: the IEEE 802.15.4 client of the shared radio with its construction inputs |
-| `openthread` | The client and `systems::esp32s31::embassy::ieee802154::openthread`: the OpenThread radio adapter |
 
 Each backend feature includes its chip and portable protocol feature. No
-ESP32-S31 Wi-Fi backend or composition is exposed: `wifi` provides the portable
-protocols only. Each IEEE 802.15.4 feature includes the one before it in the
-table; the [Thread](../../examples/esp32s31/thread/) example uses only
-`openthread`. Raw PAC authority requires an explicit restricted dependency.
-
-No Bluetooth LE Controller or Embassy Bluetooth composition is currently
-exposed; the facade provides only the portable protocols and the hardware
-engine.
+ESP32-S31 composition is exposed for any radio: the facade provides only the
+portable protocols, the HAL and the hardware engines (the old compositions
+are kept by the tags `legacy-wifi-2026-10-16` and `legacy-radio-2026-10-16`).
+Raw PAC authority requires an explicit restricted dependency.
 Cargo features are additive: another dependency enabling `wifi` on the same
 facade also enables portable Wi-Fi in the final feature union.
 
-`composition/` owns the source-level binding of components; `systems::` exposes
-those ready-to-construct owners in the public API. Stack and executor adapters
-are separate integrations. Availability through the facade does not establish
-hardware readiness or concurrent-radio operation. Bluetooth support retains the
-limitations of the [Bluetooth capability map](../hardware/esp32s31/driver/bluetooth/FEATURES.md)
-and [qualification contract](../../qualification/targets/esp32s31/bluetooth-le.toml).
+Stack and executor adapters are separate integrations. Availability through
+the facade does not establish hardware readiness or concurrent-radio
+operation. Bluetooth support retains the limitations of the
+[Bluetooth capability map](../hardware/esp32s31/driver/bluetooth/FEATURES.md).
 
 Architecture checks resolve isolated consumers to catch unwanted dependencies,
 compile no-default/default and declared feature profiles, and test the public

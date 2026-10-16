@@ -14,8 +14,6 @@ crate::messages! {
     topic PanicInjected = "system/panic/injected";
     endpoint DisableUsb = "system/usb/disable" => crate::system::UsbDisabled;
     topic UsbDisabled = "system/usb/disabled";
-    endpoint GetInterruptStacks = "system/interrupt-stacks/get" => crate::system::InterruptStacks;
-    topic InterruptStacks = "system/interrupt-stacks";
 }
 
 /// Arm the SoC deadline watchdog and misbehave as `0` says. Tests the SoC
@@ -59,15 +57,3 @@ pub struct DisableUsb;
 /// The USB Serial/JTAG leaves its pads after this acknowledgement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct UsbDisabled;
-
-/// Sample dedicated IRQ stacks on their own harts in thread mode.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct GetInterruptStacks;
-
-/// `None` denotes no dedicated stack on that hart (shared task stack or inactive hart).
-/// A failed measurement must reject/fail rather than return `None`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct InterruptStacks {
-    pub cpu0: Option<crate::system::StackWatermark>,
-    pub cpu1: Option<crate::system::StackWatermark>,
-}

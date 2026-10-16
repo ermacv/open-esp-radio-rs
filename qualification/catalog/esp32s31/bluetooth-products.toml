@@ -16,7 +16,6 @@ depends-on = [
   "cold-ownership",
   "controller-timebase",
   "ble-phy-engine",
-  "hci-controller-endpoints",
   "portable-legacy-advertising",
   "portable-connectable-advertising",
   "portable-peripheral-connection",
@@ -34,8 +33,6 @@ gaps = [
 source-fact-refs = [
   "bluetooth-idle-phy-maintenance",
   "bluetooth-periodic-phy-maintenance",
-  "bluetooth-idle-powered-release",
-  "bluetooth-same-storage-powered-restart",
 ]
 
 [capabilities.development]
@@ -83,8 +80,7 @@ limits = "The Controller core composes them for the peripheral connection: HCI k
 source-paths = [
   "crates/protocols/bluetooth/le/ll/src/security.rs",
   "crates/protocols/bluetooth/hci/src/lib.rs",
-  "crates/protocols/bluetooth/le/controller/src/peripheral.rs",
-  "crates/protocols/bluetooth/le/controller/src/peripheral/receive.rs",
+  "crates/protocols/bluetooth/le/controller/src/receive.rs",
 ]
 
 [capabilities.development]
@@ -101,54 +97,5 @@ security = ["encrypted-acl"]
 composition = "standalone-encrypted-peripheral"
 level = "composed-product"
 activation-boundary = "Key admission for the live peripheral epoch through encrypted traffic, errors and complete key retirement"
-limitations = "One peripheral connection. Vendor proof covers hardware-consumed packet SRAM and length fields for ciphertext/MIC, packet completion and physical retirement before buffer reuse. AES-CCM, authentication, key/nonce/counter ownership, LL encryption procedures and HCI error/cancellation handling are software contracts covered by host tests and HIL; this composition does not publish keys to a Controller crypto engine. No Central role, PHY update or data-length extension is required. Pairing, bonding and ATT access control belong to secure-peripheral-gatt"
+limitations = "One peripheral connection. Vendor proof covers hardware-consumed packet SRAM and length fields for ciphertext/MIC, packet completion and physical retirement before buffer reuse. AES-CCM, authentication, key/nonce/counter ownership, LL encryption procedures and HCI error/cancellation handling are software contracts covered by host tests and HIL; this composition does not publish keys to a Controller crypto engine. No Central role, PHY update or data-length extension is required. Pairing, bonding and ATT access control are outside this composition"
 
-[[capabilities]]
-id = "secure-peripheral-gatt"
-title = "Secure peripheral GATT server over the open Controller"
-scope = "Pinned Trouble Host with the selected encrypted peripheral Controller: LE Secure Connections Numeric Comparison only, mandatory authenticated encryption and key-size checks before protected ATT access, caller-owned RAM bond storage and key restoration for encrypted reconnect within the retained application lifetime, characteristic reads/writes/notifications, security failures and coordinated Host/Controller shutdown"
-implementation = "incomplete"
-host = "incomplete"
-async = "incomplete"
-depends-on = ["peripheral-link-security"]
-vendor-not-applicable = "host-security-and-oer-bluetooth-gatt-trouble-policy-over-independently-qualified-controller"
-hil-requirements = [
-  # The air of the shared stand loses up to 17% of CONNECT_INDs to foreign
-  # scanners (#357); 20% catches a DUT that stops receiving them. Owner
-  # decision: https://github.com/ermacv/open-esp-radio-rs/issues/363#issuecomment-6110022081.
-  { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3, bounds = [
-    { ratio = { numerator = { name = "connections-not-established", unit = "count", semantics = 1, better = "lower" },
-                denominator = { name = "connection-attempts", unit = "count", semantics = 1 } },
-      over = "current-runs", at-most-basis-points = 2000, minimum-denominator = 45 },
-  ] },
-  { scenario = "bluetooth-trouble-secure-gatt-hci-read-failure", minimum-repetitions = 3 },
-]
-gaps = [
-  { axis = "implementation", id = "secure-gatt-terminal-host-controller-fault-disposition-incomplete" },
-  { axis = "host", id = "smp-att-permissions-bond-restore-and-security-downgrade-regressions-missing" },
-  { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-evidence-incomplete" },
-  { axis = "hil", id = "secure-gatt-coordinated-host-controller-retirement-qualified-evidence-missing" },
-  { axis = "async", id = "trouble-host-controller-coordinated-shutdown-and-cancellation-incomplete" },
-]
-
-[[capabilities.source-contracts]]
-id = "secure-gatt-current-host-boundary"
-composition = "production"
-scope = "The portable GATT application owns Numeric Comparison policy with console confirmation, authenticated ATT access, caller-owned asynchronous bond storage with a bounded RAM backend and the Host epoch runner"
-limits = "The HIL secure GATT image composes the Host with the production Controller and restarts the Controller epoch on request; coordinated terminal fault disposition remains open. Bond insertion must succeed before application authorization; restored encryption must match the retained record. RAM bonds do not survive SoC reset; imported metadata does not prove pairing-method provenance. Repeated eligible evidence is required; source coverage does not qualify the product"
-source-paths = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/epoch.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/bonds.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/comparison.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/console.rs", "hil/targets/esp32s31/agent/src/bluetooth/secure.rs"]
-
-[capabilities.development]
-knowledge = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs"]
-gap-work = [
-]
-
-[capabilities.catalog-scope]
-chip = "esp32s31"
-role = "peripheral-gatt-server"
-phy = "le-1m"
-security = ["le-secure-connections", "numeric-comparison-only", "authenticated-att", "ram-bond"]
-composition = "standalone-secure-peripheral-gatt"
-level = "composed-product"
-activation-boundary = "Host and Controller construction through pairing, protected ATT traffic, bonded reconnect and coordinated shutdown"
-limitations = "One GATT server/peripheral connection using ordinary ATT and one RAM bond slot. No Just Works or unauthenticated fallback; persistence across reset and human-presence verification are outside this profile. EATT, GATT client/caching, privacy role combinations, Central, legacy pairing, Audio and concurrent Wi-Fi/BLE remain separate scopes. A failed or unavailable secure path is incomplete, not a plaintext fallback"

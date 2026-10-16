@@ -5,23 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Sans-IO Bluetooth LE Controller core: HCI command service, Link Layer roles and the radio event arbiter"
+description = "Pure Bluetooth LE Controller pieces: event geometry, authenticated PDU receive and vendor coexistence priorities"
 
 [dependencies]
 bt-hci = "=0.10.1"
-oer-bluetooth-hci = { path = "../../hci" }
 oer-bluetooth-ll = { path = "../ll" }
 oer-bluetooth-radio = { path = "../radio" }
-oer-bluetooth-trace = { path = "../../trace" }
-oer-trace = { path = "../../../../trace" }
 
 [features]
 # Diagnostic images only: vendor HCI command 0xFC01 arms one corruption of a
 # received MIC. Product images never enable it.
 diagnostic-mic-fault = []
-# Record the Controller's trace points (`oer-bluetooth-trace`) into
-# `oer-trace`.
-trace = ["oer-trace/record"]
 
 [lints]
 workspace = true

@@ -44,20 +44,11 @@
       "toml_edit",
       "oer-hil-family-ieee80211-fixture"
     ],
-    "bluetooth": [
-      "oer-hil-family-bluetooth"
-    ],
     "system": [
       "oer-hil-family-system"
     ]
   },
   "timing": {
-    "bluetooth/gatt": false,
-    "bluetooth/secure-gatt": true,
-    "bluetooth/dtm": true,
-    "bluetooth/scannable-advertising": false,
-    "bluetooth/directed-advertising": true,
-    "bluetooth/dtm-peer": true,
     "system/boot-smoke": false,
     "system/watchdog": true,
     "system/panic-reset": true,

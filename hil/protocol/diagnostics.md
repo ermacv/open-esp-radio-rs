@@ -2,13 +2,9 @@
 
 ## Platform reset and watchdog
 
-`BluetoothDtmEvidence::reset_reason` classifies the current platform boot as
-software reset, MWDT1 reset or another cause. HCI Reset does not change this
-value. Archived captures retain their original wire schema and evidence layout.
-
 `GetBootStatus` returns `BootEvidence` for the boot identified by the envelope.
-`ResetReason` is a platform value shared by all images; querying it does not
-issue HCI Reset or change radio state. `BootEvidence::platform_panic` is the
+`ResetReason` is a platform value shared by all images: software reset, MWDT1
+reset or another cause; querying it does not change radio state. `BootEvidence::platform_panic` is the
 record the platform's panic entry left (`panic::take_previous`, taken once
 per boot): the panic's hart, whether it ran on the interrupt stack and the
 interrupted PC, and the end of its file path, line and column.
@@ -34,24 +30,7 @@ poll that never returns, cancellation, missing completion and late restoration
 of the SoC deadline service. The correlated event acknowledges the selected
 mode; only `Complete` acknowledges disarming. Other modes must produce a new
 boot and MWDT1 reset reason. This does not inject a PHY failure or measure RF
-cessation. The separate DTM reset scenario retains its independent peer gates.
-
-## Event trace
-
-An image that links `oer-trace` keeps typed trace entries, and optionally
-snapshot slots of register windows, in reset-retained memory. `telemetry::ControlTrace`
-reports the trace's `TraceStatus`, starts it over with a channel mask or
-changes the mask while it runs; `telemetry::GetTraceEntries` pages out up to 16 complete
-entries from a storage slot, and `telemetry::GetTraceSnapshot` one slot's snapshot in
-pages of 64 words. Entries travel raw, with their event kind; the host decodes
-their words with the same event types the target records.
-
-A hang or a panic freezes the trace before the reset, as can a driver's own
-trigger. The next boot then holds the frozen trace, reported as
-`holding_previous`, until the host has paged it out and starts recording, or
-for 30 s at most; a clean boot records at once on every channel. Reading the
-trace does not change radio state or consume retained results. An image
-without a trace reports `installed: false`.
+cessation.
 
 ## Program-counter profile
 
@@ -70,19 +49,8 @@ both harts; a network session's evidence reports it. A hart that runs no
 executor reports `None`. Images with shared task/IRQ stacks report `None` for
 both dedicated IRQ fields.
 
-`system::GetInterruptStacks` reports the dedicated IRQ watermarks in a short
-response. Bluetooth reports its CPU0 dedicated IRQ watermark and
-`None` for its inactive CPU1. The secure GATT workload checks this response at
-its boundaries.
-
 IRQ sampling runs in thread mode with local interrupts masked during the SRAM
 scan. It therefore adds a short interruption to RF servicing; these diagnostic
 runs are not a timing baseline with instrumentation removed. The image's stack
 policy supplies the nonzero required reserve. These are observed boot-lifetime
 watermarks, not worst-case bounds or evidence of every possible nested IRQ.
-
-The separate `bluetooth-trouble-secure-gatt-timing` scenario scans IRQ watermarks
-only before and after traffic, retaining the same pairing/restart/fault-close
-checks. Its `irq_sampling = boundary-only` evidence is an observer comparison,
-not a replacement for the ordinary `every-snapshot` memory-stress scenario.
-Protocol queries and task-stack measurements still add observer overhead.

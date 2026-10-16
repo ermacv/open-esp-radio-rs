@@ -99,6 +99,11 @@ mod tests {
             Path::new("hil/scenarios"),
         )
         .unwrap();
+        // No scenario of the tree is a qualification one since #770.
+        catalog.roles.insert(
+            scenario.into(),
+            oer_hil_scenario_catalog::Role::Qualification,
+        );
         catalog.checks.insert(
             scenario.into(),
             checks
@@ -171,9 +176,9 @@ mod tests {
 
     #[test]
     fn every_repetition_must_contain_the_requested_proof() {
-        let catalog = catalog("bluetooth-trouble-secure-gatt-hci-read-failure", &[NAME]);
+        let catalog = catalog("system-watchdog", &[NAME]);
         let requirement = HilRequirement {
-            scenario: "bluetooth-trouble-secure-gatt-hci-read-failure".into(),
+            scenario: "system-watchdog".into(),
             checks: vec![NAME.into()],
             minimum_repetitions: 3,
             bounds: Vec::new(),
@@ -195,7 +200,7 @@ mod tests {
 
     #[test]
     fn scope_and_duplicate_requirements_fail_static_validation() {
-        let catalog = catalog("bluetooth-trouble-secure-gatt-hci-read-failure", &[NAME]);
+        let catalog = catalog("system-watchdog", &[NAME]);
         let mut requirement = HilRequirement {
             scenario: "boot-smoke".into(),
             checks: vec![NAME.into()],
@@ -203,7 +208,7 @@ mod tests {
             bounds: Vec::new(),
         };
         assert!(catalog.validate_requirement(&requirement).is_err());
-        requirement.scenario = "bluetooth-trouble-secure-gatt-hci-read-failure".into();
+        requirement.scenario = "system-watchdog".into();
         catalog.validate_requirement(&requirement).unwrap();
         requirement.checks.push(NAME.into());
         assert!(catalog.validate_requirement(&requirement).is_err());
@@ -212,12 +217,9 @@ mod tests {
     #[test]
     fn individual_proofs_from_different_runs_do_not_satisfy_one_obligation() {
         let other_name = "proof.other";
-        let catalog = catalog(
-            "bluetooth-trouble-secure-gatt-hci-read-failure",
-            &[NAME, other_name],
-        );
+        let catalog = catalog("system-watchdog", &[NAME, other_name]);
         let requirement = HilRequirement {
-            scenario: "bluetooth-trouble-secure-gatt-hci-read-failure".into(),
+            scenario: "system-watchdog".into(),
             checks: vec![NAME.into(), other_name.into()],
             minimum_repetitions: 1,
             bounds: Vec::new(),

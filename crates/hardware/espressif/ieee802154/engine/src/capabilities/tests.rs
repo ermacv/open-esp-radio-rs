@@ -7,7 +7,7 @@ const LEVELS: TransmitPowerLevels = match TransmitPowerLevels::new(&[-24, 0, 20]
 };
 
 #[test]
-fn single_interface_table_keeps_the_recovered_values() {
+fn single_interface_table_keeps_the_recovered_values_without_csma_or_retries() {
     let caps = capabilities(LEVELS, false);
     assert_eq!(caps.operations, RADIO_CAPABILITIES);
     assert!(!caps.operations.contains(RadioCapabilities::MULTI_PAN));

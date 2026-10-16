@@ -20,6 +20,9 @@ decision.
 | Install or operate the Bluetooth fixture | [Linux Bluetooth setup](host/linux-bluetooth/README.md) | May reset or reconfigure the selected adapter |
 | Evaluate readiness | [Qualification](../qualification/README.md) | Reads declared programs and eligible sealed evidence independently |
 
+The typed scenario model that replaces the scenario documents lives in
+[`model/`](model/README.md), its execution in
+[`host/executor/`](host/executor/README.md) (#761).
 The wire contract lives in `protocol/`, versioned scenarios in `scenarios/`,
 host orchestration in `host/runner/`, and embedded consumers in `targets/`.
 Chip-independent target logic and its host tests live in

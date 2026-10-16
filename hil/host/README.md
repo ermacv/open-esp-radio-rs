@@ -10,6 +10,7 @@ bundle.
 hil/
 ├── protocol/          host/target command and telemetry wire protocol
 ├── schema/            evidence contract shared with qualification
+├── model/             the typed scenario model: spec, verdict, derived waits, statistics, time fit
 ├── observer/          the observer's build identity, content store and receipts
 ├── scenarios/         versioned, non-secret host workloads and criteria
 ├── evidence/          recorded evidence shards per chip
@@ -27,6 +28,7 @@ hil/
 │   ├── experiment/    the one run launch, revision runs, A/B comparisons and bisection
 │   ├── image/         image class specs for the image pipeline, firmware records, compare_images
 │   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
+│   ├── executor/      typed scenario execution, counted retries, the tier plan and its leases
 │   ├── image-class/   image classes and the keys each serves
 │   ├── source-snapshot/ source snapshots builds and runs are made from
 │   ├── board/         board I/O: ports, the flash writer, starts, resets, OpenOCD, power, consoles

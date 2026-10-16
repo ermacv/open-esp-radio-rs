@@ -1,0 +1,15 @@
+# The nearest clippy.toml wins, so this repeats the workspace's rule.
+# Scenario execution holds no duration literal: every wait is an
+# `oer_hil_model::Wait` resolved from a contract bound, a protocol interval
+# or the stand profile (#761, principle 4).
+disallowed-methods = [
+    { path = "core::hint::spin_loop", reason = "production radio code must yield through its executor or platform" },
+    { path = "core::time::Duration::from_secs", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::from_millis", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::from_micros", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::from_nanos", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::from_secs_f32", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::from_secs_f64", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "core::time::Duration::new", reason = "derive the wait: oer_hil_model::Wait" },
+    { path = "std::thread::sleep", reason = "wait for a typed event or a derived oer_hil_model::Wait" },
+]

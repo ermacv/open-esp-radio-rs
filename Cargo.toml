@@ -130,6 +130,8 @@ members = [
     "tools/vendor-provenance",
     "hil/host/source-snapshot",
     "hil/host/scenario",
+    "hil/host/executor",
+    "hil/model",
     "hil/host/scenario/catalog",
     "hil/host/run-bundle",
     "hil/host/run-bundle/format",

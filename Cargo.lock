@@ -3034,6 +3034,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-executor"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "oer-hil-model",
+ "oer-hil-run-bundle-format",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "oer-hil-experiment"
 version = "0.1.0"
 dependencies = [
@@ -3276,6 +3287,15 @@ dependencies = [
  "serde",
  "serde_json",
  "zeroize",
+]
+
+[[package]]
+name = "oer-hil-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

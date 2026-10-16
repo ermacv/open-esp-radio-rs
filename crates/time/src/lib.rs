@@ -27,6 +27,17 @@
 //! [`WindowError`]. The monotonic axis also exposes explicit saturation via
 //! [`Instant::saturating_add`] for deadlines and
 //! [`Instant::saturating_duration_since`]; radio arithmetic never saturates.
+//!
+//! # Features
+//!
+//! The crate has no dependency and no default feature. Two optional
+//! features give [`Duration`] a wire form, for a port's typed bounds that
+//! travel from the firmware to the host (#761, owner decision 6223240823):
+//!
+//! - `serde`: [`Duration`] serializes transparently as its `u64`
+//!   microseconds, and deserializes from them;
+//! - `schema`: its `postcard_schema::Schema` is that of `u64`, for the HIL
+//!   protocol's message lock; it enables `serde`.
 
 use core::future::Future;
 
@@ -93,7 +104,8 @@ impl Instant {
     }
 }
 
-/// A non-negative span of monotonic time, in microseconds.
+/// A non-negative span of monotonic time, in microseconds. With the
+/// `serde` feature it is written as that `u64`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Duration(u64);
@@ -186,6 +198,9 @@ impl<T: Timer + ?Sized> Timer for &T {
         (**self).wait_until(deadline)
     }
 }
+
+#[cfg(feature = "serde")]
+mod wire;
 
 #[cfg(test)]
 mod tests;

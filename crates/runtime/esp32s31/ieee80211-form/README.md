@@ -18,7 +18,8 @@ method borrows it through the core's single affine DriverLoan until retirement; 
 Driver nor the backing lease. The executable binding in
 [`scope/tests/lifecycle.rs`](src/scope/tests/lifecycle.rs) uses the real
 shared `Installed`, `run_port`, `PortEnd`, `FailStopped` and `Abandon` types.
-Its frontend models lifecycle only; it does not migrate the old S31 runtime.
+Its frontend models lifecycle only; the S31 backend (S31-1 of #760) binds it
+to the port.
 The fixture accepts the core's `ControlFlow<Terminal>` disable sink and
 `EventEnd` event-stream result. It admits no radio work, so terminal retention
 and event-stream draining belong to the S31 backend's conformance tests.
@@ -137,25 +138,20 @@ responsible for cancellation. No lifetime is extended or transmuted.
 
 ## Production S31 integration requirements
 
-The form must integrate together with the S31 runtime/composition replacement.
-The existing runtime still names removed generic IRQ consumers, delivery-policy
-imports and epoch transitions. Its STA dependency currently fails first, so a
-Cargo check does not expose those additional source incompatibilities. The
-composition's handlers already enter the adapter's `INSTALLATION` slot, but
-production does not yet open that registration. A closed entry returns an
-empty snapshot without servicing hardware; the intermediate Wi-Fi image is
-not functional. The replacement must construct and run the owned Driver with
-that exact slot and permanent backing, migrate every IRQ caller and borrow
-its installation's diagnostics. No compatibility storage may reopen the old
-path. HIL snapshot consumers also migrate in that same step.
+No production composition opens the form's registration yet: the old S31
+runtime, composition and HIL consumers were deleted (#762), and the S31
+backend that replaces them is S31-1/S31-2 of #760. The esp-hal adapter's
+`service_mac_interrupt`/`service_power_interrupt` enter the `INSTALLATION`
+slot; while it is closed, an entry returns
+an empty snapshot without servicing hardware. The backend constructs and runs
+the owned Driver with that exact slot and permanent backing and borrows its
+installation's diagnostics. No compatibility storage may reopen another path.
 
 The pinned TX pool issues claims only through `PinnedDmaTxPoolHandle`, the
 affine result of `pin_static`. A raw pool or an independently pinned borrow
 has no claim method; host/RV32 UI twins check both boundaries and handle
 reuse. Permanent allocation is now a type proof, independent of the existing
-DMA guard assertions. The old runtime still stores `&Pool` after accepting
-`Pin<&mut Pool>` in `datapath/sram_tx.rs`; its obsolete claim calls disappear
-with that runtime's replacement. Guard/state/length assertions detect DMA
+DMA guard assertions. Guard/state/length assertions detect DMA
 damage or violations of the existing slot protocol, not missing pinning.
 
 ## DMA custody and clock release
@@ -243,7 +239,7 @@ with the new desired agreement. No intermediate hardware installation is
 promised. BA adds no FIFO capacity term. An operation with an individual
 reply would instead need its own affine request credit and a FIFO command;
 the current BA API has no such operation. This ordering is the required S31
-binding, not a claim that the old runtime already satisfies it.
+binding.
 
 Each permission's place is its memory credit. `AffineIndexedSpscQueue` in
 `oer-memory` keeps one value cell per place and the existing audited

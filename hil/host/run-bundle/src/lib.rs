@@ -4,8 +4,7 @@
 //! - [`run`]: the writer [`run::RunSession`] that creates, seals and
 //!   interrupts a run;
 //! - [`store`]: [`store::RunStore`], the run store every checkout shares, its
-//!   sidecars (pins, quarantine, performance baselines, caches) and a
-//!   checkout's pending evidence.
+//!   sidecars (pins, quarantine, performance baselines, caches).
 //! - [`receipt`]: the receipt a runner process names its runs in.
 //! - [`build`]: the content-addressed object store and source capture of a
 //!   run's images; the image builder fills their provenance.

@@ -6,9 +6,9 @@
 //! to the store's `runs/`; everything else below `target/hil` (build caches,
 //! snapshots) stays per checkout. Beside `runs/` the store keeps the observer
 //! builds its runs refer to ([`oer_hil_run_bundle_format::observer::store`]) and its
-//! [`Sidecar`]s; a checkout keeps the clean runs whose evidence it has not
-//! recorded in its [`pending`](oer_hil_run_bundle_format::pending) list. Qualification still decides per bundle
-//! whether it applies to the checkout's sources.
+//! [`Sidecar`]s. Qualification reads runs only from a verified copy of an
+//! evidence archive version (`oer-hil-evidence-archive`), never from the
+//! store.
 
 use std::{
     collections::BTreeMap,
@@ -189,12 +189,62 @@ impl RunStore {
 
     /// Set or, with `None`, remove `key`'s note in a notes sidecar.
     pub fn note(&self, sidecar: Sidecar, key: &str, note: Option<Note>) -> Result<()> {
+        self.update_notes(sidecar, |notes| {
+            match note {
+                Some(note) => notes.insert(key.to_owned(), note),
+                None => notes.remove(key),
+            };
+        })
+    }
+
+    /// Change a notes sidecar with `change` as one read-modify-write under
+    /// the sidecar's lock file: every checkout shares the store, and a
+    /// concurrent change of another process is never lost.
+    pub fn update_notes<R>(
+        &self,
+        sidecar: Sidecar,
+        change: impl FnOnce(&mut Notes) -> R,
+    ) -> Result<R> {
+        let _lock = self.lock_notes(sidecar, oer_process::lock::Mode::Exclusive)?;
         let mut notes: Notes = self.read(sidecar)?;
-        match note {
-            Some(note) => notes.insert(key.to_owned(), note),
-            None => notes.remove(key),
+        let result = change(&mut notes);
+        self.write(sidecar, &notes)?;
+        Ok(result)
+    }
+
+    /// The lock of a notes sidecar: [`Self::update_notes`] holds it
+    /// exclusively; a reader that acts on the notes, such as pruning, which
+    /// deletes every run its pins do not keep, holds it shared from reading
+    /// them until its last run deletion, so no pin lands in between.
+    pub fn lock_notes(
+        &self,
+        sidecar: Sidecar,
+        mode: oer_process::lock::Mode,
+    ) -> Result<oer_process::lock::FileLock> {
+        use oer_process::lock::{FileLock, Mode};
+        fs::create_dir_all(&self.root)?;
+        // Waiting says why once and ends on Ctrl-C (exit 130), unlike a
+        // blocking `flock`.
+        let waiting = match (mode, sidecar) {
+            // Pruning takes only the pins' lock.
+            (Mode::Exclusive, Sidecar::Pins) => format!(
+                "hil: waiting for another change of the run store's {} or a pruning to finish",
+                sidecar.file()
+            ),
+            (Mode::Exclusive, _) => format!(
+                "hil: waiting for another change of the run store's {} to finish",
+                sidecar.file()
+            ),
+            (Mode::Shared, _) => format!(
+                "hil: waiting for a change of the run store's {} to finish",
+                sidecar.file()
+            ),
         };
-        self.write(sidecar, &notes)
+        FileLock::wait(
+            &self.root.join(format!("{}.lock", sidecar.file())),
+            mode,
+            &waiting,
+        )
     }
 
     /// Make the checkout's [`CHECKOUT_RUNS`] a link to this store's runs. A

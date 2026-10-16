@@ -1,5 +1,4 @@
 use super::*;
-use oer_hil_run_bundle_format::pending::{self, Pending};
 
 #[test]
 fn a_checkout_links_to_the_store_and_refuses_runs_of_its_own() {
@@ -73,36 +72,73 @@ fn a_path_below_a_run_belongs_to_that_run() {
     );
 }
 
-fn entry(run: &str, scenarios: &[&str]) -> Pending {
-    Pending {
-        run: run.into(),
-        scenarios: scenarios.iter().map(|s| s.to_string()).collect(),
-        owner: String::from("wifi"),
-    }
+#[test]
+fn concurrent_note_changes_are_all_kept() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path());
+    let note = |by: &str| Note {
+        by: by.to_owned(),
+        reason: String::from("concurrent"),
+        unix_millis: 0,
+    };
+    std::thread::scope(|scope| {
+        for writer in 0..8 {
+            let store = &store;
+            scope.spawn(move || {
+                for run in 0..16 {
+                    store
+                        .note(Sidecar::Pins, &format!("{writer}-{run}"), Some(note("t")))
+                        .unwrap();
+                }
+            });
+        }
+    });
+    let notes = store.read::<Notes>(Sidecar::Pins).unwrap();
+    assert_eq!(notes.len(), 8 * 16);
 }
 
+/// Pruning reads the pins and deletes under the shared lock: a pin taken
+/// meanwhile waits until it is released.
 #[test]
-fn the_pending_list_keeps_runs_with_passed_scenarios_until_recorded() {
-    let root = tempfile::tempdir().unwrap();
-    pending::remember(
-        root.path(),
-        &[entry("r1", &["a"]), entry("r2", &[]), entry("r3", &["b"])],
-    )
-    .unwrap();
-    pending::remember(root.path(), &[entry("r1", &["a"])]).unwrap();
-    assert_eq!(
-        pending::load(root.path()).unwrap(),
-        [entry("r1", &["a"]), entry("r3", &["b"])]
+fn a_pin_waits_while_the_pins_are_held_shared() {
+    use oer_process::lock::Mode;
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path());
+    let held = store.lock_notes(Sidecar::Pins, Mode::Shared).unwrap();
+    // Another reader shares it.
+    drop(store.lock_notes(Sidecar::Pins, Mode::Shared).unwrap());
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let store = &store;
+        scope.spawn(move || {
+            store
+                .note(
+                    Sidecar::Pins,
+                    "1-a",
+                    Some(Note {
+                        by: String::from("hil"),
+                        reason: String::from("selected"),
+                        unix_millis: 0,
+                    }),
+                )
+                .unwrap();
+            done.send(()).unwrap();
+        });
+        assert!(
+            finished
+                .recv_timeout(std::time::Duration::from_millis(300))
+                .is_err(),
+            "the pin landed while the pins were held"
+        );
+        drop(held);
+        finished
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+    });
+    assert!(
+        store
+            .read::<Notes>(Sidecar::Pins)
+            .unwrap()
+            .contains_key("1-a")
     );
-    pending::forget(root.path(), &[String::from("r1")]).unwrap();
-    assert_eq!(pending::load(root.path()).unwrap(), [entry("r3", &["b"])]);
-}
-
-#[test]
-fn a_pending_entry_names_its_owner() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join(pending::PENDING);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, br#"[{"run":"r1","scenarios":["a"]}]"#).unwrap();
-    assert!(pending::load(root.path()).is_err());
 }

@@ -8,10 +8,9 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 | `protocol/`, `schema/`, `observer/` | Host/target wire protocol; the evidence contract shared with qualification; the observer's build identity |
 | `scenarios/` | Versioned scenario documents and their [roles](scenarios/README.md#roles) |
 | `model/`, `trace-header/`, `host/executor/` | The typed scenario model that replaces those documents (#761): spec with a purpose type and a pure verdict, validated names, derived waits, the stand profile; its execution (the model, or the stand under a granted lease) and the tier plan ([model](model/README.md), the no_std [trace header](trace-header/README.md) of conformance traces, [executor](host/executor/README.md)). Each new HIL scenario crate keeps the identical `hil-scenario` copy of `clippy.toml` |
-| `host/` | `cargo hil` (`cli/`), runner, the flash operation, image builder, families, fixtures ([host guide](host/README.md)) |
+| `host/` | `cargo hil` (`cli/`), runner, the flash operation, image builder, families, fixtures, the evidence archive of cited runs (`evidence-archive/`, `cargo hil archive`) ([host guide](host/README.md)) |
 | `../stand/` | `cargo stand` and the stand packages: stand file, boards, arbiter, owners, journal, power, host files ([stand guide](host/stand.md), [stand file](../stand/file/README.md)) |
 | `targets/<chip>/`, `agent/` | Target firmware workspaces; chip-independent agent logic |
-| `evidence/<chip>/` | Tracked evidence shards (`cargo qualification hil-evidence`) |
 | `phy/capture/` | Chip-neutral PHY comparison observations and vendor console protocol (root workspace) |
 | `phy/<chip>/{relation,calibration}/` | Shared PHY calibration relation and host comparison used by the HIL PHY family, firmware agents and verification probes/scenarios (root workspace) |
 

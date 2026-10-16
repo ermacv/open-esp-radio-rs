@@ -1,5 +1,5 @@
 //! The `cargo hil` command: the test commands handled here (runs, analyses,
-//! experiments, evidence, the firmware catalog), every other command
+//! experiments, the evidence archive, the firmware catalog), every other command
 //! forwarded to the runner this crate builds. The stand's own commands are
 //! `cargo stand`.
 use crate::Result;
@@ -11,9 +11,22 @@ use std::{
 };
 
 pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
-    use_shared_store(ctx)?;
-    let (options, args) = LeaseOptions::split(args)?;
+    let (options, args) = match LeaseOptions::split(args) {
+        Ok(split) => split,
+        // `cargo hil archive` keeps its exit codes (`archive::command`): a
+        // usage error is 2.
+        Err(error) if names_archive(args) => {
+            eprintln!("hil: {error}");
+            return Ok(std::process::ExitCode::from(2));
+        }
+        Err(error) => return Err(error),
+    };
     let args = args.as_slice();
+    // The archive reads the shared store itself; it needs no checkout link.
+    if args.first().and_then(|argument| argument.to_str()) == Some("archive") {
+        return crate::archive::command(ctx, options.owner(ctx), &args[1..]);
+    }
+    use_shared_store(ctx)?;
     let first = args.first().and_then(|argument| argument.to_str());
     match first {
         None | Some("help" | "--help" | "-h") => println!("{HIL_HELP}"),
@@ -40,7 +53,8 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
             return Ok(std::process::ExitCode::SUCCESS);
         }
         Some(HilCommand::Runs) => return runs(ctx, &options, &args[1..]),
-        Some(HilCommand::Evidence) => return crate::evidence::command(ctx, &args[1..]),
+        // Dispatched before the shared store is linked.
+        Some(HilCommand::Archive) => unreachable!("`archive` returns above"),
         Some(HilCommand::Perf) => return perf(ctx, &options, &args[1..]),
         Some(HilCommand::Profile) => return profile(ctx, &args[1..]),
         Some(HilCommand::Wait) => return wait(&args[1..]),
@@ -87,7 +101,7 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
     };
     let args = args.as_slice();
     // An enqueued job runs the runner and sources fixed when it was
-    // enqueued; the evidence decision below still reads its own arguments.
+    // enqueued.
     let frozen = crate::jobs::Frozen::inherited()?;
     let runner = match &frozen {
         Some(frozen) => oer_hil_experiment::launch::Runner {
@@ -123,39 +137,21 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
         if let Some(job) = job.as_mut() {
             job.finish_with(&store, &launched.runs)?;
         }
-        let created = runs_dirty(&store, &launched.runs);
-        if std::env::var_os(oer_hil_run_bundle_format::experiment::EXPERIMENT_ENV).is_some() {
-            eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
-        } else {
-            let flag = |name: &str| {
-                args.iter().any(|arg| {
-                    arg.to_str()
-                        .is_some_and(|arg| arg == name || arg.starts_with(&format!("{name}=")))
-                })
-            };
-            match evidence_skip_reason(
-                RunInputs {
-                    untracked_sources: flag("--source-include")
-                        || flag("--source-snapshot")
-                        || flag("--include-untracked"),
-                    reduced_repetitions: flag("--repetitions"),
-                },
-                &created,
-            ) {
-                None => remember_pending(ctx, &store, options.owner(ctx)?, &launched.runs)?,
-                // A runner that created no run has said why itself.
-                Some(_) if created.is_empty() => {}
-                Some(reason) => eprintln!(
-                    "hil: HIL evidence not noted as pending: {reason}; \
-                     `cargo qualification hil-evidence --hil-target CHIP --run ID` records it"
-                ),
-            }
-        }
+        // Ctrl-C during the pruning, such as while it waits for the pins,
+        // ends the command (exit 130); any other failure is only reported.
         if let Err(error) = prune_automatically(ctx, &store) {
+            if oer_process::is_cancelled(&*error) {
+                return Err(error);
+            }
             eprintln!("hil: automatic pruning of the run store failed: {error}");
         }
     }
     Ok(oer_process::exit_code(launched.status))
+}
+
+/// Whether `args` run `cargo hil archive`, which has its own exit codes.
+fn names_archive(args: &[OsString]) -> bool {
+    args.iter().any(|argument| argument == "archive")
 }
 
 /// The commands handled here, printed before the runner's own help; every
@@ -170,7 +166,7 @@ enum HilCommand {
     Sweep,
     Runs,
     Perf,
-    Evidence,
+    Archive,
     Profile,
     Bisect,
     Revision,
@@ -188,7 +184,7 @@ impl HilCommand {
         Self::Sweep,
         Self::Runs,
         Self::Perf,
-        Self::Evidence,
+        Self::Archive,
         Self::Profile,
         Self::Bisect,
         Self::Revision,
@@ -206,7 +202,7 @@ impl HilCommand {
             Self::Sweep => "sweep",
             Self::Runs => "runs",
             Self::Perf => "perf",
-            Self::Evidence => "evidence",
+            Self::Archive => "archive",
             Self::Profile => "profile",
             Self::Bisect => "bisect",
             Self::Revision => "revision",
@@ -230,7 +226,7 @@ queue, are `cargo stand`):
   cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K] [--enqueue] [--after JOB]
                                       A/B comparison with noise-aware verdicts; --enqueue makes it a job
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
-  cargo hil run S... --repetitions N  each scenario N times instead of its own count; never evidence
+  cargo hil run S... --repetitions N  each scenario N times instead of its own count
   cargo hil wait JOB|RUN              block until the job or run ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
   cargo hil peer send BOARD LINE... [--for 5s]                   one peer text-protocol command and its answer
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
@@ -240,8 +236,12 @@ queue, are `cargo stand`):
   cargo hil runs history SCENARIO [--measurement TEXT]
   cargo hil runs pin RUN --reason TEXT | unpin RUN
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
-  cargo hil evidence pending          clean runs whose evidence is not recorded yet
-  cargo hil evidence dismiss --run ID ...   drop runs whose evidence will not be recorded
+  cargo hil archive ref RUN... [--selection SELECTION]   the references (run, SHA-256 of its seal) of runs; pins the store's for a selection
+  cargo hil archive pack --refs FILE --out DIR [--pin FILE]   [network] the cited runs as an evidence archive version
+  cargo hil archive unpin VERSION|SELECTION   drop the pins of a version never published or of a selection
+  cargo hil archive holders           the archive's holders of pins (selections, versions) and their runs
+  cargo hil archive publish DIR [--repository OWNER/NAME [--new-repository]] [--pin FILE]   [network] release it in the pinned repository, write the pin
+  cargo hil archive fetch --out DIR [--pin FILE]   [network] the pinned version, verified, for qualification
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
   cargo hil images check --all|--class C|--reaching PKG [--type-check]   image classes with their audits
@@ -263,10 +263,9 @@ scenario or lease command runs to its end. Every lease ends at 1h (lease
 exit status 124). `cargo stand queue` shows every balance and who goes next.
 Scenarios tagged `air-exclusive` claim the air exclusively.
 
-Runs never write tracked files: a clean run's passed scenarios become this
-checkout's pending evidence, recorded by `cargo qualification hil-evidence
---hil-target CHIP --pending`; record any other run, such as one from a dirty
-tree, with `--run ID` instead of `--pending`.
+Runs never write tracked files. Evidence is the runs a qualification decision
+cites, packed into an immutable evidence archive version that
+`qualification/evidence/archive.toml` pins (`cargo hil archive`).
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
 
@@ -403,13 +402,11 @@ fn command_tree(ctx: &Checkout) -> Result<std::process::ExitCode> {
     let mut nodes = vec![
         root,
         node(&["hil", "dashboard"], &[], &["--port"]),
-        node(&["hil", "evidence"], &["pending", "dismiss"], &[]),
-        node(&["hil", "evidence", "dismiss"], &[], &["--run"]),
-        node(&["hil", "evidence", "pending"], &[], &[]),
         node(&["hil", "wait"], &[], &[]),
     ];
     for (name, command) in [
         ("perf", PerfCli::command()),
+        ("archive", crate::archive::ArchiveCli::command()),
         ("runs", RunsCli::command()),
         ("firmware", FirmwareCli::command()),
         ("images", crate::images::ImagesCli::command()),
@@ -619,9 +616,19 @@ fn runs(
         }
         RunsCli::Pin { run, reason } => {
             find(&run)?;
-            store.note(Sidecar::Pins, &run, Some(note(reason)?))?;
+            crate::pins::pin_existing_by_hand(&store, &run, note(reason)?)?;
         }
-        RunsCli::Unpin { run } => store.note(Sidecar::Pins, &run, None)?,
+        RunsCli::Unpin { run } => {
+            let held =
+                store.update_notes(Sidecar::Pins, |pins| crate::pins::unpin_by_hand(pins, &run))?;
+            if !held.is_empty() {
+                eprintln!(
+                    "hil: run {run} stays pinned for the evidence archive by {}; \
+                     `cargo hil archive unpin HOLDER` drops a holder",
+                    held.join(", ")
+                );
+            }
+        }
         RunsCli::Flaky { since, minimum } => {
             let recent = now.saturating_sub(since.as_millis() as u64);
             let runs = all()?
@@ -649,7 +656,6 @@ fn runs(
         } => {
             let pruned = retention::prune(
                 &store,
-                &ctx.root,
                 &retention::Retention {
                     keep_days: days,
                     keep_failed,
@@ -811,7 +817,6 @@ fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> 
     std::fs::write(&marker, b"")?;
     let pruned = oer_hil_analysis::retention::prune(
         store,
-        &ctx.root,
         &oer_hil_analysis::retention::Retention {
             keep_days: PRUNE_DAYS,
             keep_failed: PRUNE_KEEP_FAILED,
@@ -1001,86 +1006,6 @@ fn with_source_snapshot(args: &[OsString], snapshot: &Path) -> Vec<OsString> {
     arguments.push("--source-snapshot".into());
     arguments.push(snapshot.into());
     arguments
-}
-
-/// Whether each of `runs` in `store` was built from a dirty tree; one whose
-/// manifest the store does not hold counts as dirty.
-fn runs_dirty(
-    store: &oer_hil_run_bundle::RunStore,
-    runs: &[oer_hil_run_bundle::RunId],
-) -> Vec<bool> {
-    runs.iter()
-        .map(|run| {
-            store
-                .open(run.as_str())
-                .map_or(true, |bundle| bundle.manifest().repository.dirty)
-        })
-        .collect()
-}
-
-/// Why a finished invocation records no evidence: it created no run, a run
-/// came from a dirty tree, or untracked sources were added with
-/// `--source-include` or `--include-untracked`. Such runs are experiments;
-/// `cargo qualification hil-evidence --run ID` records them anyway.
-/// What a run was given beyond the tracked checkout and the catalog.
-#[derive(Clone, Copy, Default)]
-struct RunInputs {
-    untracked_sources: bool,
-    /// `--repetitions` replaced the scenarios' own counts.
-    reduced_repetitions: bool,
-}
-
-fn evidence_skip_reason(inputs: RunInputs, created_dirty: &[bool]) -> Option<&'static str> {
-    if created_dirty.is_empty() {
-        Some("the runner created no run")
-    } else if created_dirty.iter().any(|dirty| *dirty) {
-        Some("the run was built from a dirty tree")
-    } else if inputs.untracked_sources {
-        Some("the run included untracked sources")
-    } else if inputs.reduced_repetitions {
-        Some("--repetitions replaced the scenarios' repetitions")
-    } else {
-        None
-    }
-}
-
-/// Note clean runs as pending evidence of this checkout: a run never writes
-/// tracked files.
-fn remember_pending(
-    ctx: &Checkout,
-    store: &oer_hil_run_bundle::RunStore,
-    owner: String,
-    runs: &[oer_hil_run_bundle::RunId],
-) -> Result<()> {
-    use oer_hil_run_bundle_format::pending;
-    let pending = runs
-        .iter()
-        .map(|run| pending::Pending {
-            run: run.to_string(),
-            scenarios: store
-                .open(run.as_str())
-                .ok()
-                .and_then(|bundle| bundle.suite().ok().flatten())
-                .map(|suite| {
-                    suite
-                        .scenarios
-                        .into_iter()
-                        .filter(|scenario| scenario.outcome.is_passed())
-                        .map(|scenario| scenario.scenario)
-                        .collect()
-                })
-                .unwrap_or_default(),
-            owner: owner.clone(),
-        })
-        .collect::<Vec<_>>();
-    pending::remember(&ctx.root, &pending)?;
-    if pending.iter().any(|run| !run.scenarios.is_empty()) {
-        eprintln!(
-            "hil: evidence not recorded in hil/evidence; record it with the change it qualifies: \
-             cargo qualification hil-evidence --hil-target CHIP --pending"
-        );
-    }
-    Ok(())
 }
 
 /// Commands that execute scenarios and write run bundles.
@@ -1358,23 +1283,31 @@ mod tests {
         assert_eq!(super::HilCommand::named("status"), None);
     }
 
-    use super::{OsString, has_flag, runs_dirty, source_options, with_source_snapshot};
+    use super::{OsString, has_flag, source_options, with_source_snapshot};
 
+    /// A lease option `cargo hil archive` cannot take is a usage error
+    /// (exit 2), as its own parsing's are; other commands keep theirs.
     #[test]
-    fn a_run_is_clean_only_when_its_manifest_says_so() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = oer_hil_run_bundle::RunStore::at(directory.path());
-        for (id, dirty) in [("1-a", true), ("2-b", false)] {
-            oer_hil_run_bundle::run::test_support::write_run(
-                &store.run(id),
-                1,
-                oer_hil_run_bundle_format::run::RunState::Completed,
-                Vec::new(),
-                |manifest| manifest.repository.dirty = dirty,
-            );
-        }
-        let ids = ["1-a", "2-b", "3-missing"].map(oer_hil_run_bundle::RunId::new);
-        assert_eq!(runs_dirty(&store, &ids), [true, false, true]);
+    fn a_bad_lease_option_before_archive_is_a_usage_error() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("Cargo.toml"), "").unwrap();
+        let ctx = oer_process::Checkout::new(root.path()).unwrap();
+        let args = |line: &str| line.split(' ').map(OsString::from).collect::<Vec<_>>();
+        let bad_owner = [
+            OsString::from("--owner"),
+            OsString::from(""),
+            OsString::from("archive"),
+            OsString::from("holders"),
+        ];
+        assert!(super::LeaseOptions::split(&bad_owner).is_err());
+        assert_eq!(
+            super::run(&ctx, &bad_owner).unwrap(),
+            std::process::ExitCode::from(2)
+        );
+        assert_eq!(
+            super::run(&ctx, &args("--owner")).unwrap_err().to_string(),
+            "--owner requires a value"
+        );
     }
 
     #[test]
@@ -1432,29 +1365,9 @@ mod tests {
         assert!(!report.starts_with(root.join("target/hil/runs")));
     }
 
-    #[test]
-    fn evidence_is_noted_as_pending_only_for_clean_runs() {
-        let clean = RunInputs::default();
-        assert_eq!(evidence_skip_reason(clean, &[false]), None);
-        assert!(evidence_skip_reason(clean, &[]).is_some());
-        assert!(evidence_skip_reason(clean, &[false, true]).is_some());
-        let untracked = RunInputs {
-            untracked_sources: true,
-            ..clean
-        };
-        assert!(evidence_skip_reason(untracked, &[false]).is_some());
-        // A run with fewer repetitions than its scenarios require is a look,
-        // not qualification evidence.
-        let reduced = RunInputs {
-            reduced_repetitions: true,
-            ..clean
-        };
-        assert!(evidence_skip_reason(reduced, &[false]).is_some());
-    }
-
     use super::*;
     #[test]
-    fn only_executing_commands_record_evidence() {
+    fn only_executing_commands_produce_runs() {
         let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
         assert!(produces_runs(&args(&["run", "boot-smoke"])));
         assert!(produces_runs(&args(&["run-all", "--tag", "wifi"])));

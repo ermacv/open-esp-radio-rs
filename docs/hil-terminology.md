@@ -83,7 +83,8 @@ and the [protocol](../hil/protocol/README.md) define the contracts in detail.
 | Build record | `source-inputs.json`: everything an image's build read. |
 | Closure | The input files of a run that decide whether its evidence is current. |
 | Messages used | The message paths a run sent or received, sorted and unique, in its manifest's `messages_used`. |
-| Shard | A tracked record in `hil/evidence/<chip>/` of observations that qualify on a checkout. |
+| Evidence archive | Immutable versions of the sealed runs that qualification cites, outside the repository; `evidence/archive.toml` in `qualification/` pins the one qualification reads. |
+| Run reference | A run's ID and the SHA-256 of its seal (`integrity.json`), as evidence cites it. |
 | Qualification | The independent evaluation of readiness from sealed evidence. |
 | Capability | A unit of readiness in the qualification catalog (`qualification/catalog/`). |
 | Program | The capabilities a qualification target requires and its evidence policy. |

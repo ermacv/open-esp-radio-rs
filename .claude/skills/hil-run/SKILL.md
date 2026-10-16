@@ -1,6 +1,6 @@
 ---
 name: hil-run
-description: Use when running, queueing, waiting for or investigating hardware-in-the-loop (HIL) scenarios on the shared ESP32 stand in this repository — cargo hil run/run-all/wait/queue/plan, image builds, leases and the arbiter, scenario roles, failed runs, or recording HIL evidence shards.
+description: Use when running, queueing, waiting for or investigating hardware-in-the-loop (HIL) scenarios on the shared ESP32 stand in this repository — cargo hil run/run-all/wait/queue/plan, image builds, leases and the arbiter, scenario roles, failed runs, judging a run (`cargo qualification verdict`), or packing cited runs into the evidence archive.
 ---
 
 # Run HIL scenarios on the shared stand
@@ -13,7 +13,9 @@ host: [hardware route](../../../hil/README.md#hardware-route).
 ## Checklist
 
 1. **Pick scenarios.** `cargo hil scenario list` or
-   `cargo qualification plan --manifest <program>`; `cargo hil plan <scenario>`
+   `cargo qualification plan --manifest <program> --archive DIR` (a fetched
+   copy of the pinned evidence archive; without it every supported scenario
+   reads as `run`); `cargo hil plan <scenario>`
    shows image, repetitions and named checks without hardware.
 2. **Run in the background, through the arbiter.** Every hardware command
    queues for its boards, fixtures and air; never kill or signal another
@@ -23,8 +25,7 @@ host: [hardware route](../../../hil/README.md#hardware-route).
      `cargo hil wait "$id"` in the background (exit 0 passed, 1 failed, …);
    - several scenarios: one `cargo hil run a b c`, one lease. In zsh pass
      the names literally or as an array, not as one unquoted `$VAR`.
-3. **Debug quickly.** `--repetitions N` (1–20) for a look; such runs are
-   never pending evidence. Images build before the run queues, as image
+3. **Debug quickly.** `--repetitions N` (1–20) for a look. Images build before the run queues, as image
    bundles of the one pipeline (`oer-image`); `cargo hil image build <class>`
    builds one without the stand, and `cargo fw flash --device MAC|PORT <bundle>`
    writes a bundle by hand (device lock, receipted write, start).
@@ -39,11 +40,14 @@ host: [hardware route](../../../hil/README.md#hardware-route).
    for a board in service with `cargo stand wait --service`. A flash made
    outside `cargo hil` is journaled with `cargo stand lease --board B --flashed
    IMAGE --application FILE --device B -- COMMAND`.
-7. **Evidence (optional).** From a clean tree, `cargo qualification
-   hil-evidence --hil-target <chip> --pending` writes shards to
-   `hil/evidence/<chip>/`; commit them with the change they
-   qualify. Stale evidence is information; qualification runs on a baseline
-   the user chooses.
+7. **Verdict and evidence.** `cargo qualification verdict --run PATH` judges
+   a run against every program's HIL requirements; it is not published and
+   not evidence. Evidence is a run a decision cites, packed into the evidence
+   archive (`cargo hil archive ref|pack|publish`; `unpin` drops the pins of a
+   selection or a version never published) and pinned in
+   `evidence/archive.toml` in `qualification/`; `pack`, `publish` and
+   `fetch` reach the network. Qualification reads only the pinned version:
+   a run outside it is no evidence, whatever it shows.
 
 ## Roles
 

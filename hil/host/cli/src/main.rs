@@ -42,8 +42,18 @@ fn main() -> ExitCode {
         Ok(status) => status,
         Err(error) => {
             eprintln!("hil: {error}");
-            ExitCode::FAILURE
+            ExitCode::from(failure_status(&*error))
         }
+    }
+}
+
+/// The exit status of a failed command: 130 when Ctrl-C cancelled it, such
+/// as a wait for the run store's pins, else 1.
+fn failure_status(error: &(dyn std::error::Error + 'static)) -> u8 {
+    if oer_process::is_cancelled(error) {
+        130
+    } else {
+        1
     }
 }
 
@@ -71,5 +81,12 @@ mod tests {
             (None, words("lease --root /c"))
         );
         assert!(split_root(words("--root")).is_err());
+    }
+
+    #[test]
+    fn a_cancelled_command_exits_130_and_any_other_failure_1() {
+        assert_eq!(failure_status(&oer_process::Cancelled), 130);
+        let failed: Box<dyn std::error::Error> = "no such run".into();
+        assert_eq!(failure_status(&*failed), 1);
     }
 }

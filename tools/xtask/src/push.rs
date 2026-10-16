@@ -15,14 +15,14 @@
 //! 4. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
 //!    commits change against `origin/main`, their merge base.
 //! 5. The local Claude review ([`crate::review`]) of the same diff has no
-//!    blocking finding ([`reviewed`]): it is the only review that blocks;
+//!    blocking finding (`reviewed`): it is the only review that blocks;
 //!    the one in CI reviews the pull request once and only files its
 //!    findings as issues. Its wording findings do not block: once the pull
 //!    request exists, they are filed as `review: …` issues of the branch,
 //!    and a failed filing fails the push. `--skip-review REASON` is the only
 //!    way to push without it and records the reason on the pull request.
 //! 6. Push the branch and open its pull request as a draft when it has none
-//!    ([`create_pull_request`]). The push enables no auto-merge: a person
+//!    (`create_pull_request`). The push enables no auto-merge: a person
 //!    marks the pull request ready and merges it.
 //!
 //! The push never waits for CI and never rebases: the developer rebases a

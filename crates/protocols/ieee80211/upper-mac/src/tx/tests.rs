@@ -88,7 +88,7 @@ fn a_delivered_mpdu_reports_one_attempt_and_resets_contention() {
     let mut entropy = all_ones;
     let (mut exchange, plan) = planner.begin(mpdu(200), &Ladder, &mut entropy).unwrap();
     assert_eq!(plan.rate, OFDM54);
-    assert_eq!(plan.backoff, Backoff::Slots(15));
+    assert_eq!(plan.backoff_slots, 15);
     assert_eq!(
         plan.content,
         AttemptContent::Mpdu {
@@ -123,7 +123,7 @@ fn ack_timeouts_walk_the_ladder_with_the_retry_bit_and_double_the_window() {
     let timeout = completion(TxStatus::AckTimeout, None);
     let second = attempt(planner.complete(&mut exchange, &timeout, now(1), &Ladder, &mut entropy));
     assert_eq!(second.rate, OFDM48);
-    assert_eq!(second.backoff, Backoff::Slots(31));
+    assert_eq!(second.backoff_slots, 31);
     assert_eq!(
         second.content,
         AttemptContent::Mpdu {
@@ -132,7 +132,7 @@ fn ack_timeouts_walk_the_ladder_with_the_retry_bit_and_double_the_window() {
     );
     let third = attempt(planner.complete(&mut exchange, &timeout, now(2), &Ladder, &mut entropy));
     assert_eq!(third.rate, OFDM24);
-    assert_eq!(third.backoff, Backoff::Slots(63));
+    assert_eq!(third.backoff_slots, 63);
     let TxStep::Done(TxReport::Mpdu(status)) =
         planner.complete(&mut exchange, &timeout, now(3), &Ladder, &mut entropy)
     else {

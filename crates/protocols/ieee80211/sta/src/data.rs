@@ -22,8 +22,8 @@
 
 use crate::Counter;
 use oer_ieee80211_lower_mac::{
-    AckHeader, HeaderSpec, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence, RxMeta,
-    SizedFrame, TxBufferMemory, TxOutcome,
+    AckHeader, HeaderSpec, MpduLength, ReturnedMpdu, RxCryptoStatus, RxEvidence, RxMeta, SingleEnd,
+    SingleOutcome, SizedFrame, TxBufferMemory, TxOutcome,
 };
 use oer_ieee80211_mac::address::IndividualAddress;
 use oer_ieee80211_mac::{
@@ -50,6 +50,10 @@ pub trait StaDataTokens {
     type Buffer: TxBufferMemory;
     /// An immutable published MPDU. Data retains it until retry or retirement.
     type Sent;
+    /// What the port observed of a solicited response.
+    type AckEvidence: Copy;
+    /// The port's evidence that coexistence denied an attempt the air.
+    type AirDenied: Copy;
     /// Retire an MPDU and release its body before reusing the allocation.
     fn renew(mpdu: Self::Sent) -> Self::Buffer;
 }
@@ -119,7 +123,7 @@ pub enum DataReturn<'id, D: StaDataTokens, K> {
         /// Its buffer.
         buffer: ReturnedMpdu<D::Buffer, D::Sent>,
         /// How it ended.
-        completion: TxOutcome,
+        completion: SingleOutcome<D::AckEvidence, D::AirDenied>,
     },
 }
 
@@ -616,10 +620,7 @@ impl<'id, D: StaDataTokens, K: oer_ieee80211_lower_mac::Ieee80211Capabilities, c
                     TxOutcome::Indeterminate(_) => {
                         self.indeterminate.increment();
                     }
-                    TxOutcome::Ended {
-                        status: oer_ieee80211_lower_mac::TxEndStatus::ContentionLimit,
-                        ..
-                    } => {
+                    TxOutcome::Ended(SingleEnd::ContentionLimit(_)) => {
                         self.contention_limited.increment();
                     }
                     _ => {}

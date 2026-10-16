@@ -152,8 +152,17 @@ pub const TSF_RELATION: oer_radio_port::ClockRelation<TsfInstant, crate::Ieee802
 #[derive(Debug, Eq, PartialEq)]
 pub struct TsfRelation {
     generations: oer_radio_port::GenerationSource<TsfInstant, crate::Ieee80211Instant>,
-    last_sample: Option<TsfInstant>,
+    last_sample: LastSample,
     sample_uncertainty: TsfDuration,
+}
+
+/// The value the TSF was last set to in the current generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LastSample {
+    /// No set since the relation began or broke: the next set is a jump.
+    Unanchored,
+    /// The last set's value.
+    Set(TsfInstant),
 }
 
 /// What a TSF set did to its relation.
@@ -181,7 +190,7 @@ impl TsfRelation {
     pub const fn new(epoch: u32, sample_uncertainty: TsfDuration) -> Self {
         Self {
             generations: oer_radio_port::GenerationSource::new(epoch),
-            last_sample: None,
+            last_sample: LastSample::Unanchored,
             sample_uncertainty,
         }
     }
@@ -195,7 +204,7 @@ impl TsfRelation {
     /// association, a channel change, a timer restart).
     pub fn break_relation(&mut self) {
         self.generations.jump();
-        self.last_sample = None;
+        self.last_sample = LastSample::Unanchored;
     }
 
     /// How far a set `elapsed` after the last sample may move the TSF
@@ -222,8 +231,8 @@ impl TsfRelation {
         let kind = match self.last_sample {
             // The counter only advances from the last set: a reading below
             // it passed 2^64.
-            Some(last) if current < last => TsfSetKind::Jump,
-            Some(last) => {
+            LastSample::Set(last) if current < last => TsfSetKind::Jump,
+            LastSample::Set(last) => {
                 let elapsed = current
                     .checked_duration_since(last)
                     .ok_or(TsfTimingError::ReversedTime)?;
@@ -234,12 +243,12 @@ impl TsfRelation {
                     TsfSetKind::Jump
                 }
             }
-            None => TsfSetKind::Jump,
+            LastSample::Unanchored => TsfSetKind::Jump,
         };
         if kind == TsfSetKind::Jump {
             self.break_relation();
         }
-        self.last_sample = Some(value);
+        self.last_sample = LastSample::Set(value);
         Ok(kind)
     }
 }

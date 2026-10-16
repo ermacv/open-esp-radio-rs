@@ -24,15 +24,12 @@ impl Ieee80211Capabilities for Caps {
         vifs: 1,
         tx_queues: 4,
         max_mpdu_length: 2304,
-        max_backoff_slots: 1023,
         tx_power_ceiling_min_dbm: None,
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
         individual_no_ack: PhyFormatSet::NON_HT,
         station_receive_filters: ReceiveFilter::BSS_MEMBER
             .union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-        key_slots: 4,
-        rx_block_ack_agreements: 0,
         rx_block_ack_max_tid: 0,
         rx_block_ack_max_window: 0,
         edca_max_aifsn: 15,
@@ -89,6 +86,8 @@ impl<const GROUPS: usize> StaTokens for Tokens<GROUPS> {
     type SmallBuffer = Buffer;
     type PairwiseSlot = ();
     type Sent = core::convert::Infallible;
+    type AckEvidence = ();
+    type AirDenied = ();
     fn renew(mpdu: Self::Sent) -> Buffer {
         match mpdu {}
     }

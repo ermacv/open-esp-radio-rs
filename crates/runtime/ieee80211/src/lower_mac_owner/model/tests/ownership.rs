@@ -87,11 +87,14 @@ fn returned<'id>(
             let (buffer, body) = payload.into_parts();
 
             let end = match completion {
-                TxOutcome::Ended {
-                    last: Some((core::num::NonZeroU16::MIN, _)),
-                    status: TxEndStatus::Delivered,
+                TxOutcome::Ended(SingleEnd::Delivered {
+                    air:
+                        Air {
+                            transmissions: core::num::NonZeroU16::MIN,
+                            ..
+                        },
                     ..
-                } => End::Completed,
+                }) => End::Completed,
                 TxOutcome::Withdrawn(_) => End::Withdrawn,
                 other => panic!("unexpected outcome {other:?}"),
             };

@@ -136,13 +136,11 @@ impl MacOperationOwnership {
                 self.csma_ca_backoff_countdown,
                 HardwareServices::BACKOFF_COUNTDOWN,
             ),
-            (self.unicast_retry_policy, HardwareServices::RETRY_POLICY),
             (
                 self.tx_sequence_assignment,
                 HardwareServices::SEQUENCE_NUMBERS,
             ),
             (self.ccmp_key_selection, HardwareServices::KEY_SELECTION),
-            (self.ccmp_packet_number, HardwareServices::PACKET_NUMBERS),
             (self.ccmp_transform, HardwareServices::CIPHER_TRANSFORM),
             (
                 self.rx_block_ack_matching,

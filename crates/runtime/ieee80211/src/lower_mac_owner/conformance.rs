@@ -15,7 +15,9 @@ pub mod group_keys;
 pub mod interface_commands;
 
 use alloc::vec::Vec;
-use oer_ieee80211_lower_mac::{IndeterminateCause, TxEndStatus, TxOutcome, WithdrawCause};
+use oer_ieee80211_lower_mac::{
+    IndeterminateCause, SingleEnd, SingleOutcome, TxOutcome, WithdrawCause,
+};
 use oer_ieee80211_mac::qos::WmmAccessCategory;
 
 /// Result supplied to a publication already held when its barrier arrives.
@@ -41,12 +43,13 @@ pub enum MpduState {
     Sent,
 }
 
-/// Actual terminal/barrier observations, in delivery order.
-pub enum BarrierEvent {
+/// Actual terminal/barrier observations, in delivery order, of a backend
+/// with the ACK evidence `A` and lost-air evidence `D`.
+pub enum BarrierEvent<A, D> {
     Tx {
         ticket: u8,
         state: MpduState,
-        outcome: TxOutcome,
+        outcome: SingleOutcome<A, D>,
     },
     GateClosed,
     KeyRemoved,
@@ -55,13 +58,13 @@ pub enum BarrierEvent {
 /// One published head and one queued successor on the same AC. Fixtures
 /// capture counts and frame bytes from their actual publication observer;
 /// terminals come through the port, never from an expected identity.
-pub struct BarrierTrace {
+pub struct BarrierTrace<A, D> {
     pub tickets: [u8; 2],
     pub before_request: HeldSnapshot,
     pub before_result: HeldSnapshot,
     pub just_before_timeout: Option<HeldSnapshot>,
     pub publications_at_barrier: usize,
-    pub events: Vec<BarrierEvent>,
+    pub events: Vec<BarrierEvent<A, D>>,
     /// Encoded MPDU after numbering, excluding hardware-generated trailers.
     /// Capture it from the actual publication's owner, before hardware owns it.
     pub first_frame: Vec<u8>,
@@ -71,10 +74,14 @@ pub struct BarrierTrace {
 
 /// The publication/barrier suite shared by model and hardware fixtures.
 pub trait BarrierHarness {
+    /// The backend's ACK evidence.
+    type Ack;
+    /// The backend's lost-air evidence.
+    type AirDenied;
     fn exercise_barrier(
         &mut self,
         case: BarrierCase,
-    ) -> impl core::future::Future<Output = BarrierTrace>;
+    ) -> impl core::future::Future<Output = BarrierTrace<Self::Ack, Self::AirDenied>>;
 }
 
 pub async fn check_barriers(
@@ -92,7 +99,7 @@ pub async fn check_barriers(
 }
 
 /// Verify real observations of a held publication, its barrier and a Sent retry.
-pub fn verify_barrier(case: BarrierCase, trace: BarrierTrace) -> Result<(), Violation> {
+pub fn verify_barrier<A, D>(case: BarrierCase, trace: BarrierTrace<A, D>) -> Result<(), Violation> {
     for snapshot in [trace.before_request, trace.before_result]
         .into_iter()
         .chain(trace.just_before_timeout)
@@ -130,7 +137,7 @@ pub fn verify_barrier(case: BarrierCase, trace: BarrierTrace) -> Result<(), Viol
         BarrierCase::RemoveKey => WithdrawCause::KeyRemoved,
         _ => WithdrawCause::GateClosed,
     };
-    if *tail_outcome != TxOutcome::Withdrawn(cause)
+    if !matches!(tail_outcome, TxOutcome::Withdrawn(withdrawn) if *withdrawn == cause)
         || !matches!(
             (case, barrier),
             (BarrierCase::RemoveKey, BarrierEvent::KeyRemoved)
@@ -145,16 +152,16 @@ pub fn verify_barrier(case: BarrierCase, trace: BarrierTrace) -> Result<(), Viol
     let correct_head = match case {
         BarrierCase::GateAck => matches!(
             outcome,
-            TxOutcome::Ended {
-                status: TxEndStatus::Delivered,
-                last: Some((core::num::NonZeroU16::MIN, _)),
-                ..
-            }
+            TxOutcome::Ended(SingleEnd::Delivered { air, .. })
+                if air.transmissions == core::num::NonZeroU16::MIN
         ),
-        BarrierCase::GateRetry | BarrierCase::RemoveKey => *outcome == TxOutcome::Withdrawn(cause),
-        BarrierCase::GateTimeout => {
-            *outcome == TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+        BarrierCase::GateRetry | BarrierCase::RemoveKey => {
+            matches!(outcome, TxOutcome::Withdrawn(withdrawn) if *withdrawn == cause)
         }
+        BarrierCase::GateTimeout => matches!(
+            outcome,
+            TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout)
+        ),
     };
     if !correct_head {
         return Err(Violation::TerminalKind);

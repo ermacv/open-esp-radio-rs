@@ -256,8 +256,8 @@ fn a_forged_disconnect_starts_query_and_only_a_protected_matching_response_ends_
 fn query_timeout_and_local_leave_keep_the_pairwise_key_until_protected_tx_returns() {
     for timeout in [false, true] {
         for outcome in [
-            Some(ended(TxEndStatus::Delivered)),
-            Some(ended(TxEndStatus::AckTimeout)),
+            Some(ended(End::Delivered)),
+            Some(ended(End::AckTimeout)),
             Some(TxOutcome::Withdrawn(
                 oer_ieee80211_lower_mac::WithdrawCause::Disabled,
             )),

@@ -1,7 +1,7 @@
 use super::*;
 use alloc::vec;
 
-fn retry_trace() -> BarrierTrace {
+fn retry_trace() -> BarrierTrace<(), ()> {
     let mut original = vec![0x5a; 40];
     original[0] = 0x08;
     original[1] = 0x41;

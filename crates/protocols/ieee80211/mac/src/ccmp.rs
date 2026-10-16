@@ -1,9 +1,8 @@
 //! Hardware-independent CCMP key material, headers, transmit packet numbers
 //! and receive replay ownership.
 //!
-//! Packet numbers are allocated above the lower-MAC port unless a backend
-//! reports `HardwareServices::PACKET_NUMBERS`; key-slot mapping and hardware
-//! publication belong to the concrete MAC backend. This module validates and
+//! The lower-MAC backend allocates packet numbers below its port; key-slot
+//! mapping and hardware publication belong to the concrete MAC backend. This module validates and
 //! encodes the public eight-byte header, allocates each key's transmit packet
 //! numbers ([`CcmpTxPacketNumber`]) and owns a two-phase receive replay
 //! frontier. A caller must prepare replay only after its per-TID BlockAck

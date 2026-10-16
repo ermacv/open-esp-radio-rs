@@ -288,3 +288,26 @@ fn a_duplicate_or_out_of_window_sent_subframe_returns_its_owner_and_body() {
         let _port_end = block_on(run_port(backend, Body(RefusedSent(head))));
     }
 }
+
+/// The install mints exactly the declared Block Ack slots: the pool is the
+/// capacity, and an agreement beyond it has no token to take.
+struct DeclaredSlots;
+
+impl Work for DeclaredSlots {
+    async fn work<'p, 'id: 'p>(
+        self,
+        _phase: &mut ModelPhase<'p, 'id>,
+        resources: ModelResources<'id>,
+    ) {
+        assert_eq!(
+            resources.block_acks.len(),
+            <ModelTypes as PhaseTypes<'id>>::RX_BLOCK_ACK_SLOTS
+        );
+    }
+}
+
+#[test]
+fn the_install_mints_the_declared_block_ack_slots() {
+    let (backend, _) = backend();
+    let _port_end = block_on(run_port(backend, Body(DeclaredSlots)));
+}

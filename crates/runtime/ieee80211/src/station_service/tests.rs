@@ -36,9 +36,9 @@ use super::*;
 
 mod contracts;
 use crate::lower_mac_owner::model::{
-    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAir, ModelAnyBuffer, ModelBackend,
-    ModelCaps24, ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup, ModelSmall,
-    ModelTypes,
+    AirFrame, MODEL_RX_EVENTS, MODEL_TX_QUEUE_DEPTH, ModelAck, ModelAir, ModelAnyBuffer,
+    ModelBackend, ModelCaps24, ModelLarge, ModelPhase, ModelResources, ModelRxMeta, ModelSetup,
+    ModelSmall, ModelTypes,
 };
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
@@ -367,7 +367,7 @@ struct RecordingRates<'a> {
     air: &'a ModelAir,
 }
 
-impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
+impl RateSelection<ModelRxMeta, ModelAck> for RecordingRates<'_> {
     fn plan<R>(
         &self,
         frame: FrameRates,
@@ -381,7 +381,7 @@ impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
         if self.fail_submission.replace(false) {
             self.air.fail_after_terminals();
         }
-        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::plan(
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta, ModelAck>>::plan(
             &self.inner,
             frame,
             carried,
@@ -393,18 +393,27 @@ impl RateSelection<ModelRxMeta> for RecordingRates<'_> {
         peer: &oer_ieee80211_upper_mac::rate_control::RatePeer,
         response: &ModelRxMeta,
     ) {
-        self.inner.associated(peer, response);
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta, ModelAck>>::associated(
+            &mut self.inner,
+            peer,
+            response,
+        );
     }
 
     fn disconnected(&mut self) {
-        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::disconnected(
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta, ModelAck>>::disconnected(
             &mut self.inner,
         );
     }
 
-    fn completed(&mut self, now: Instant, frame: FrameRates, completion: &TxOutcome) {
+    fn completed<D>(
+        &mut self,
+        now: Instant,
+        frame: FrameRates,
+        completion: &oer_ieee80211_lower_mac::SingleOutcome<ModelAck, D>,
+    ) {
         self.completions.borrow_mut().push(frame);
-        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta>>::completed(
+        <EspressifRateSelection<ModelCaps24> as RateSelection<ModelRxMeta, ModelAck>>::completed(
             &mut self.inner,
             now,
             frame,

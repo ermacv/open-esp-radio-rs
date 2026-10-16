@@ -17,8 +17,10 @@ use oer_ieee80211_mac::{
 
 use super::*;
 use crate::rate_schedule::{RateScheduleKind, schedule_state};
+use oer_ieee80211_lower_mac::{
+    Air, IndeterminateCause, SingleEnd, SingleResponse, TxOutcome, WithdrawCause,
+};
 use oer_ieee80211_lower_mac::{Channel, ChannelWidth, LinkMetric, RxMeta, RxMetadata};
-use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
 
 struct Caps;
 
@@ -41,14 +43,11 @@ impl Ieee80211Capabilities for Caps {
         vifs: 1,
         tx_queues: 4,
         max_mpdu_length: 2304,
-        max_backoff_slots: 1023,
         tx_power_ceiling_min_dbm: None,
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
         individual_no_ack: PhyFormatSet::NON_HT,
         station_receive_filters: ReceiveFilter::BSS_MEMBER,
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-        key_slots: 4,
-        rx_block_ack_agreements: 0,
         rx_block_ack_max_tid: 0,
         rx_block_ack_max_window: 0,
         edca_max_aifsn: 15,
@@ -114,7 +113,7 @@ fn ht20_peer() -> RatePeer {
 
 /// The plan of `frame` on a channel that carries every rate.
 fn plan_of(selection: &EspressifRateSelection<Caps>, frame: FrameRates) -> RetryPlan<PhyRate> {
-    RateSelection::<Measured>::plan(selection, frame, Some).expect("every rate is carried")
+    RateSelection::<Measured, Snr>::plan(selection, frame, Some).expect("every rate is carried")
 }
 
 fn stages(plan: &RetryPlan<PhyRate>) -> Vec<(PhyRate, u8)> {
@@ -147,16 +146,34 @@ fn plan_walk(plan: &RetryPlan<PhyRate>) -> Vec<PhyRate> {
         .collect()
 }
 
-fn completion(status: TxEndStatus, transmissions: u16) -> TxOutcome {
-    TxOutcome::Ended {
-        status,
-        last: NonZeroU16::new(transmissions)
-            .map(|count| (count, PhyRate::Legacy(LegacyRate::Ofdm6M))),
-        ack: (status == TxEndStatus::Delivered).then_some(oer_ieee80211_lower_mac::TxAck {
-            snr_db: Some(30),
-            ..Default::default()
-        }),
+/// ACK evidence that carries the response's SNR, as the S31's does.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Snr(i8);
+
+impl AckSnr for Snr {
+    fn snr_db(&self) -> i8 {
+        self.0
     }
+}
+
+type Outcome = SingleOutcome<Snr, ()>;
+
+fn air(transmissions: u16) -> Air {
+    Air {
+        transmissions: NonZeroU16::new(transmissions).unwrap(),
+        rate: PhyRate::Legacy(LegacyRate::Ofdm6M),
+    }
+}
+
+fn delivered(transmissions: u16) -> Outcome {
+    TxOutcome::Ended(SingleEnd::Delivered {
+        air: air(transmissions),
+        response: SingleResponse::Ack(Snr(30)),
+    })
+}
+
+fn ack_timeout(transmissions: u16) -> Outcome {
+    TxOutcome::Ended(SingleEnd::AckTimeout(air(transmissions)))
 }
 
 #[test]
@@ -186,7 +203,7 @@ fn until_associated_control_frames_walk_the_default_record() {
 #[test]
 fn associated_control_frames_walk_the_association_record_and_leaving_restores_the_default() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    RateSelection::<Measured>::associated(&mut selection, &legacy_peer(), &metric(40));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &legacy_peer(), &metric(40));
     let schedule = selection
         .control()
         .unwrap()
@@ -203,7 +220,7 @@ fn associated_control_frames_walk_the_association_record_and_leaving_restores_th
         plan.stages().next().unwrap().rate,
         PhyRate::Legacy(LegacyRate::Ofdm6M)
     );
-    RateSelection::<Measured>::disconnected(&mut selection);
+    RateSelection::<Measured, Snr>::disconnected(&mut selection);
     assert_eq!(
         plan_walk(&plan_of(&selection, FrameRates::Control)),
         record_walk(DEFAULT_CONTROL_SCHEDULE)
@@ -213,7 +230,7 @@ fn associated_control_frames_walk_the_association_record_and_leaving_restores_th
 #[test]
 fn data_starts_at_the_controls_rate_and_steps_down_the_vendor_ladder_within_its_budget() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    RateSelection::<Measured>::associated(&mut selection, &ht20_peer(), &metric(60));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &ht20_peer(), &metric(60));
     let control = selection.control().unwrap();
     let initial = control.mpdu_rate();
     let limit = schedule_publication_limit(control.association().current_schedule());
@@ -234,18 +251,18 @@ fn data_starts_at_the_controls_rate_and_steps_down_the_vendor_ladder_within_its_
 fn data_completions_adapt_the_rate_as_the_vendor_control_does() {
     let mut selection = EspressifRateSelection::<Caps>::new();
     let mut reference = EspressifRateControl::for_peer((), &ht20_peer(), LinkMetric::new(60, 0));
-    RateSelection::<Measured>::associated(&mut selection, &ht20_peer(), &metric(60));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &ht20_peer(), &metric(60));
     let before = plan_of(&selection, FrameRates::Data)
         .stages()
         .next()
         .unwrap()
         .rate;
     for _ in 0..64 {
-        RateSelection::<Measured>::completed(
+        RateSelection::<Measured, Snr>::completed(
             &mut selection,
             Instant::from_micros(0),
             FrameRates::Data,
-            &completion(TxEndStatus::AckTimeout, 8),
+            &ack_timeout(8),
         );
         reference.observe_mpdu(
             NonZeroU16::new(8).unwrap(),
@@ -253,17 +270,17 @@ fn data_completions_adapt_the_rate_as_the_vendor_control_does() {
             None,
         );
         // Control frames and ones that never went teach nothing.
-        RateSelection::<Measured>::completed(
+        RateSelection::<Measured, Snr>::completed(
             &mut selection,
             Instant::from_micros(0),
             FrameRates::Control,
-            &completion(TxEndStatus::AckTimeout, 8),
+            &ack_timeout(8),
         );
-        RateSelection::<Measured>::completed(
+        RateSelection::<Measured, Snr>::completed(
             &mut selection,
             Instant::from_micros(0),
             FrameRates::Data,
-            &TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+            &Outcome::Withdrawn(WithdrawCause::GateClosed),
         );
     }
     let after = plan_of(&selection, FrameRates::Data)
@@ -320,7 +337,7 @@ fn ht40_peer() -> RatePeer {
 #[test]
 fn on_a_20_mhz_channel_an_ht40_records_plan_keeps_its_20_mhz_stages() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    RateSelection::<Measured>::associated(&mut selection, &ht40_peer(), &metric(60));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &ht40_peer(), &metric(60));
     let vendor = plan_of(&selection, FrameRates::Data);
     assert!(
         vendor
@@ -331,7 +348,7 @@ fn on_a_20_mhz_channel_an_ht40_records_plan_keeps_its_20_mhz_stages() {
     // A 20 MHz channel carries no 40 MHz rate: those stages are left out,
     // the rest kept in order, without a panic.
     let carried = |rate: PhyRate| (rate.bandwidth().mhz() <= 20).then_some(rate);
-    let on_channel = RateSelection::<Measured>::plan(&selection, FrameRates::Data, carried)
+    let on_channel = RateSelection::<Measured, Snr>::plan(&selection, FrameRates::Data, carried)
         .expect("the ladder steps down to 20 MHz rates");
     let expected: Vec<_> = vendor
         .stages()
@@ -341,7 +358,7 @@ fn on_a_20_mhz_channel_an_ht40_records_plan_keeps_its_20_mhz_stages() {
     assert_eq!(stages(&on_channel), expected);
     // A channel that carries none of them: the frame does not go.
     assert!(
-        RateSelection::<Measured>::plan(&selection, FrameRates::Data, |_| None::<PhyRate>)
+        RateSelection::<Measured, Snr>::plan(&selection, FrameRates::Data, |_| None::<PhyRate>)
             .is_none()
     );
 }
@@ -349,26 +366,26 @@ fn on_a_20_mhz_channel_an_ht40_records_plan_keeps_its_20_mhz_stages() {
 #[test]
 fn an_attempt_cut_before_the_air_leaves_the_rate_control_as_it_was() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    RateSelection::<Measured>::associated(&mut selection, &ht20_peer(), &metric(60));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &ht20_peer(), &metric(60));
     let state = |selection: &EspressifRateSelection<Caps>| {
         std::format!("{:?}", selection.control().unwrap().association())
     };
     let before = state(&selection);
     // Aborted before its first transmission, as a gate closing for an
     // absence aborts it: no sample (owner decision on #563).
-    RateSelection::<Measured>::completed(
+    RateSelection::<Measured, Snr>::completed(
         &mut selection,
         Instant::from_micros(0),
         FrameRates::Data,
-        &TxOutcome::Withdrawn(WithdrawCause::GateClosed),
+        &Outcome::Withdrawn(WithdrawCause::GateClosed),
     );
     assert_eq!(state(&selection), before);
     // One transmission on the air is a sample.
-    RateSelection::<Measured>::completed(
+    RateSelection::<Measured, Snr>::completed(
         &mut selection,
         Instant::from_micros(0),
         FrameRates::Data,
-        &completion(TxEndStatus::Delivered, 1),
+        &delivered(1),
     );
     assert_ne!(state(&selection), before);
 }
@@ -376,18 +393,22 @@ fn an_attempt_cut_before_the_air_leaves_the_rate_control_as_it_was() {
 #[test]
 fn unknown_outcomes_and_contention_exhaustion_never_change_rate_state() {
     let mut selection = EspressifRateSelection::<Caps>::new();
-    RateSelection::<Measured>::associated(&mut selection, &ht20_peer(), &metric(60));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &ht20_peer(), &metric(60));
     let before = std::format!("{:?}", selection.control().unwrap().association());
     for outcome in [
-        TxOutcome::Indeterminate(IndeterminateCause::HardwareTimeout),
-        TxOutcome::Withdrawn(WithdrawCause::KeyRemoved),
-        completion(TxEndStatus::ContentionLimit, 0),
-        completion(TxEndStatus::ContentionLimit, 3),
-        completion(TxEndStatus::CtsTimeout, 0),
+        Outcome::Indeterminate(IndeterminateCause::HardwareTimeout),
+        Outcome::Withdrawn(WithdrawCause::KeyRemoved),
+        TxOutcome::Ended(SingleEnd::ContentionLimit(None)),
+        TxOutcome::Ended(SingleEnd::ContentionLimit(Some(air(3)))),
+        TxOutcome::Ended(SingleEnd::CtsTimeout(None)),
+        TxOutcome::Ended(SingleEnd::AirDenied {
+            denial: (),
+            air: Some(air(2)),
+        }),
     ] {
-        assert!(!outcome.is_rate_sample());
+        assert!(outcome.rate_sample().is_none());
         for _ in 0..64 {
-            RateSelection::<Measured>::completed(
+            RateSelection::<Measured, Snr>::completed(
                 &mut selection,
                 Instant::from_micros(0),
                 FrameRates::Data,
@@ -453,7 +474,7 @@ fn every_data_and_control_rate_belongs_to_the_negotiated_legacy_set() {
                 NegotiatedLegacyRates::from_rate_elements(supported, extended).unwrap();
             for signal in [-20, 0, 20, 60, 100] {
                 let mut selection = EspressifRateSelection::<Caps>::new();
-                RateSelection::<Measured>::associated(&mut selection, &peer, &metric(signal));
+                RateSelection::<Measured, Snr>::associated(&mut selection, &peer, &metric(signal));
                 for _ in 0..32 {
                     for class in [FrameRates::Control, FrameRates::Data] {
                         let plan = plan_of(&selection, class);
@@ -468,14 +489,44 @@ fn every_data_and_control_rate_belongs_to_the_negotiated_legacy_set() {
                             }
                         }
                     }
-                    RateSelection::<Measured>::completed(
+                    RateSelection::<Measured, Snr>::completed(
                         &mut selection,
                         Instant::from_micros(1),
                         FrameRates::Data,
-                        &completion(TxEndStatus::AckTimeout, 32),
+                        &ack_timeout(32),
                     );
                 }
             }
         }
     }
+}
+
+#[test]
+fn a_delivered_outcome_feeds_its_ack_snr_to_the_rate_control() {
+    let mut selection = EspressifRateSelection::<Caps>::new();
+    let mut reference = EspressifRateControl::for_peer((), &ht20_peer(), LinkMetric::new(60, 0));
+    RateSelection::<Measured, Snr>::associated(&mut selection, &ht20_peer(), &metric(60));
+    for snr in [30, 18, 25] {
+        RateSelection::<Measured, Snr>::completed(
+            &mut selection,
+            Instant::from_micros(0),
+            FrameRates::Data,
+            &TxOutcome::Ended(SingleEnd::<Snr, ()>::Delivered {
+                air: air(2),
+                response: SingleResponse::Ack(Snr(snr)),
+            }),
+        );
+        reference.observe_mpdu(
+            NonZeroU16::new(2).unwrap(),
+            MpduOutcome::Acknowledged,
+            Some(snr),
+        );
+    }
+    let association = selection.control().unwrap().association();
+    assert_eq!(association.latest_ack_snr(), Some(25));
+    assert_eq!(
+        association.filtered_ack_snr(),
+        reference.association().filtered_ack_snr()
+    );
+    assert!(association.filtered_ack_snr().is_some());
 }

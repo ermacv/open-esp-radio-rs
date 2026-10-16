@@ -105,8 +105,8 @@
 //!
 //! # Limits
 //!
-//! The S31 draws its backoff in software, so only `Backoff::Slots` is
-//! accepted. Coexistence maps `CoexPriority::Normal` onto the static
+//! The S31 draws its backoff in software, at most
+//! `MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS` slots. Coexistence maps `CoexPriority::Normal` onto the static
 //! per-access-category priority of
 //! [`LegacyTxQueue::vendor_data_packet_priority`] and
 //! `CoexPriority::Elevated` onto the radio system's connection-frame
@@ -330,7 +330,6 @@ pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapa
         } else {
             usable as u16
         },
-        max_backoff_slots: MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS,
         tx_power_ceiling_min_dbm: Some(0),
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal)
             .union(CoexPrioritySet::only(CoexPriority::Elevated)),
@@ -338,8 +337,6 @@ pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapa
         station_receive_filters: STATION_RECEIVE_FILTERS,
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER
             .union(ReceiveFilter::PROBE_REQUESTS),
-        key_slots: LOWER_MAC_KEY_SLOTS as u8,
-        rx_block_ack_agreements: RESOURCES.rx_block_ack_entries,
         rx_block_ack_max_tid: RESOURCES.rx_block_ack_max_tid,
         rx_block_ack_max_window: RESOURCES.rx_block_ack_max_window,
         // The bounds `EdcaContentionParameters::new` checks.

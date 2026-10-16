@@ -25,9 +25,7 @@
 //! its sequence number and CCMP packet number repeat.
 
 use oer_ieee80211_lower_mac::Ieee80211Instant;
-use oer_ieee80211_lower_mac::{
-    Backoff, BlockAckReport, CoexPriority, TxPower, TxResponse, TxStatus,
-};
+use oer_ieee80211_lower_mac::{BlockAckReport, CoexPriority, TxPower, TxResponse, TxStatus};
 use oer_ieee80211_mac::{phy::PhyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
 use oer_ieee80211_softmac::{
     BackoffEntropy, EdcaContention, MacAmpduTxResult, MacAmpduTxStatus, MacIndividualRetries,
@@ -245,7 +243,8 @@ pub struct TxAttemptPlan {
     pub access_category: WmmAccessCategory,
     pub rate: PhyRate,
     pub protection: TxProtectionDecision,
-    pub backoff: Backoff,
+    /// The CSMA/CA backoff slots the backend counts down after the AIFS.
+    pub backoff_slots: u16,
     pub power: TxPower,
     pub coex: CoexPriority,
     pub content: AttemptContent,
@@ -817,7 +816,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                     access_category: request.access_category,
                     rate,
                     protection: TxProtectionDecision::UNPROTECTED,
-                    backoff,
+                    backoff_slots: backoff,
                     power: request.power,
                     coex: request.coex,
                     content: AttemptContent::BlockAckRequest {
@@ -862,7 +861,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             access_category: request.access_category,
             rate,
             protection,
-            backoff,
+            backoff_slots: backoff,
             power: request.power,
             coex: request.coex,
             content,

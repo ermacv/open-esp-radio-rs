@@ -83,8 +83,6 @@
 //! [`RxCryptoStatus::DecryptedAndIntegrityVerified`](crate::RxCryptoStatus)
 //! keeps its CCMP header, for the receiver's replay check, and loses its
 //! MIC ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131631789)).
-//! [`HardwareServices::PACKET_NUMBERS`](crate::HardwareServices::PACKET_NUMBERS)
-//! means the hardware itself assigns them.
 //!
 //! # Compile-fail tests
 //!
@@ -407,12 +405,22 @@ pub type SingleCompleted<'id, P> = crate::Completed<
     <P as PhaseTypes<'id>>::Context,
     Slot<'id, <P as PhaseTypes<'id>>::TicketKind, <P as PhaseTypes<'id>>::TicketPath>,
     <P as PhaseTypes<'id>>::TxMpdu,
+    PhaseSingleOutcome<'id, P>,
 >;
 /// A backend's aggregate terminal, with every complete submitted subframe.
 pub type AggregateCompleted<'id, P> = crate::Completed<
     <P as PhaseTypes<'id>>::Context,
     Slot<'id, <P as PhaseTypes<'id>>::TicketKind, <P as PhaseTypes<'id>>::TicketPath>,
     <P as PhaseTypes<'id>>::TxAggregate,
+    PhaseAggregateOutcome<'id, P>,
+>;
+/// The outcome of a single MPDU in the phase types `P`.
+pub type PhaseSingleOutcome<'id, P> =
+    crate::SingleOutcome<<P as PhaseTypes<'id>>::AckEvidence, <P as PhaseTypes<'id>>::AirDenied>;
+/// The outcome of an aggregate in the phase types `P`.
+pub type PhaseAggregateOutcome<'id, P> = crate::AggregateOutcome<
+    <P as PhaseTypes<'id>>::BlockAckEvidence,
+    <P as PhaseTypes<'id>>::AirDenied,
 >;
 
 /// The keys of one role and their slots, which a phase's types name: they
@@ -682,6 +690,17 @@ pub trait PhaseTypes<'id>: Sized {
     type TxBody: crate::TxBody;
     /// The kind of the transmit tickets.
     type TicketKind;
+    /// What the backend observed of a single MPDU's solicited response (an
+    /// ACK, or the BlockAck to a BlockAckReq): a policy that needs the
+    /// response's SNR requires [`AckSnr`](crate::AckSnr) of it.
+    type AckEvidence: Copy + core::fmt::Debug + Eq;
+    /// What the backend observed of an aggregate's BlockAck: a policy that
+    /// needs its SNR requires [`BlockAckSnr`](crate::BlockAckSnr) of it.
+    type BlockAckEvidence: Copy + core::fmt::Debug + Eq;
+    /// The backend's evidence that coexistence denied an attempt the air;
+    /// [`core::convert::Infallible`] for a backend that cannot tell a
+    /// coexistence abort from a failed exchange.
+    type AirDenied: Copy + core::fmt::Debug + Eq;
     /// A transmit buffer of any class, as a completion gives it back.
     type AnyTxBuffer;
     /// One closed MPDU, with its fresh body or its complete Sent owner.
@@ -704,6 +723,14 @@ pub trait PhaseTypes<'id>: Sized {
     /// hardware shares between its roles (owner decision, Claude Code chat
     /// with common, 2026-10-12).
     type BlockAckKind;
+    /// The receive Block Ack slots the install mints: the `N` of its
+    /// `Slots<BlockAckKind, N>` pool, the one source of that capacity.
+    /// Running out is a missing slot token, never a comparison with this
+    /// number: no agreement is accepted without a slot
+    /// ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225755828)).
+    /// Key capacity is likewise [`KeyTypes::PAIRWISE_SLOTS`] and
+    /// [`KeyTypes::GROUP_SLOTS`] of each role.
+    const RX_BLOCK_ACK_SLOTS: usize;
     /// A running receive Block Ack agreement, which holds its slot.
     type BlockAck;
 }
@@ -765,7 +792,7 @@ pub trait LowerMacPhase<'p, 'id: 'p>:
 
     /// Close publication in every queue. A current publication is waited for,
     /// at most the backend's PUBLICATION_BOUND, before GateClosed is emitted.
-    /// ACK returns Ended(Delivered); unknown timeout returns Indeterminate.
+    /// ACK returns `Delivered`; unknown timeout returns Indeterminate.
     /// When a retry would be needed, withdraw the attempt with its Sent MPDU
     /// instead of starting that retry. Queued fresh MPDUs return Fresh.
     /// Terminals retain each AC's order and precede the barrier confirmation.
@@ -1462,13 +1489,14 @@ pub struct RetryStage<R> {
 /// attempt of that queue, keeps the frame's sequence number and sets the
 /// Retry bit of each retransmission; an exhausted plan ends the attempt
 /// unacknowledged. A backend whose hardware retries carries the plan out
-/// there ([`HardwareServices::RETRY_POLICY`](crate::HardwareServices::RETRY_POLICY)).
+/// there.
 #[derive(Debug)]
 pub struct RetryPlan<R> {
     /// The first stage: a plan always has one.
     first: RetryStage<R>,
-    /// The initialized stages after the first, contiguous and bounded.
-    rest: heapless::Vec<RetryStage<R>, { RETRY_STAGES - 1 }>,
+    /// The stages after the first, in order. The occupied cells form a
+    /// prefix, which every operation keeps; the array's length is the bound.
+    rest: [Option<RetryStage<R>>; RETRY_STAGES - 1],
 }
 
 impl<R> RetryPlan<R> {
@@ -1476,7 +1504,7 @@ impl<R> RetryPlan<R> {
     pub fn new(first: RetryStage<R>) -> Self {
         Self {
             first,
-            rest: heapless::Vec::new(),
+            rest: core::array::from_fn(|_| None),
         }
     }
 
@@ -1486,9 +1514,16 @@ impl<R> RetryPlan<R> {
     ///
     /// The plan and the stage, when the plan holds [`RETRY_STAGES`].
     pub fn then(mut self, stage: RetryStage<R>) -> Result<Self, (Self, RetryStage<R>)> {
-        match self.rest.push(stage) {
-            Ok(()) => Ok(self),
-            Err(stage) => Err((self, stage)),
+        let unplaced = match self.rest.iter_mut().find(|cell| cell.is_none()) {
+            Some(cell) => {
+                *cell = Some(stage);
+                None
+            }
+            None => Some(stage),
+        };
+        match unplaced {
+            None => Ok(self),
+            Some(stage) => Err((self, stage)),
         }
     }
 
@@ -1504,7 +1539,7 @@ impl<R> RetryPlan<R> {
 
     /// The stages in order.
     pub fn stages(&self) -> impl Iterator<Item = &RetryStage<R>> {
-        core::iter::once(&self.first).chain(self.rest.iter())
+        core::iter::once(&self.first).chain(self.rest.iter().flatten())
     }
 
     /// The transmissions the plan makes at most.
@@ -1541,19 +1576,20 @@ impl<R> RetryPlan<R> {
         let first = self.first.transmissions.min(transmissions);
         let mut left = first.get()..transmissions.get();
         self.first.transmissions = first;
-        self.rest.retain_mut(|stage| {
-            let taken = left
-                .by_ref()
-                .take(usize::from(stage.transmissions.get()))
-                .count() as u8;
-            match core::num::NonZeroU8::new(taken) {
-                Some(taken) => {
-                    stage.transmissions = taken;
-                    true
-                }
-                None => false,
+        // The budget only shrinks, so once a stage is dropped every later
+        // one is too: the occupied cells stay a prefix.
+        for cell in &mut self.rest {
+            let taken = cell.as_ref().map_or(0, |stage| {
+                left.by_ref()
+                    .take(usize::from(stage.transmissions.get()))
+                    .count() as u8
+            });
+            match (cell.as_mut(), core::num::NonZeroU8::new(taken)) {
+                (Some(stage), Some(taken)) => stage.transmissions = taken,
+                (_, None) => *cell = None,
+                (None, Some(_)) => {}
             }
-        });
+        }
         self
     }
 
@@ -1566,8 +1602,10 @@ impl<R> RetryPlan<R> {
         };
         RetryPlan {
             first: stage(&self.first),
-            // One output per initialized input, with the same capacity.
-            rest: self.rest.iter().map(stage).collect(),
+            rest: self
+                .rest
+                .each_ref()
+                .map(|cell| cell.as_ref().map(&mut stage)),
         }
     }
 
@@ -1575,8 +1613,8 @@ impl<R> RetryPlan<R> {
     /// Each retained stage keeps its exact transmission count and protection;
     /// `None` means every stage was refused.
     pub fn filter_map<S>(self, mut rate: impl FnMut(R) -> Option<S>) -> Option<RetryPlan<S>> {
-        let mut stages = core::iter::once(self.first)
-            .chain(self.rest)
+        let mut accepted = core::iter::once(self.first)
+            .chain(self.rest.into_iter().flatten())
             .filter_map(|stage| {
                 Some(RetryStage {
                     rate: rate(stage.rate)?,
@@ -1584,13 +1622,14 @@ impl<R> RetryPlan<R> {
                     protection: stage.protection,
                 })
             });
-        Some(RetryPlan {
-            first: stages.next()?,
-            // The input has at most RETRY_STAGES stages. Taking its first
-            // accepted stage leaves at most RETRY_STAGES - 1; filtering
-            // cannot increase that bound.
-            rest: stages.collect(),
-        })
+        let first = accepted.next()?;
+        // Taking the first accepted stage leaves at most RETRY_STAGES - 1 of
+        // the input's stages, one per cell: the zip places every one.
+        let mut rest: [Option<RetryStage<S>>; RETRY_STAGES - 1] = core::array::from_fn(|_| None);
+        for (cell, stage) in rest.iter_mut().zip(accepted) {
+            *cell = Some(stage);
+        }
+        Some(RetryPlan { first, rest })
     }
 
     /// The plan with each stage's rate turned by `rate`, the stages and
@@ -1607,11 +1646,14 @@ impl<R> RetryPlan<R> {
                 protection: stage.protection,
             })
         };
-        Ok(RetryPlan {
-            first: turn(self.first)?,
-            // At most RETRY_STAGES - 1 inputs, even when a conversion fails.
-            rest: self.rest.into_iter().map(turn).collect::<Result<_, _>>()?,
-        })
+        let first = turn(self.first)?;
+        let mut rest: [Option<RetryStage<S>>; RETRY_STAGES - 1] = core::array::from_fn(|_| None);
+        for (cell, stage) in rest.iter_mut().zip(self.rest) {
+            if let Some(stage) = stage {
+                *cell = Some(turn(stage)?);
+            }
+        }
+        Ok(RetryPlan { first, rest })
     }
 }
 

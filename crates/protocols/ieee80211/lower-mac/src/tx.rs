@@ -35,8 +35,9 @@ pub enum TxResponse {
 /// The backend holds the body from the attempt's admission until the
 /// [`crate::LowerMacTerminal::TxCompleted`] carries it back. A `Sent` MPDU
 /// retains its body inside the returned buffer for retransmission;
-/// [`crate::TxBufferPool::renew`] returns both memory and body. Fresh
-/// returned MPDUs carry bodies separately by subframe index. Dropping a body is how
+/// [`crate::TxBufferPool::renew`] returns both memory and body. A fresh
+/// returned MPDU gives its body back beside its memory, and each subframe of
+/// an aggregate holds its own. Dropping a body is how
 /// its owner learns it is no longer needed: a consumer that drops the
 /// completion event drops its bodies, and a backend that discards an
 /// attempt, as an uninstall does, drops them with it.
@@ -74,25 +75,6 @@ pub enum TxPower {
     /// that is lower. Accepted down to
     /// [`tx_power_ceiling_min_dbm`](crate::LowerMacCapabilities::tx_power_ceiling_min_dbm).
     MaxDbm(i8),
-}
-
-/// The CSMA/CA backoff of one attempt.
-///
-/// Drawing the backoff is contention policy above the port unless the
-/// backend reports [`HardwareServices::BACKOFF_DRAW`](crate::HardwareServices::BACKOFF_DRAW);
-/// `oer-ieee80211-softmac`'s `EdcaContention` draws it for a caller.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Backoff {
-    /// Count down exactly this many slots after the AIFS, at most
-    /// [`max_backoff_slots`](crate::LowerMacCapabilities::max_backoff_slots).
-    Slots(u16),
-    /// Let the hardware draw from a contention window of
-    /// `2^cw_exponent - 1` slots. Valid only when the backend reports
-    /// [`HardwareServices::BACKOFF_DRAW`](crate::HardwareServices::BACKOFF_DRAW).
-    HardwareDraw {
-        /// Contention-window exponent: draw from zero through `2^cw_exponent - 1`.
-        cw_exponent: u8,
-    },
 }
 
 /// One hardware publication observed by a retry planner. This is not a
@@ -146,19 +128,6 @@ impl BlockAckReport {
     }
 }
 
-/// A known result after the backend has finished the attempt's plan.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxEndStatus {
-    /// The solicited response arrived, or the frame solicited none.
-    Delivered,
-    /// The plan exhausted its ACK/BlockAck response budget.
-    AckTimeout,
-    /// The plan exhausted its protection response budget.
-    CtsTimeout,
-    /// Internal contention exhausted the backend's budget. No rate sample.
-    ContentionLimit,
-}
-
 /// Why an admitted attempt was returned without publishing it again.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WithdrawCause {
@@ -177,92 +146,211 @@ pub enum IndeterminateCause {
     HardwareTimeout,
 }
 
-/// Evidence carried by the solicited ACK or BlockAck.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct TxAck {
-    /// The response's RSSI, when measured.
-    pub rssi_dbm: Option<i8>,
-    /// The response's SNR, when measured.
-    pub snr_db: Option<i8>,
-    /// A BlockAck's sequence window.
-    pub block_ack: Option<BlockAckReport>,
+/// The MPDU transmissions an attempt made, the first included, and the rate
+/// of the last of them. It exists only when at least one went out.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Air {
+    /// Exact MPDU transmission count; this is not a publication count.
+    pub transmissions: NonZeroU16,
+    /// The rate the last transmission went at.
+    pub rate: crate::PhyRate,
 }
 
-/// The sole terminal of an admitted operation, beside its owned resources.
+/// The SNR a backend's ACK evidence always carries: a property of the
+/// backend, as [`SignalMetadata`](crate::SignalMetadata) is of its receive
+/// metadata. A policy that needs it requires this trait of
+/// [`PhaseTypes::AckEvidence`](crate::PhaseTypes::AckEvidence), and a
+/// backend without it does not build with that policy
+/// ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225189867)).
+pub trait AckSnr {
+    /// The response's SNR, in dB.
+    fn snr_db(&self) -> i8;
+}
+
+/// The SNR sample of a backend's BlockAck evidence for an aggregate, which
+/// its hardware may not report for every accepted BlockAck: the evidence
+/// type ([`PhaseTypes::BlockAckEvidence`](crate::PhaseTypes::BlockAckEvidence))
+/// names why, and this trait splits it into a sample or none, with no
+/// default value ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225299762)).
+pub trait BlockAckSnr {
+    /// The BlockAck's SNR sample.
+    fn snr_sample(&self) -> SnrSample;
+}
+
+/// Whether a BlockAck carried an SNR measurement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SnrSample {
+    /// The backend measured the BlockAck's SNR, in dB.
+    Measured(i8),
+    /// The backend has no measurement of this BlockAck.
+    Unmeasured,
+}
+
+/// The solicited response of a delivered single MPDU, with the backend's
+/// evidence `A` of it. A frame that solicits no response has no evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SingleResponse<A> {
+    /// The frame solicited no response: a group-addressed frame, or an
+    /// individual one sent without acknowledgement.
+    Unsolicited,
+    /// An ACK answered the frame.
+    Ack(A),
+    /// A BlockAck answered a BlockAckReq.
+    BlockAck {
+        /// The BlockAck's sequence window.
+        report: BlockAckReport,
+        /// The backend's evidence of the response.
+        ack: A,
+    },
+}
+
+/// The known end of a single MPDU's plan, with the backend's response
+/// evidence `A` and lost-air evidence `D`.
+///
+/// A delivery without a transmission, or one that solicited a response but
+/// reports none, is not representable:
+///
+/// ```compile_fail,E0063
+/// use oer_ieee80211_lower_mac::{SingleEnd, SingleResponse};
+/// fn delivered() -> SingleEnd<(), ()> {
+///     SingleEnd::Delivered { response: SingleResponse::Unsolicited }
+/// }
+/// ```
+///
+/// ```
+/// use core::num::NonZeroU16;
+/// use oer_ieee80211_lower_mac::{Air, PhyRate, SingleEnd, SingleResponse};
+/// fn delivered(rate: PhyRate) -> SingleEnd<i8, ()> {
+///     let air = Air { transmissions: NonZeroU16::MIN, rate };
+///     SingleEnd::Delivered { air, response: SingleResponse::Ack(20) }
+/// }
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SingleEnd<A, D> {
+    /// The solicited response arrived, or the frame solicited none.
+    Delivered {
+        /// The transmissions it took.
+        air: Air,
+        /// The response that ended it.
+        response: SingleResponse<A>,
+    },
+    /// The plan exhausted its ACK/BlockAck response budget.
+    AckTimeout(Air),
+    /// The plan exhausted its protection response budget; `None` when no
+    /// MPDU went out after the protection failed.
+    CtsTimeout(Option<Air>),
+    /// Internal contention exhausted the backend's budget. No rate sample.
+    ContentionLimit(Option<Air>),
+    /// Coexistence denied the air, which the backend `D` tells apart. No
+    /// rate sample ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6220091744), Q4).
+    AirDenied {
+        /// The backend's evidence of the denial.
+        denial: D,
+        /// The transmissions made before it.
+        air: Option<Air>,
+    },
+}
+
+/// The known end of an aggregate's plan, with the backend's BlockAck
+/// evidence `B` and lost-air evidence `D`. A delivered aggregate always
+/// carries its BlockAck: an aggregate solicits one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AggregateEnd<B, D> {
+    /// A BlockAck answered the aggregate.
+    Delivered {
+        /// The transmissions it took.
+        air: Air,
+        /// The BlockAck's sequence window.
+        report: BlockAckReport,
+        /// The backend's evidence of the BlockAck.
+        ack: B,
+    },
+    /// The plan exhausted its BlockAck response budget.
+    AckTimeout(Air),
+    /// The plan exhausted its protection response budget.
+    CtsTimeout(Option<Air>),
+    /// Internal contention exhausted the backend's budget. No rate sample.
+    ContentionLimit(Option<Air>),
+    /// Coexistence denied the air. No rate sample.
+    AirDenied {
+        /// The backend's evidence of the denial.
+        denial: D,
+        /// The transmissions made before it.
+        air: Option<Air>,
+    },
+}
+
+/// One rate observation of an ended single MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RateSample<'a, A> {
+    /// The frame was delivered; `ack` is the evidence of its solicited
+    /// response, `None` when it solicited none.
+    Delivered {
+        /// The transmissions it took.
+        air: Air,
+        /// The response's evidence.
+        ack: Option<&'a A>,
+    },
+    /// The plan ended without its response.
+    Unanswered(Air),
+}
+
+impl<A, D> SingleEnd<A, D> {
+    /// The end's radio-rate observation: none for contention exhaustion,
+    /// lost air or a protection failure before any MPDU went out.
+    pub const fn rate_sample(&self) -> Option<RateSample<'_, A>> {
+        match self {
+            Self::Delivered { air, response } => Some(RateSample::Delivered {
+                air: *air,
+                ack: match response {
+                    SingleResponse::Unsolicited => None,
+                    SingleResponse::Ack(ack) | SingleResponse::BlockAck { ack, .. } => Some(ack),
+                },
+            }),
+            Self::AckTimeout(air) | Self::CtsTimeout(Some(air)) => {
+                Some(RateSample::Unanswered(*air))
+            }
+            Self::CtsTimeout(None) | Self::ContentionLimit(_) | Self::AirDenied { .. } => None,
+        }
+    }
+}
+
+/// The sole terminal of an admitted operation, beside its owned resources;
+/// `E` is a single MPDU's [`SingleEnd`] or an aggregate's [`AggregateEnd`].
 ///
 /// A hardware timeout is final: the backend does not republish the MPDU.
 /// A completion already observed takes priority over the timeout. Only
 /// `Ended` claims an exact transmission count; rate selection ignores
-/// withdrawals, indeterminate outcomes and contention exhaustion.
+/// withdrawals, indeterminate outcomes, contention exhaustion and lost air.
 /// The next operation in the queue may proceed after every terminal.
-///
-/// A terminal cannot claim a rate with zero transmissions:
-///
-/// ```compile_fail,E0559
-/// use oer_ieee80211_lower_mac::{PhyRate, TxEndStatus, TxOutcome};
-/// fn zero(rate: PhyRate) -> TxOutcome {
-///     TxOutcome::Ended {
-///         status: TxEndStatus::ContentionLimit, transmissions: 0, rate: Some(rate), ack: None,
-///     }
-/// }
-/// ```
-///
-/// Nor can it report transmissions while omitting their last rate:
-///
-/// ```compile_fail,E0559
-/// use oer_ieee80211_lower_mac::{TxEndStatus, TxOutcome};
-/// fn missing_rate() -> TxOutcome {
-///     TxOutcome::Ended {
-///         status: TxEndStatus::AckTimeout, transmissions: 2, rate: None, ack: None,
-///     }
-/// }
-/// ```
-///
-/// The complete observation is either absent or carries both values:
-///
-/// ```
-/// use core::num::NonZeroU16;
-/// use oer_ieee80211_lower_mac::{PhyRate, TxEndStatus, TxOutcome};
-/// fn observed(rate: PhyRate) -> [TxOutcome; 2] {
-///     [
-///         TxOutcome::Ended { status: TxEndStatus::ContentionLimit, last: None, ack: None },
-///         TxOutcome::Ended {
-///             status: TxEndStatus::Delivered, last: Some((NonZeroU16::MIN, rate)), ack: None,
-///         },
-///     ]
-/// }
-/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxOutcome {
+pub enum TxOutcome<E> {
     /// Lifecycle stopped the attempt before its plan ended; no transmission
     /// delivered it. ReturnedMpdu is Fresh if never published, otherwise Sent,
     /// retaining the original SN, PN and body. No rate sample.
     Withdrawn(WithdrawCause),
     /// The plan has a known result. Returned MPDUs are `Sent`.
-    Ended {
-        /// The known result, including known failure without an MPDU on air.
-        status: TxEndStatus,
-        /// Exact MPDU transmission count, including the first, paired with
-        /// the last transmitted MPDU's rate. `None` means no MPDU reached air
-        /// after protection or contention failure; this is not publication count.
-        last: Option<(NonZeroU16, crate::PhyRate)>,
-        /// Evidence from the solicited response.
-        ack: Option<TxAck>,
-    },
+    Ended(E),
     /// Final unknown outcome. Returned MPDUs are `Sent`; Data retires them.
     Indeterminate(IndeterminateCause),
 }
 
-impl TxOutcome {
-    /// Whether this terminal supplies a usable radio-rate observation.
-    pub const fn is_rate_sample(self) -> bool {
-        matches!(
-            self,
-            Self::Ended {
-                status: TxEndStatus::Delivered | TxEndStatus::AckTimeout | TxEndStatus::CtsTimeout,
-                last: Some(_),
-                ..
-            }
-        )
+/// A single MPDU's terminal outcome.
+pub type SingleOutcome<A, D> = TxOutcome<SingleEnd<A, D>>;
+/// An aggregate's terminal outcome.
+pub type AggregateOutcome<B, D> = TxOutcome<AggregateEnd<B, D>>;
+
+impl<A, D> SingleOutcome<A, D> {
+    /// The outcome's radio-rate observation, when it ended with one.
+    pub const fn rate_sample(&self) -> Option<RateSample<'_, A>> {
+        match self {
+            Self::Ended(end) => end.rate_sample(),
+            Self::Withdrawn(_) | Self::Indeterminate(_) => None,
+        }
+    }
+
+    /// Whether the frame was delivered.
+    pub const fn is_delivered(&self) -> bool {
+        matches!(self, Self::Ended(SingleEnd::Delivered { .. }))
     }
 }

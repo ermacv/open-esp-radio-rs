@@ -6,7 +6,7 @@ use oer_ieee80211_lower_mac::association::KEY_BANK_CAPACITY;
 use oer_ieee80211_lower_mac::{
     BandSet, Channel, ChannelWidth, CoexPriority, CoexPrioritySet, HardwareServices,
     Ieee80211Capabilities, LowerMacCapabilities, PhyFormatSet, RateSupport, ReceiveFilter,
-    RxEvidence, TxEndStatus, WidthSet,
+    RxEvidence, WidthSet,
 };
 use oer_ieee80211_lower_mac::{IndeterminateCause, WithdrawCause};
 use oer_ieee80211_mac::ccmp::{CcmpRxReplayEpoch, GroupKeyId};
@@ -37,14 +37,11 @@ impl Ieee80211Capabilities for Caps {
         vifs: 1,
         tx_queues: 4,
         max_mpdu_length: 2304,
-        max_backoff_slots: 1023,
         tx_power_ceiling_min_dbm: None,
         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
         individual_no_ack: PhyFormatSet::NON_HT,
         station_receive_filters: ReceiveFilter::BSS_MEMBER,
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-        key_slots: 4,
-        rx_block_ack_agreements: 0,
         rx_block_ack_max_tid: 0,
         rx_block_ack_max_window: 0,
         edca_max_aifsn: 15,
@@ -84,6 +81,8 @@ impl StaDataTokens for Data {
     type Ticket = u8;
     type Buffer = Buffer;
     type Sent = Buffer;
+    type AckEvidence = ();
+    type AirDenied = ();
     fn renew(mpdu: Self::Sent) -> Buffer {
         mpdu
     }
@@ -130,6 +129,8 @@ impl StaTokens for Station {
     type Ticket = u8;
     type SmallBuffer = Buffer;
     type Sent = Buffer;
+    type AckEvidence = ();
+    type AirDenied = ();
     fn renew(mpdu: Self::Sent) -> Buffer {
         mpdu
     }
@@ -234,7 +235,7 @@ fn stopped_data_bank_reuses_credits_permissions_and_the_order_frontier() {
         context: outstanding.context,
         ticket: outstanding.ticket,
         buffer: outstanding.buffer,
-        completion: ended(TxEndStatus::Delivered, 1),
+        completion: ended(End::Delivered, 1),
     });
     assert_eq!(data.available(WmmAccessCategory::Voice), 2);
     assert_eq!(data.tickets.len(), 2);
@@ -360,7 +361,7 @@ fn interleaved_returns_keep_the_original_tid_order_and_admission_count() {
             context: operation.context,
             ticket: operation.ticket,
             buffer: operation.buffer,
-            completion: ended(TxEndStatus::Delivered, 1),
+            completion: ended(End::Delivered, 1),
         });
     }
     assert_eq!(data.counters().lost_tokens, 0);
@@ -404,7 +405,7 @@ fn repeated_unpublished_returns_keep_the_checked_frame_and_payload() {
         context: operation.context,
         ticket: operation.ticket,
         buffer: operation.buffer,
-        completion: ended(TxEndStatus::Delivered, 1),
+        completion: ended(End::Delivered, 1),
     });
     assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
     assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
@@ -454,7 +455,7 @@ fn a_late_old_link_terminal_does_not_take_a_new_links_metadata() {
         context: again.context,
         ticket: again.ticket,
         buffer: again.buffer,
-        completion: ended(TxEndStatus::Delivered, 1),
+        completion: ended(End::Delivered, 1),
     });
     assert_eq!(data.available(WmmAccessCategory::Voice), capacity);
     assert!(data.tickets.take().is_some());
@@ -524,7 +525,7 @@ fn preparation_refusal_ends_only_its_msdu_without_a_radio_terminal_or_retry() {
         context: accepted.context,
         ticket: accepted.ticket,
         buffer: accepted.buffer,
-        completion: ended(TxEndStatus::Delivered, 1),
+        completion: ended(End::Delivered, 1),
     });
     assert_eq!(core::iter::from_fn(|| data.tickets.take()).count(), 2);
     assert_eq!(core::iter::from_fn(|| data.buffers.take()).count(), 2);
@@ -666,7 +667,7 @@ fn msdus_wait_while_the_tokens_are_out() {
         context: first.context,
         ticket: first.ticket,
         buffer: first.buffer,
-        completion: ended(TxEndStatus::Delivered, 1),
+        completion: ended(End::Delivered, 1),
     });
     assert!(data.accepts());
 }
@@ -783,17 +784,28 @@ fn the_old_and_the_new_group_key_are_both_taken_until_the_old_is_removed() {
     );
 }
 
+/// The terminal kinds the data machine's tests return.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum End {
+    Delivered,
+    AckTimeout,
+    ContentionLimit,
+}
+
 /// The terminal of an attempt that made `transmissions`.
-fn ended(status: TxEndStatus, transmissions: u16) -> TxOutcome {
-    TxOutcome::Ended {
-        status,
-        last: NonZeroU16::new(transmissions)
-            .map(|count| (count, PhyRate::Legacy(LegacyRate::Ofdm6M))),
-        ack: (status == TxEndStatus::Delivered).then_some(oer_ieee80211_lower_mac::TxAck {
-            snr_db: Some(30),
-            ..Default::default()
-        }),
-    }
+fn ended(status: End, transmissions: u16) -> SingleOutcome<(), ()> {
+    let air = NonZeroU16::new(transmissions).map(|transmissions| oer_ieee80211_lower_mac::Air {
+        transmissions,
+        rate: PhyRate::Legacy(LegacyRate::Ofdm6M),
+    });
+    TxOutcome::Ended(match status {
+        End::Delivered => SingleEnd::Delivered {
+            air: air.unwrap(),
+            response: oer_ieee80211_lower_mac::SingleResponse::Ack(()),
+        },
+        End::AckTimeout => SingleEnd::AckTimeout(air.unwrap()),
+        End::ContentionLimit => SingleEnd::ContentionLimit(air),
+    })
 }
 
 /// The TID and sequence number of a QoS Data MPDU in its buffer.
@@ -849,7 +861,7 @@ fn an_attempt_aborted_before_the_air_goes_again_first_with_its_sequence_number()
         context: again.context,
         ticket: again.ticket,
         buffer: again.buffer,
-        completion: ended(TxEndStatus::AckTimeout, 3),
+        completion: ended(End::AckTimeout, 3),
     });
     assert!(data.poll_action().is_none());
 }
@@ -968,7 +980,7 @@ fn indeterminate_and_contention_limit_retire_the_msdu_and_release_admission() {
             1,
             0,
         ),
-        (ended(TxEndStatus::ContentionLimit, 0), 0, 1),
+        (ended(End::ContentionLimit, 0), 0, 1),
     ] {
         let mut data = StaData::<Data, Caps>::new(
             [1],

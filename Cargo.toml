@@ -119,6 +119,7 @@ members = [
     "hil/host/scenario/catalog",
     "hil/host/run-bundle",
     "hil/host/run-bundle/format",
+    "hil/host/evidence-archive",
     "hil/host/analysis",
     "hil/host/experiment",
     "hil/host/image",

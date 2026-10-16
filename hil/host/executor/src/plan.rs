@@ -195,6 +195,15 @@ pub struct Stand<'a> {
 
 /// Plans `scenarios` for `tier`.
 pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan, PlanError> {
+    // An empty tier uses no stand span.
+    if scenarios.is_empty() {
+        return Ok(Plan {
+            tier,
+            segments: Vec::new(),
+            total_micros: 0,
+            provisional: Vec::new(),
+        });
+    }
     let refusals: Vec<_> = scenarios
         .iter()
         .filter_map(|planned| {
@@ -703,6 +712,14 @@ mod tests {
                 }),
             })
         );
+    }
+
+    #[test]
+    fn an_empty_tier_needs_no_stand_span() {
+        let profile = StandProfile::try_from(RawStandProfile::default()).unwrap();
+        let plan = run(Tier::Smoke, &[], &profile, 3_600).unwrap();
+        assert!(plan.segments.is_empty() && plan.provisional.is_empty());
+        assert_eq!(plan.total_micros, 0);
     }
 
     #[test]

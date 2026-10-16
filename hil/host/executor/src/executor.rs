@@ -89,8 +89,10 @@ pub trait StandDriver<'g> {
 }
 
 /// Something that executes scenarios: its kind, and the driver a scenario
-/// uses (for a conformance scenario, its port's harness).
-pub trait Executor {
+/// uses (for a conformance scenario, its port's harness). It is sealed:
+/// [`Model`] and [`Stand`] are the only executors, so no other type can
+/// claim a kind its driver does not prove.
+pub trait Executor: sealed::Sealed {
     type Kind: ExecutorKind;
     type Driver;
     fn driver(&mut self) -> &mut Self::Driver;
@@ -119,6 +121,9 @@ impl<'g, D: StandDriver<'g>> Stand<'g, D> {
         }
     }
 }
+
+impl<D: ModelDriver> sealed::Sealed for Model<D> {}
+impl<'g, D: StandDriver<'g>> sealed::Sealed for Stand<'g, D> {}
 
 impl<D: ModelDriver> Executor for Model<D> {
     type Kind = OnModel;

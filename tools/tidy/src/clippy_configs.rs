@@ -13,7 +13,9 @@
 //!   rule set is then changed in every copy at once;
 //! - every HIL scenario package carries its own copy of the `hil-scenario`
 //!   group: a package at `hil/model`, `hil/host/executor` or under
-//!   `hil/scenarios/`, or one that depends on `oer-hil-model` (#761, owner
+//!   `hil/scenarios/`, or a package under `hil/` that depends on
+//!   `oer-hil-model`; a consumer of the model outside `hil/`, such as the
+//!   qualification evaluator, is not a scenario package (#761, owner
 //!   decision 6221112155, until #761 step 10 replaces the copies with one
 //!   `hil/clippy.toml`).
 
@@ -28,6 +30,9 @@ const HIL_SCENARIO: &str = "hil-scenario";
 const HIL_SCENARIO_PATHS: [&str; 2] = ["hil/model", "hil/host/executor"];
 const HIL_SCENARIO_TREE: &str = "hil/scenarios/";
 const HIL_MODEL: &str = "oer-hil-model";
+/// Only HIL packages are scenario packages: a consumer of the model outside
+/// `hil/`, such as the qualification evaluator, keeps its own rules.
+const HIL_TREE: &str = "hil/";
 
 /// The paths of every `disallowed-*` list of a clippy configuration, by
 /// list name.
@@ -137,10 +142,11 @@ pub fn check(context: &Context<'_>) -> Vec<String> {
     for package in context.model.packages() {
         let scenario = HIL_SCENARIO_PATHS.contains(&package.directory.as_str())
             || package.directory.starts_with(HIL_SCENARIO_TREE)
-            || package
-                .dependencies
-                .iter()
-                .any(|dependency| dependency.package == HIL_MODEL);
+            || package.directory.starts_with(HIL_TREE)
+                && package
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency.package == HIL_MODEL);
         if scenario && !copies.contains(package.directory.as_str()) {
             problems.push(format!(
                 "{}: the HIL scenario package {} has no clippy.toml of the `{HIL_SCENARIO}` copy group",
@@ -250,7 +256,12 @@ mod tests {
         let problems = run(&[
             (
                 "Cargo.toml",
-                &workspace(&["hil/model", "hil/scenarios/toy", "tools/other"]),
+                &workspace(&[
+                    "hil/model",
+                    "hil/scenarios/toy",
+                    "tools/other",
+                    "qualification/evaluator",
+                ]),
             ),
             ("clippy.toml", ROOT_RULES),
             ("hil/model/Cargo.toml", &model),
@@ -258,9 +269,24 @@ mod tests {
             ("hil/model/clippy.toml", &a),
             ("hil/scenarios/toy/Cargo.toml", &block),
             ("hil/scenarios/toy/src/lib.rs", ""),
-            ("tools/other/Cargo.toml", &manifest("oer-other", "")),
+            (
+                "tools/other/Cargo.toml",
+                &manifest(
+                    "oer-other",
+                    "oer-hil-model = { path = \"../../hil/model\" }\n",
+                ),
+            ),
             ("tools/other/src/lib.rs", ""),
             ("tools/other/clippy.toml", &a),
+            // A consumer of the model outside hil/ needs no copy.
+            (
+                "qualification/evaluator/Cargo.toml",
+                &manifest(
+                    "oer-qualification",
+                    "oer-hil-model = { path = \"../../hil/model\" }\n",
+                ),
+            ),
+            ("qualification/evaluator/src/lib.rs", ""),
         ]);
         assert_eq!(
             problems,

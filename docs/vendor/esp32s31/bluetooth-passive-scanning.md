@@ -1,5 +1,10 @@
 # ESP32-S31 legacy passive scanning contracts
 
+The open radio role, runtime and Controller core that this page compares
+with the vendor were removed in #770 (tag `legacy-radio-2026-10-16`); the
+passages that name them describe that tagged implementation, and the kept
+memory codecs, executor and portable pieces still follow them.
+
 This reference covers legacy LE 1M primary-channel scanning, passive and
 active, and the hardware observations needed for HCI LE Advertising Reports.
 Portable LL policy, register transactions and private controller-SRAM
@@ -425,13 +430,13 @@ No upper layer may construct register images.  No public LL type may contain
 the vendor link-state words.  SRAM masks remain private implementation details
 of typed memory accessors, just as for the DTM descriptors.
 
-The radio role admits each scan window against one fresh Controller-time
+The radio role admitted each scan window against one fresh Controller-time
 sample; the core placed it apart from every other window with the
 reservation function the radio shares, and the radio never moves it; only the
 admitted interval is encoded into SRAM. The scanner item then stays with the
 executor from list-zero insertion through the selector-one receive chain,
 `RUN`, fenced finished-list capture and the completion walk, which returns the
-item and lets the role copy the PDU/RSSI results out of the scanning chain. A
+item and let the role copy the PDU/RSSI results out of the scanning chain. A
 cancelled window leaves through the executor's cancellation. The Link Layer
 core that owns scanning policy and HCI routing does not exist yet; this lower
 contract does not establish its readiness.

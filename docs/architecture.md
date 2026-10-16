@@ -449,10 +449,10 @@ step. The backend transports the context without interpreting it, and a
 terminal returns the original context and exactly its operation's resources.
 The Wi-Fi service therefore needs no completion identity table.
 
-BLE and IEEE 802.15.4 retain their existing arrangement. In particular,
-a `'static` BLE core keeps its own `EventId`; its phase boundary table maps
-that ID to the phase token and carries out the core's decision. Wi-Fi's
-branded core does not require a change to either other block.
+Wi-Fi's branded core does not require a change to either other block. The
+BLE core with its own `EventId` and phase boundary table, and the IEEE
+802.15.4 runtime, were removed with their orchestration in #770 (tag
+`legacy-radio-2026-10-16`); their rebuilds follow #563 decision 8.
 
 **Proofs say exactly what they prove.** A guard proves its own state and no
 more: a closed transmit gate proves that this port publishes no

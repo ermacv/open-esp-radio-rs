@@ -1,5 +1,10 @@
 # ESP32-S31 legacy advertising admission boundary
 
+The open radio role, runtime and Controller core that this page compares
+with the vendor were removed in #770 (tag `legacy-radio-2026-10-16`); the
+passages that name them describe that tagged implementation, and the kept
+memory codecs, executor and portable pieces still follow them.
+
 This reference describes the hardware contract below the portable
 `ADV_NONCONN_IND` encoder. It does not reproduce the vendor advertising
 driver. The nonconnectable profile is restricted to LE 1M, standalone
@@ -142,7 +147,7 @@ selects the legacy LE 1M transmitter role, copies the reset link state's
 rounded power, installs contiguous accepted raw windows and clears bookkeeping
 for every active item. No link image, field mask, rounded-power image or
 frequency integer crosses into the controller/LL layer. Before this mutation,
-the radio role admits the event against one fresh Controller-time sample and
+the radio role admitted the event against one fresh Controller-time sample and
 the executor's list mirror: each channel reserves one channel spacing from its
 anchor minus the preparation lead, and an overlap is rejected instead of
 displaced. Rejection leaves the configured set unchanged. Like the vendor,
@@ -241,7 +246,7 @@ control: that body installs lanes `4, 0, 13, 13` for a legacy set from the
 default tables `04 04 04` and `0d 0d`, and
 `r_sym_coexAdv_sLW7oGzvK2Nq64ivPWK2` replaces lane zero for every event
 from the legacy table `04 09 0b 03 02 01 28 00 50 00` at the event's level.
-The Controller core raises every third, second or single event for
+The kept `coexistence` module of the LE Controller raises every third, second or single event for
 intervals up to 25 ms, up to 50 ms and longer (`r_sym_coexAdv_VG7v...`,
 `r_sym_coexAdv_A5DX...`). Alone on the antenna, every lane requests 15;
 this equal standalone policy is a product choice.
@@ -281,7 +286,7 @@ header without successor, makes it the TX tail and keeps the compressed
 scan-response consumer empty. The radio contract names what a set listens
 for: nothing, scan requests answered by a scan response, or receptions only.
 
-The Controller core accepts a connection indication from a scannable set
+The removed Controller core accepted a connection indication from a scannable set
 never and from a directed set only when InitA equals the target. High duty
 cycle directed events follow each other 3.75 ms apart without the
 advertising delay and end after 1.28 s with LE Connection Complete status

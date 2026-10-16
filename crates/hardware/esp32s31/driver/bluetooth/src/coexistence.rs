@@ -6,7 +6,8 @@
 //! this equal standalone policy is a product choice. When another radio
 //! shares the antenna, the radio applies the vendor BLE Controller's dynamic
 //! priority control: fixed lanes per role plus an event lane chosen by the
-//! Controller core's [`CoexistenceLevel`].
+//! LE radio's [`CoexistenceLevel`], which the LE Controller's `coexistence`
+//! module computes.
 
 use oer_bluetooth_radio::CoexistenceLevel;
 use oer_esp32s31_bluetooth_memory::{

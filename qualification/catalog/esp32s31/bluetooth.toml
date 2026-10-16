@@ -2389,7 +2389,7 @@ section = "bluetooth-security-privacy"
 title = "LE Secure Connections integration"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "Pairing and SMP belong to the Host: the secure GATT application pairs with LE Secure Connections Numeric Comparison through the Trouble Host. The Controller side of the resulting encryption is the Link Layer encryption row."
+scope-and-limitations = "Pairing and SMP belong to the Host; the secure GATT application that paired with LE Secure Connections Numeric Comparison through the Trouble Host was removed (#770, tag `legacy-radio-2026-10-16`). The Controller side of the resulting encryption is the Link Layer encryption row."
 
 [[items]]
 id = "bluetooth-encrypted-advertising-data"
@@ -3001,28 +3001,28 @@ id = "bluetooth-source-chip-owners-portable-bluetooth-and-embassy-runtime"
 section = "bluetooth-capability-sources"
 title = "[Chip owners](README.md) and [portable Bluetooth](../../../../protocols/bluetooth/)"
 kind = "source-reference"
-details = "Actual open-driver production composition"
+details = "The chip owners and portable Bluetooth pieces; the production composition was removed (#770, tag `legacy-radio-2026-10-16`)"
 
 [[sections]]
 id = "bluetooth-capability-advertisement"
 domain = "bluetooth"
 title = "Capability advertisement"
 source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
-overview = "`LE Read Local Supported Features` sets bit 0 (LE Encryption), bit 3\n(Peripheral-initiated Feature Exchange), bit 4 (LE Ping), bit 5 (LE Data\nPacket Length Extension) and bit 14 (Channel Selection Algorithm #2), each\nserved by the production peripheral connection. Each optional bit requires the\ncomplete production Controller operation named by that feature. A recovered\nregister, SRAM layout, portable parser, DTM-only PHY or vendor capability\ncannot grant advertisement."
+overview = "The removed HCI command service answered `LE Read Local Supported Features`\nwith bit 0 (LE Encryption), bit 3 (Peripheral-initiated Feature Exchange),\nbit 4 (LE Ping), bit 5 (LE Data Packet Length Extension) and bit 14 (Channel\nSelection Algorithm #2), each served by the production peripheral connection\n(#770, tag `legacy-radio-2026-10-16`); no Controller answers it now. Each optional bit requires the\ncomplete production Controller operation named by that feature. A recovered\nregister, SRAM layout, portable parser, DTM-only PHY or vendor capability\ncannot grant advertisement."
 
 [[sections]]
 id = "bluetooth-ownership"
 domain = "bluetooth"
 title = "Ownership"
 source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
-overview = "| Owner | Authority |\n| --- | --- |\n| PAC | MMIO representation and restricted access |\n| HAL | Semantic accessors, register transactions and hardware ownership proofs |\n| [Memory crate](memory/) | Controller-SRAM layouts, private codecs and DMA-visible storage |\n| Engine | Clocks, Controller time, BLE PHY, interrupts, modem timer and scheduler primitives |\n| Radio role | The portable radio event contract over the hardware scheduler |\n| Radio runtime | Executor-independent scheduler driving, interrupts and outcomes |\n| Composition | Controller epochs on the shared radio and the HCI service |\n| Portable HCI, LE LL and [Controller core](../../../../protocols/bluetooth/le/controller/src/lib.rs) | Host boundary, protocol policy, PDU codecs and role planning |\n\nThe Controller core plans every event through one arbiter so that no two\nreservations overlap; the radio role owns only the chip's event geometry."
+overview = "| Owner | Authority |\n| --- | --- |\n| PAC | MMIO representation and restricted access |\n| HAL | Semantic accessors, register transactions and hardware ownership proofs |\n| [Memory crate](memory/) | Controller-SRAM layouts, private codecs and DMA-visible storage |\n| Engine | Clocks, Controller time, BLE PHY, interrupts, modem timer and scheduler primitives |\n| Portable HCI, LE LL and [Controller pieces](../../../../protocols/bluetooth/le/controller/src/lib.rs) | Host boundary codecs, Link Layer algorithms, PDU codecs, event timing and coexistence levels |\n\nThe radio role, runtime and composition that ran Controller epochs, and the\nController core that planned every event through one arbiter, were removed\n(#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth\norchestration."
 
 [[sections]]
 id = "bluetooth-peripheral-timing-limits"
 domain = "bluetooth"
 title = "Peripheral timing limits"
 source-document = "crates/hardware/esp32s31/driver/bluetooth/FEATURES.md"
-overview = "The Controller core plans every connection event from the last received\nanchor with window widening over the peer's and the backend's sleep-clock\naccuracy; the backend supplies its local bound, jitter and guards. The radio\nrole reserves the vendor's minimum event duration and lets the hardware\ncontinue the event within the connection interval. The\n[memory codec](memory/src/peripheral_connection.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."
+overview = "The [timing](../../../../protocols/bluetooth/le/controller/src/timing.rs)\nof the LE Controller places every connection event from the last received\nanchor with window widening over the peer's and the backend's sleep-clock\naccuracy; the backend supplies its local bound, jitter and guards. The\n[connection policy](src/connection_policy.rs) reserves the vendor's minimum\nevent duration and lets the hardware continue the event within the connection\ninterval; the Controller core and radio role that applied them were removed\n(#770, tag `legacy-radio-2026-10-16`). The\n[memory codec](memory/src/peripheral_connection.rs) stores\nlink-state event span and scheduler captured anchor in distinct objects;\nequal offsets within those objects do not make them the same field. A raw\ncaptured anchor is not a normalized packet-start timestamp. Hardware timing\nqualification must cover that interpretation independently of the ownership\nand layout types."
 
 [[items]]
 id = "bluetooth-idle-phy-maintenance"

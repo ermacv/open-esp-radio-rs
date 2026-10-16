@@ -122,8 +122,8 @@ use core::{
     task::{Poll, Waker},
 };
 use oer_ieee80211_lower_mac::association::{
-    self, Association, AssociationPool, AssociationStart, GroupKeySlot, KeyBankParts,
-    PairwiseKeySlot, VacantAssociation, VacantKeyBank,
+    self, Association, AssociationPool, AssociationStart, BlockAckSlot, BlockAckSlots,
+    GroupKeySlot, KeyBankParts, PairwiseKeySlot, VacantAssociation, VacantKeyBank,
 };
 use oer_ieee80211_mac::ccmp::Ccmp128Key;
 use oer_ieee80211_mac::ccmp::GroupKeyId;
@@ -231,6 +231,13 @@ pub const MODEL_RX_EVENTS: usize = 4;
 pub const MODEL_KEY_SLOTS: usize = 2;
 /// The receive Block Ack slots both roles share.
 pub const MODEL_BLOCK_ACK_SLOTS: usize = 2;
+/// The pool of receive Block Ack slots: the one source of their capacity.
+pub type ModelBlockAckPool = BlockAckSlots<ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS>;
+/// One receive Block Ack slot of the model.
+pub type ModelBlockAckSlot<'id> =
+    BlockAckSlot<'id, ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS, ModelPool<7>>;
+/// The key pool of one role's association domain.
+pub type ModelAssociationPool<R> = AssociationPool<R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS>;
 
 /// FIFO commands: each ticket, install/remove for every pairwise slot,
 /// one GTK mutation per interface permission, and close/open of the gate.
@@ -1010,7 +1017,7 @@ impl<'id, X: ModelContext> PhaseTypes<'id> for ModelTypes<X> {
     type StationKeys = ModelKeys<'id, Station>;
     type AccessPointKeys = ModelKeys<'id, AccessPoint>;
     type BlockAckKind = ModelBlockAcks;
-    const RX_BLOCK_ACK_SLOTS: usize = MODEL_BLOCK_ACK_SLOTS;
+    type BlockAckPool = ModelBlockAckPool;
     type BlockAck = ModelBlockAck<'id>;
 }
 
@@ -1025,8 +1032,7 @@ pub struct ModelAssociation<'id, R: ModelRole> {
 pub struct ModelKeys<'id, R>(PhantomData<fn(&'id ()) -> R>);
 
 impl<'id, R: ModelRole + 'id> KeyTypes<'id> for ModelKeys<'id, R> {
-    const PAIRWISE_SLOTS: usize = MODEL_KEY_SLOTS;
-    const GROUP_SLOTS: usize = MODEL_KEY_SLOTS;
+    type Pool = ModelAssociationPool<R>;
     type AssociationStart =
         AssociationStart<'id, R, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS, R::AssociationPath>;
     type Association = ModelAssociation<'id, R>;
@@ -1277,7 +1283,7 @@ pub struct ModelResources<'id> {
     pub access_point_group_permission:
         Slot<'id, ModelGroupPermission<AccessPoint>, oer_radio_port::Child<ModelPool<9>, 0>>,
     /// The receive Block Ack slots both roles share.
-    pub block_acks: [Slot<'id, ModelBlockAcks, ModelPool<7>>; MODEL_BLOCK_ACK_SLOTS],
+    pub block_acks: [ModelBlockAckSlot<'id>; MODEL_BLOCK_ACK_SLOTS],
     /// The sole authority to construct this installation's arbiter.
     pub arbiter_authority: oer_ieee80211_arbiter::ArbiterAuthority<'id, ModelPool<0>>,
     /// The open transmit gate.
@@ -2197,6 +2203,27 @@ impl<'id, X: ModelContext> ModelHeld<'id, X> {
         self.wake_body();
     }
 
+    /// Charge one received buffer to the bounded RX capacity, when a place
+    /// is left. The bound is checked before the count moves; a count that
+    /// could not move is a broken model invariant and poisons, as a return
+    /// with none charged does.
+    fn charge_rx(&self) -> bool {
+        let out = self.rx_out.get();
+        if out >= MODEL_RX_EVENTS {
+            return false;
+        }
+        match out.checked_add(1) {
+            Some(out) => {
+                self.rx_out.set(out);
+                true
+            }
+            None => {
+                self.poison();
+                false
+            }
+        }
+    }
+
     /// Return one received buffer's capacity. Each buffer is charged once
     /// when delivered, so a return with none charged is a broken model
     /// invariant: it poisons instead of hiding the count.
@@ -2283,9 +2310,9 @@ impl<C: Ieee80211Capabilities, X: ModelContext> PortBackend for ModelBackend<C, 
         oer_radio_port::Slots<ModelSmall, MODEL_SMALL_BUFFERS>,
         oer_radio_port::Slots<ModelLarge, MODEL_LARGE_BUFFERS>,
         oer_radio_port::Slots<ConnectionEpochKind, 1>,
-        AssociationPool<Station, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS>,
-        AssociationPool<AccessPoint, MODEL_KEY_SLOTS, MODEL_KEY_SLOTS>,
-        oer_radio_port::Slots<ModelBlockAcks, MODEL_BLOCK_ACK_SLOTS>,
+        ModelAssociationPool<Station>,
+        ModelAssociationPool<AccessPoint>,
+        ModelBlockAckPool,
         oer_radio_port::Slots<ModelGroupPermission<Station>, 1>,
         (
             oer_radio_port::Slots<ModelGroupPermission<AccessPoint>, 1>,
@@ -2990,8 +3017,7 @@ impl<'id, X: ModelContext> Driver<'id, X> {
     }
 
     fn deliver(&mut self, held: &ModelHeld<'id, X>, frame: Vec<u8>, meta: ModelRxMeta) {
-        if held.rx_out.get() < MODEL_RX_EVENTS {
-            held.rx_out.set(held.rx_out.get().saturating_add(1));
+        if held.charge_rx() {
             held.post(LowerMacEvent::Received {
                 frame: ModelRxBuffer {
                     bytes: frame,
@@ -3314,7 +3340,10 @@ fn publish_single<'id, X: ModelContext>(
             return None;
         }
     };
-    held.air.sent.borrow_mut().push(frame);
+    // A denied PPDU never reached the air the journal records.
+    if !matches!(answer, SingleAnswer::AirDenied) {
+        held.air.sent.borrow_mut().push(frame);
+    }
     Some(Publication {
         started: held.air.now_micros.get(),
         work: Published::Single { plan, answer },
@@ -3386,7 +3415,9 @@ fn publish_aggregate<'id, X: ModelContext>(
             bitmap |= subframe.acknowledgement_bit;
         }
     }
-    held.air.sent.borrow_mut().extend(frames);
+    if !matches!(answer, AggregateAnswer::AirDenied) {
+        held.air.sent.borrow_mut().extend(frames);
+    }
     // NonEmptyAggregate carries the first sequence into PreparedAggregate below.
     let report = BlockAckReport {
         start_sequence: aggregate.start_sequence,
@@ -3471,9 +3502,8 @@ impl<'id, C, X: ModelContext> PortPhase for ModelPhase<'_, 'id, C, X> {
                 return Poll::Pending;
             }
             if let Some((bytes, meta)) = held.air.rx_stream.borrow().as_ref()
-                && held.rx_out.get() < MODEL_RX_EVENTS
+                && held.charge_rx()
             {
-                held.rx_out.set(held.rx_out.get().saturating_add(1));
                 return Poll::Ready(Ok(Ok(LowerMacEvent::Received {
                     frame: ModelRxBuffer {
                         bytes: bytes.clone(),
@@ -3579,7 +3609,7 @@ pub struct ModelGroupKey<'id, R: ModelRole> {
 
 /// A receive Block Ack agreement the model keeps.
 pub struct ModelBlockAck<'id> {
-    slot: Slot<'id, ModelBlockAcks, ModelPool<7>>,
+    slot: ModelBlockAckSlot<'id>,
 }
 
 /// A retry plan's stages, as the model's hardware takes them.
@@ -3932,7 +3962,7 @@ where
 
     fn add_block_ack(
         &mut self,
-        slot: Slot<'id, ModelBlockAcks, ModelPool<7>>,
+        slot: ModelBlockAckSlot<'id>,
         agreement: SupportedBlockAck<K>,
     ) -> ModelBlockAck<'id> {
         self.held.settings.borrow_mut().block_acks.insert(
@@ -3956,10 +3986,7 @@ where
         running
     }
 
-    fn remove_block_ack(
-        &mut self,
-        agreement: ModelBlockAck<'id>,
-    ) -> Slot<'id, ModelBlockAcks, ModelPool<7>> {
+    fn remove_block_ack(&mut self, agreement: ModelBlockAck<'id>) -> ModelBlockAckSlot<'id> {
         self.held
             .settings
             .borrow_mut()

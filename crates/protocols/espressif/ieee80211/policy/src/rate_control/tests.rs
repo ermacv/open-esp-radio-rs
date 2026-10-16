@@ -535,7 +535,22 @@ fn non_data_frames_use_the_association_control_schedule() {
 }
 
 mod seam {
-    use oer_ieee80211_lower_mac::{LinkMetric, SnrSample};
+    use oer_ieee80211_lower_mac::{BlockAckSnr, LinkMetric, SnrSample};
+
+    /// BlockAck evidence named by its hardware condition, as the S31's is.
+    enum Evidence {
+        Measured(i8),
+        StatusWithoutSample,
+    }
+
+    impl BlockAckSnr for Evidence {
+        fn snr_sample(&self) -> SnrSample {
+            match *self {
+                Self::Measured(snr) => SnrSample::Measured(snr),
+                Self::StatusWithoutSample => SnrSample::Unmeasured,
+            }
+        }
+    }
     use oer_ieee80211_mac::{
         ht::ht_peer_capabilities,
         phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
@@ -635,7 +650,7 @@ mod seam {
             control.observe_ampdu(
                 oer_time::Instant::from_micros(1_000),
                 tally(4, 4),
-                SnrSample::Measured(30)
+                &Evidence::Measured(30)
             ),
             Ok(())
         );
@@ -647,20 +662,20 @@ mod seam {
         let mut control = EspressifRateControl::for_peer((), &ht20_peer(true), metric(60));
         let now = oer_time::Instant::from_micros(1_000);
         assert_eq!(
-            control.observe_ampdu(now, tally(4, 4), SnrSample::Measured(30)),
+            control.observe_ampdu(now, tally(4, 4), &Evidence::Measured(30)),
             Ok(())
         );
         let filtered = control.association().filtered_ack_snr();
         let latest = control.association().latest_ack_snr();
         assert_eq!(
-            control.observe_ampdu(now, tally(4, 1), SnrSample::Unmeasured),
+            control.observe_ampdu(now, tally(4, 1), &Evidence::StatusWithoutSample),
             Ok(())
         );
         assert_eq!(control.association().filtered_ack_snr(), filtered);
         assert_eq!(control.association().latest_ack_snr(), latest);
         // A measured BlockAck moves the filter again.
         assert_eq!(
-            control.observe_ampdu(now, tally(4, 4), SnrSample::Measured(10)),
+            control.observe_ampdu(now, tally(4, 4), &Evidence::Measured(10)),
             Ok(())
         );
         assert_ne!(control.association().filtered_ack_snr(), filtered);
@@ -686,7 +701,7 @@ mod seam {
             control.observe_ampdu(
                 oer_time::Instant::from_micros(1_000),
                 tally(4, 4),
-                SnrSample::Measured(30)
+                &Evidence::Measured(30)
             ),
             Err(AmpduUnavailable)
         );

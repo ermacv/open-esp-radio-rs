@@ -14,7 +14,7 @@
 use core::num::{NonZeroU16, NonZeroU32};
 
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
-use oer_ieee80211_lower_mac::{LinkMetric, SnrSample};
+use oer_ieee80211_lower_mac::{BlockAckSnr, LinkMetric, SnrSample};
 use oer_ieee80211_mac::{
     channel::WifiChannelWidth,
     he::{He20Capabilities, He20PeerState, HeDcmConstellation, HeMcsNssSupport},
@@ -831,12 +831,12 @@ impl StaRateControlAssociation {
         &mut self,
         now_us: u32,
         tally: BlockAckTally,
-        ack_snr: SnrSample,
+        ack: &impl BlockAckSnr,
     ) -> Result<AmpduRateDecision, AmpduUnavailable> {
         let Some(runtime) = &mut self.ampdu_runtime else {
             return Err(AmpduUnavailable);
         };
-        match ack_snr {
+        match ack.snr_sample() {
             SnrSample::Measured(sample) => self.ack_snr.update(sample),
             SnrSample::Unmeasured => {}
         }
@@ -1403,16 +1403,23 @@ impl RateControl for EspressifRateControl {
         self.association.update_tx_per(u32::from(retries));
     }
 
-    fn observe_ampdu(
+    fn observe_ampdu<B: BlockAckSnr>(
         &mut self,
         now: Instant,
         tally: BlockAckTally,
-        ack_snr: SnrSample,
+        ack: &B,
     ) -> Result<(), AmpduUnavailable> {
         self.association
-            .observe_ampdu_block_ack(now.as_micros() as u32, tally, ack_snr)
+            .observe_ampdu_block_ack(vendor_micros(now), tally, ack)
             .map(|_| ())
     }
+}
+
+/// `now` in the vendor's wrapping 32-bit microsecond domain: its low 32
+/// bits, which the A-MPDU window state compares by wrapping difference.
+fn vendor_micros(now: Instant) -> u32 {
+    let [b0, b1, b2, b3, ..] = now.as_micros().to_le_bytes();
+    u32::from_le_bytes([b0, b1, b2, b3])
 }
 
 impl EspressifRateControl {

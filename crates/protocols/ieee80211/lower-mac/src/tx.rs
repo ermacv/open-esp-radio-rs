@@ -207,8 +207,9 @@ pub enum SingleResponse<A> {
 /// The known end of a single MPDU's plan, with the backend's response
 /// evidence `A` and lost-air evidence `D`.
 ///
-/// A delivery without a transmission, or one that solicited a response but
-/// reports none, is not representable:
+/// A delivery without a transmission is not representable. The response
+/// variant is the one the backend observed; which response the frame
+/// solicited is the frame's kind, which this outcome does not carry.
 ///
 /// ```compile_fail,E0063
 /// use oer_ieee80211_lower_mac::{SingleEnd, SingleResponse};
@@ -237,7 +238,7 @@ pub enum SingleEnd<A, D> {
     /// The plan exhausted its ACK/BlockAck response budget.
     AckTimeout(Air),
     /// The plan exhausted its protection response budget; `None` when no
-    /// MPDU went out after the protection failed.
+    /// MPDU of the attempt reached air.
     CtsTimeout(Option<Air>),
     /// Internal contention exhausted the backend's budget. No rate sample.
     ContentionLimit(Option<Air>),
@@ -267,7 +268,8 @@ pub enum AggregateEnd<B, D> {
     },
     /// The plan exhausted its BlockAck response budget.
     AckTimeout(Air),
-    /// The plan exhausted its protection response budget.
+    /// The plan exhausted its protection response budget; `None` when no
+    /// MPDU of the attempt reached air.
     CtsTimeout(Option<Air>),
     /// Internal contention exhausted the backend's budget. No rate sample.
     ContentionLimit(Option<Air>),
@@ -283,14 +285,15 @@ pub enum AggregateEnd<B, D> {
 /// One rate observation of an ended single MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RateSample<'a, A> {
-    /// The frame was delivered; `ack` is the evidence of its solicited
-    /// response, `None` when it solicited none.
-    Delivered {
+    /// An ACK or a BlockAck answered the frame.
+    Acked {
         /// The transmissions it took.
         air: Air,
-        /// The response's evidence.
-        ack: Option<&'a A>,
+        /// The backend's evidence of the response.
+        ack: &'a A,
     },
+    /// The frame solicited no response and went out.
+    Unsolicited(Air),
     /// The plan ended without its response.
     Unanswered(Air),
 }
@@ -300,13 +303,14 @@ impl<A, D> SingleEnd<A, D> {
     /// lost air or a protection failure before any MPDU went out.
     pub const fn rate_sample(&self) -> Option<RateSample<'_, A>> {
         match self {
-            Self::Delivered { air, response } => Some(RateSample::Delivered {
-                air: *air,
-                ack: match response {
-                    SingleResponse::Unsolicited => None,
-                    SingleResponse::Ack(ack) | SingleResponse::BlockAck { ack, .. } => Some(ack),
-                },
-            }),
+            Self::Delivered {
+                air,
+                response: SingleResponse::Unsolicited,
+            } => Some(RateSample::Unsolicited(*air)),
+            Self::Delivered {
+                air,
+                response: SingleResponse::Ack(ack) | SingleResponse::BlockAck { ack, .. },
+            } => Some(RateSample::Acked { air: *air, ack }),
             Self::AckTimeout(air) | Self::CtsTimeout(Some(air)) => {
                 Some(RateSample::Unanswered(*air))
             }

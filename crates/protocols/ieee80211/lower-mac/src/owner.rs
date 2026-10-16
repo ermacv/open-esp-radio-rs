@@ -87,7 +87,6 @@
 //! #         individual_no_ack: PhyFormatSet::NON_HT,
 //! #         station_receive_filters: ReceiveFilter::BSS_MEMBER,
 //! #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-//! #        
 //! #         rx_block_ack_max_tid: 7,
 //! #         rx_block_ack_max_window: 64,
 //! #         edca_max_aifsn: 15,
@@ -135,7 +134,6 @@
 //! #         individual_no_ack: PhyFormatSet::NON_HT,
 //! #         station_receive_filters: ReceiveFilter::BSS_MEMBER,
 //! #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
-//! #        
 //! #         rx_block_ack_max_tid: 7,
 //! #         rx_block_ack_max_window: 64,
 //! #         edca_max_aifsn: 15,

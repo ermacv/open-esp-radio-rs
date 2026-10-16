@@ -31,7 +31,8 @@ fn ap_filter() -> SupportedFilter<Caps, AccessPoint> {
 
 #[test]
 fn full_fifo_retains_whole_in_flight_context_and_multiple_bodies_until_terminal() {
-    use oer_ieee80211_lower_mac::{TxOutcome, WithdrawCause};
+    use core::convert::Infallible;
+    use oer_ieee80211_lower_mac::{SingleOutcome, WithdrawCause};
     let contexts = [
         std::string::String::from("first"),
         std::string::String::from("second"),
@@ -99,9 +100,12 @@ fn full_fifo_retains_whole_in_flight_context_and_multiple_bodies_until_terminal(
                     );
                     assert_eq!(view.sn, 10 + frames as u16);
                     assert_eq!(view.pn, 500 + frames as u64);
-                    let terminal = submission
-                        .operation
-                        .complete(TxOutcome::Withdrawn(WithdrawCause::GateClosed));
+                    let terminal =
+                        submission
+                            .operation
+                            .complete(SingleOutcome::<(), Infallible>::Withdrawn(
+                                WithdrawCause::GateClosed,
+                            ));
                     let original = terminal.into_parts(&mut terminals);
                     assert_eq!(original.context.as_ptr(), contexts[frames].as_ptr());
                     assert_eq!(

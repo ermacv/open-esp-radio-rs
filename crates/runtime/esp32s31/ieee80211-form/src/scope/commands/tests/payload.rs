@@ -72,6 +72,9 @@ impl<'id> PhaseTypes<'id> for Types {
         'id: 'k;
     type TxBody = Infallible;
     type TicketKind = TicketKind;
+    type AckEvidence = ();
+    type BlockAckEvidence = ();
+    type AirDenied = Infallible;
     type AnyTxBuffer = Mpdu;
     type TxMpdu = Mpdu;
     type TxAggregate = NoAggregate<NonEmptyAggregate>;
@@ -80,12 +83,12 @@ impl<'id> PhaseTypes<'id> for Types {
     type StationKeys = NoKeys;
     type AccessPointKeys = NoKeys;
     type BlockAckKind = Infallible;
+    type BlockAckPool = association::BlockAckSlots<Infallible, 0>;
     type BlockAck = Infallible;
 }
 pub(super) struct NoKeys;
 impl<'id> KeyTypes<'id> for NoKeys {
-    const PAIRWISE_SLOTS: usize = 0;
-    const GROUP_SLOTS: usize = 0;
+    type Pool = association::AssociationPool<oer_ieee80211_lower_mac::Station, 0, 0>;
     type AssociationStart = Infallible;
     type Association = Infallible;
     type VacantKeyBank = Infallible;
@@ -94,8 +97,8 @@ impl<'id> KeyTypes<'id> for NoKeys {
         match start {}
     }
     fn collect_key_bank<const N: usize>(
-        parts: association::KeyBankParts<Infallible, Infallible, N>,
-    ) -> Result<Infallible, association::KeyBankParts<Infallible, Infallible, N>> {
+        parts: association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>,
+    ) -> Result<Infallible, association::KeyBankParts<Self::PairwiseSlot, Self::GroupSlot, N>> {
         Err(parts)
     }
     fn end_association(association: Infallible, _: Infallible) -> Infallible {
@@ -103,12 +106,12 @@ impl<'id> KeyTypes<'id> for NoKeys {
     }
     fn split_vacant<const N: usize>(
         vacant: Infallible,
-    ) -> association::DistributedKeyBank<Infallible, Infallible, Infallible, N> {
+    ) -> association::DistributedKeyBank<Infallible, Self::PairwiseSlot, Self::GroupSlot, N> {
         match vacant {}
     }
 
-    type PairwiseSlot = Infallible;
-    type GroupSlot = Infallible;
+    type PairwiseSlot = association::PairwiseKeySlot<'id, oer_ieee80211_lower_mac::Station, 0, 0>;
+    type GroupSlot = association::GroupKeySlot<'id, oer_ieee80211_lower_mac::Station, 0, 0>;
     type PairwiseKey = Infallible;
     type GroupKey = Infallible;
     type GroupPermission = Infallible;
@@ -123,9 +126,7 @@ impl<'id> KeyTypes<'id> for NoKeys {
     fn group_slot_identity(key: &Infallible) {
         match *key {}
     }
-    fn vacant_group_slot_identity(slot: &Infallible) {
-        match *slot {}
-    }
+    fn vacant_group_slot_identity(_: &Self::GroupSlot) {}
 }
 pub(super) struct NoRx(Infallible);
 impl RxBuffer for NoRx {

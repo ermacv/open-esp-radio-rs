@@ -348,11 +348,16 @@ impl<K: Ieee80211Capabilities, M: SignalMetadata, A: AckSnr> RateSelection<M, A>
             return;
         }
         let (transmissions, outcome, ack_snr_db) = match completion.rate_sample() {
-            Some(RateSample::Delivered { air, ack }) => (
+            Some(RateSample::Acked { air, ack }) => (
                 air.transmissions,
                 MpduOutcome::Acknowledged,
-                ack.map(AckSnr::snr_db),
+                Some(ack.snr_db()),
             ),
+            // A frame that solicited no response went out, which is all it
+            // asked for; it carries no ACK SNR.
+            Some(RateSample::Unsolicited(air)) => {
+                (air.transmissions, MpduOutcome::Acknowledged, None)
+            }
             Some(RateSample::Unanswered(air)) => {
                 (air.transmissions, MpduOutcome::Unacknowledged, None)
             }

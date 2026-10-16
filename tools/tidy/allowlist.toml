@@ -29,6 +29,30 @@ path = "crates/memory/tests/ui/pinned_tx_handle_once.rs"
 reason = "cargo xtask check ui verifies the TX claim handle is affine, with a compiling twin on host and RV32"
 
 [[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/block_ack_pool_fake.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/block_ack_pool_size.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/key_slot_fake.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/key_pool_size.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/espressif/ieee80211/policy/tests/ui/block_ack_snr_required.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
+path = "crates/protocols/ieee80211/lower-mac/tests/ui/single_aggregate_outcome.rs"
+reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
+
+[[uncompiled]]
 path = "crates/protocols/espressif/ieee80211/policy/tests/ui/ack_snr_required.rs"
 reason = "cargo xtask check ui checks the contract diagnostic and its compiling twin on host and RV32"
 

@@ -1,7 +1,6 @@
 //! The stand profile: spans measured on the stand, from which the
 //! infrastructure waits (boot to Hello, flash, a fixture's readiness) and
-//! the plan's image costs derive, and the bounds images of each recipe
-//! reported.
+//! the plan's image costs derive.
 
 use core::fmt;
 use std::collections::BTreeMap;
@@ -9,8 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::{
-    Bounds, BoundsSource, Factor, Provisional, ReportedBounds, Resolved, Sha256, SpanName,
-    WaitError,
+    Factor, Provisional, Resolved, Sha256, SpanName, WaitError,
     repetitions::{self, Confidence, Probability},
 };
 
@@ -97,18 +95,11 @@ pub struct MeasuredSpan {
     pub evidence: Vec<RunRef>,
 }
 
-/// The bounds an image of one recipe reported, and the run that recorded
-/// them.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct RecordedBounds {
-    pub bounds: ReportedBounds,
-    pub evidence: RunRef,
-}
-
 /// A profile entry that breaks the rules.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProfileError {
+    /// No sample, or a maximum of zero: nothing was measured.
+    Empty(SpanName),
     NoMarginReason(SpanName),
     NoEvidence(SpanName),
     NoProvisionalReason(SpanName),
@@ -123,6 +114,7 @@ pub enum ProfileError {
 impl fmt::Display for ProfileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Empty(span) => write!(f, "span `{span}` has no sample or a zero maximum"),
             Self::NoMarginReason(span) => {
                 write!(f, "span `{span}` does not say why its margin was chosen")
             }
@@ -167,24 +159,20 @@ impl std::error::Error for ProfileErrors {}
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RawStandProfile {
     pub spans: BTreeMap<SpanName, MeasuredSpan>,
-    /// By image recipe digest.
-    pub bounds: BTreeMap<Sha256, RecordedBounds>,
 }
 
-/// The measured spans of one stand and the bounds its images reported. It
-/// exists only after its rules hold ([`TryFrom<RawStandProfile>`]).
+/// The measured spans of one stand. It exists only after its rules hold
+/// ([`TryFrom<RawStandProfile>`]).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(try_from = "RawStandProfile", into = "RawStandProfile")]
 pub struct StandProfile {
     spans: BTreeMap<SpanName, MeasuredSpan>,
-    bounds: BTreeMap<Sha256, RecordedBounds>,
 }
 
 impl From<StandProfile> for RawStandProfile {
     fn from(profile: StandProfile) -> Self {
         Self {
             spans: profile.spans,
-            bounds: profile.bounds,
         }
     }
 }
@@ -196,6 +184,9 @@ impl TryFrom<RawStandProfile> for StandProfile {
         let required = repetitions::quantile_samples(QUANTILE, CONFIDENCE);
         let mut errors = Vec::new();
         for (name, span) in &raw.spans {
+            if span.samples == 0 || span.maximum_micros == 0 {
+                errors.push(ProfileError::Empty(name.clone()));
+            }
             if span.margin_reason.trim().is_empty() {
                 errors.push(ProfileError::NoMarginReason(name.clone()));
             }
@@ -208,7 +199,7 @@ impl TryFrom<RawStandProfile> for StandProfile {
                         span: name.clone(),
                         samples: span.samples,
                         required,
-                    })
+                    });
                 }
                 Support::Provisional { reason } if reason.trim().is_empty() => {
                     errors.push(ProfileError::NoProvisionalReason(name.clone()));
@@ -217,10 +208,7 @@ impl TryFrom<RawStandProfile> for StandProfile {
             }
         }
         if errors.is_empty() {
-            Ok(Self {
-                spans: raw.spans,
-                bounds: raw.bounds,
-            })
+            Ok(Self { spans: raw.spans })
         } else {
             Err(ProfileErrors(errors))
         }
@@ -229,10 +217,10 @@ impl TryFrom<RawStandProfile> for StandProfile {
 
 impl StandProfile {
     /// A stand nothing has been measured on.
-    pub fn empty() -> Self {
+    #[cfg(test)]
+    pub(crate) fn empty() -> Self {
         Self {
             spans: BTreeMap::new(),
-            bounds: BTreeMap::new(),
         }
     }
 
@@ -245,7 +233,7 @@ impl StandProfile {
             .ok_or_else(|| WaitError::NoSpan(name.clone()))?;
         let provisional = match &span.support {
             Support::Measured => None,
-            Support::Provisional { reason } => Some(Provisional::Span {
+            Support::Provisional { reason } => Some(Provisional {
                 span: name.clone(),
                 reason: reason.clone(),
             }),
@@ -254,27 +242,6 @@ impl StandProfile {
             micros: span.margin.apply(span.maximum_micros)?,
             provisional,
         })
-    }
-
-    /// The bounds for an image of `recipe`: those its recorded run
-    /// reported, or else the contract's declared constants, which make
-    /// every wait on them provisional.
-    pub fn bounds_for(
-        &self,
-        recipe: &Sha256,
-        contract: &'static str,
-        declared: ReportedBounds,
-    ) -> Bounds {
-        match self.bounds.get(recipe) {
-            Some(recorded) => Bounds {
-                values: recorded.bounds.clone(),
-                source: BoundsSource::Recorded(recorded.evidence.clone()),
-            },
-            None => Bounds {
-                values: declared,
-                source: BoundsSource::Declared { contract },
-            },
-        }
     }
 }
 
@@ -306,7 +273,6 @@ pub(crate) mod tests {
     fn profile(spans: Vec<(SpanName, MeasuredSpan)>) -> Result<StandProfile, ProfileErrors> {
         StandProfile::try_from(RawStandProfile {
             spans: spans.into_iter().collect(),
-            bounds: BTreeMap::new(),
         })
     }
 
@@ -327,10 +293,13 @@ pub(crate) mod tests {
         let profile = profile(vec![(flash.clone(), span(25_000_000, provisional))]).unwrap();
         let resolved = profile.budget(&flash).unwrap();
         assert_eq!(resolved.micros, 30_000_000);
-        assert!(matches!(
+        assert_eq!(
             resolved.provisional,
-            Some(Provisional::Span { .. })
-        ));
+            Some(Provisional {
+                span: flash,
+                reason: "first stand measurement".into()
+            })
+        );
     }
 
     #[test]
@@ -350,9 +319,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_span_without_samples_or_maximum_is_refused() {
+        let boot = name!(SpanName, "boot-to-hello");
+        let reason = || Support::Provisional {
+            reason: "first".into(),
+        };
+        let mut none = span(900_000, reason());
+        none.samples = 0;
+        assert_eq!(
+            profile(vec![(boot.clone(), none)]),
+            Err(ProfileErrors(vec![ProfileError::Empty(boot.clone())]))
+        );
+        assert_eq!(
+            profile(vec![(boot.clone(), span(0, reason()))]),
+            Err(ProfileErrors(vec![ProfileError::Empty(boot)]))
+        );
+    }
+
+    #[test]
     fn a_profile_is_read_only_through_its_rules() {
         let text = r#"{"spans":{"boot-to-hello":{"maximum-micros":1,"samples":1,"margin":[1,1],
-            "margin-reason":"r","support":{"support":"measured"},"evidence":[]}},"bounds":{}}"#;
+            "margin-reason":"r","support":{"support":"measured"},"evidence":[]}}}"#;
         assert!(serde_json::from_str::<StandProfile>(text).is_err());
     }
 
@@ -370,32 +357,5 @@ pub(crate) mod tests {
         ] {
             assert!(RunId::parse(text).is_none(), "{text:?}");
         }
-    }
-
-    #[test]
-    fn a_new_recipe_uses_the_declared_bounds() {
-        let drain = name!(BoundName, "lower-mac.drain");
-        let recipe = Sha256([7; 32]);
-        let mut raw = RawStandProfile::default();
-        raw.bounds.insert(
-            recipe,
-            RecordedBounds {
-                bounds: ReportedBounds::default().with(drain.clone(), 3_000),
-                evidence: run_ref(),
-            },
-        );
-        let profile = StandProfile::try_from(raw).unwrap();
-        let declared = ReportedBounds::default().with(drain.clone(), 5_000);
-        let known = profile.bounds_for(&recipe, "toy::Port", declared.clone());
-        assert_eq!(known.values.get(&drain), Some(3_000));
-        assert!(matches!(known.source, BoundsSource::Recorded(_)));
-        let new = profile.bounds_for(&Sha256([8; 32]), "toy::Port", declared);
-        assert_eq!(new.values.get(&drain), Some(5_000));
-        assert_eq!(
-            new.source,
-            BoundsSource::Declared {
-                contract: "toy::Port"
-            }
-        );
     }
 }

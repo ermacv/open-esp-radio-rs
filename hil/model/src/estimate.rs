@@ -1,19 +1,17 @@
 //! How long one scenario instance takes.
 
-use crate::{Bounds, Overflow, Provisional, StandProfile, Wait, WaitError, arithmetic};
+use crate::{Overflow, Provisional, ReportedBounds, StandProfile, Wait, WaitError, arithmetic};
 
-/// The derived time of one instance on the stand, before image costs.
-/// Its setup includes the instance's boot to Hello, which nothing else
-/// counts.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// The derived time of one instance's own work on the stand. The plan adds
+/// what every instance costs beyond it (its boot to Hello) from the stand
+/// profile, so no scenario can leave it out. [`Estimate::from_waits`] is
+/// its only constructor.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Estimate {
-    /// Once per instance: boot to Hello, fixture preparation.
-    pub setup_micros: u64,
-    /// Each repetition, from the waits it may spend in full.
-    pub repetition_micros: u64,
-    pub repetitions: u64,
-    /// The provisional values the waits used.
-    pub provisional: Vec<Provisional>,
+    setup_micros: u64,
+    repetition_micros: u64,
+    repetitions: u64,
+    provisional: Vec<Provisional>,
 }
 
 impl Estimate {
@@ -22,14 +20,14 @@ impl Estimate {
         setup: &[Wait],
         repetition: &[Wait],
         repetitions: u64,
-        bounds: &Bounds,
+        ceilings: &ReportedBounds,
         profile: &StandProfile,
     ) -> Result<Self, WaitError> {
         let mut provisional = Vec::new();
         let mut sum = |waits: &[Wait]| -> Result<u64, WaitError> {
             let mut total = 0_u64;
             for wait in waits {
-                let resolved = wait.micros(bounds, profile)?;
+                let resolved = wait.micros(ceilings, profile)?;
                 total = arithmetic::add(total, resolved.micros)?;
                 provisional.extend(resolved.provisional);
             }
@@ -53,6 +51,11 @@ impl Estimate {
             arithmetic::mul(self.repetition_micros, self.repetitions)?,
         )
     }
+
+    /// The provisional stand spans the waits used.
+    pub fn provisional(&self) -> &[Provisional] {
+        &self.provisional
+    }
 }
 
 #[cfg(test)]
@@ -60,53 +63,45 @@ mod tests {
     use core::num::NonZeroU32;
 
     use super::*;
-    use crate::{
-        BoundsSource, Factor, MeasuredSpan, RawStandProfile, ReportedBounds, Support, name,
-        profile::tests::span,
-    };
+    use crate::{RawStandProfile, Support, name, profile::tests::span};
 
     #[test]
     fn an_estimate_sums_its_waits_and_collects_provisional_labels() {
         let terminal = name!(BoundName, "lower-mac.terminal");
-        let boot = name!(SpanName, "boot-to-hello");
-        let bounds = Bounds {
-            values: ReportedBounds::default().with(terminal.clone(), 2_000),
-            source: BoundsSource::Declared {
-                contract: "toy::Port",
-            },
-        };
+        let fixture = name!(SpanName, "fixture.hostapd");
+        let ceilings = ReportedBounds::default().with(terminal.clone(), 2_000);
         let mut raw = RawStandProfile::default();
-        let entry: MeasuredSpan = span(
-            1_000_000,
-            Support::Provisional {
-                reason: "first runs".into(),
-            },
+        raw.spans.insert(
+            fixture.clone(),
+            span(
+                1_000_000,
+                Support::Provisional {
+                    reason: "first runs".into(),
+                },
+            ),
         );
-        raw.spans.insert(boot.clone(), entry);
         let profile = StandProfile::try_from(raw).unwrap();
         let estimate = Estimate::from_waits(
-            &[Wait::measured(boot)],
+            &[Wait::measured(fixture)],
             &[Wait::contract(
                 terminal,
-                Factor::new(2, NonZeroU32::MIN).unwrap(),
+                crate::Factor::times(NonZeroU32::new(2).unwrap()),
             )],
             5,
-            &bounds,
+            &ceilings,
             &profile,
         )
         .unwrap();
         assert_eq!(estimate.total_micros(), Ok(1_200_000 + 5 * 4_000));
-        assert_eq!(estimate.provisional.len(), 2);
+        assert_eq!(estimate.provisional().len(), 1);
     }
 
     #[test]
     fn an_overflowing_total_is_an_error() {
-        let estimate = Estimate {
-            setup_micros: 1,
-            repetition_micros: u64::MAX,
-            repetitions: 2,
-            provisional: Vec::new(),
-        };
+        let ceilings = ReportedBounds::default().with(name!(BoundName, "huge"), u64::MAX);
+        let wait = Wait::contract(name!(BoundName, "huge"), crate::Factor::ONE);
+        let estimate =
+            Estimate::from_waits(&[], &[wait], 2, &ceilings, &StandProfile::empty()).unwrap();
         assert_eq!(estimate.total_micros(), Err(Overflow));
     }
 }

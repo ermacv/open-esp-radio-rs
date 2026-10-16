@@ -9,26 +9,12 @@
 
 use core::{marker::PhantomData, num::NonZeroU32};
 
-use serde::{Deserialize, Serialize};
-
-/// The purpose as a value, for records.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "purpose")]
-pub enum Purpose {
-    Conformance,
-    Interop,
-    Measurement,
-    Investigation { issue: NonZeroU32 },
-}
-
 mod sealed {
     pub trait Sealed {}
 }
 
 /// One of the purpose markers.
-pub trait PurposeKind: sealed::Sealed {
-    const VALUE: Purpose;
-}
+pub trait PurposeKind: sealed::Sealed {}
 
 /// The backend keeps its port contract: the port's conformance suite, the
 /// same one the host model passes.
@@ -55,18 +41,7 @@ impl sealed::Sealed for Interop {}
 impl sealed::Sealed for Measurement {}
 impl<Q: OpenQuestion> sealed::Sealed for Investigation<Q> {}
 
-impl PurposeKind for Conformance {
-    const VALUE: Purpose = Purpose::Conformance;
-}
-
-impl PurposeKind for Interop {
-    const VALUE: Purpose = Purpose::Interop;
-}
-
-impl PurposeKind for Measurement {
-    const VALUE: Purpose = Purpose::Measurement;
-}
-
-impl<Q: OpenQuestion> PurposeKind for Investigation<Q> {
-    const VALUE: Purpose = Purpose::Investigation { issue: Q::ISSUE };
-}
+impl PurposeKind for Conformance {}
+impl PurposeKind for Interop {}
+impl PurposeKind for Measurement {}
+impl<Q: OpenQuestion> PurposeKind for Investigation<Q> {}

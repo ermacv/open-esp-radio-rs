@@ -5,7 +5,7 @@ use core::fmt::{self, Debug};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    Bounds, Estimate, InstanceName, PurposeKind, ReportedBounds, Resources, ScenarioId,
+    ContractName, Estimate, InstanceName, PurposeKind, ReportedBounds, Resources, ScenarioId,
     ScenarioInstance, Sha256, StandProfile, TargetCapabilities, Verdict, WaitError,
     digest::canonical_json,
     finite::{self, NonFinite},
@@ -15,20 +15,20 @@ use crate::{
 /// only when its scenario's subject is the capability's contract, so an
 /// incidental scenario cannot stand in for the minimal one.
 pub trait Subject {
-    /// The contract's path, `crate::Trait`.
-    const CONTRACT: &'static str;
+    const CONTRACT: ContractName;
 
-    /// The contract's declared bounds, used while no run of an image's
-    /// recipe has reported its actual ones; every wait on them is then
-    /// provisional.
-    fn declared_bounds() -> ReportedBounds;
+    /// The contract's bound ceilings: no backend may report a bound above
+    /// its ceiling (a backend checks it at compile time against its own
+    /// constant), the plan sizes waits by them, and a trace whose header
+    /// reports more is a finding (#761, owner decision 6221891573).
+    fn ceilings() -> ReportedBounds;
 }
 
 /// Everything about a scenario but its execution: identity, purpose,
-/// typed parameters, criteria and trace, what it needs and how long it
-/// takes, and its verdict. Execution is a separate trait in the executor,
-/// so this one stays a format the qualification evaluator links to
-/// recompute verdicts.
+/// typed parameters, criteria, trace and findings, what it needs and how
+/// long it takes, and its verdict. Execution is a separate trait in the
+/// executor, so this one stays a format the qualification evaluator links
+/// to recompute verdicts.
 pub trait Spec {
     const ID: ScenarioId;
     /// [`Conformance`](crate::Conformance), [`Interop`](crate::Interop),
@@ -44,23 +44,25 @@ pub trait Spec {
     type Criteria: Clone + Debug + Serialize + DeserializeOwned;
     /// What a run records; the verdict's only input besides the criteria.
     type Trace: Debug + Serialize + DeserializeOwned;
+    /// What a failed verdict names.
+    type Finding: Clone + Debug + Eq + Serialize + DeserializeOwned;
 
     /// Boards by role, fixtures and board capabilities.
     fn resources(params: &Self::Params) -> Resources;
 
-    /// The composition and agent capabilities the image must serve.
+    /// The chip, composition and agent capabilities the image must serve.
     fn target(params: &Self::Params) -> TargetCapabilities;
 
-    /// One instance's time, from its waits (its boot to Hello included)
-    /// and its repetitions.
+    /// One instance's own work: its waits, sized by the contract's ceilings
+    /// and the stand profile, and its repetitions.
     fn estimate(
         params: &Self::Params,
-        bounds: &Bounds,
+        ceilings: &ReportedBounds,
         profile: &StandProfile,
     ) -> Result<Estimate, WaitError>;
 
     /// The verdict: a pure function of the recorded trace and the criteria.
-    fn verdict(trace: &Self::Trace, criteria: &Self::Criteria) -> Verdict;
+    fn verdict(trace: &Self::Trace, criteria: &Self::Criteria) -> Verdict<Self::Finding>;
 }
 
 /// One named, parameterised instance of a scenario.
@@ -102,11 +104,11 @@ impl<S: Spec> Instance<S> {
     }
 
     /// SHA-256 over the canonical JSON ([`canonical_json`], keys sorted
-    /// at every level) of the scenario, the instance, its parameters and
-    /// the criteria, so reordering a struct's fields keeps the identity.
-    /// The verdict code's identity is the source closure the run's source
-    /// snapshot records; together they pin what a recorded verdict was
-    /// computed by.
+    /// at every level, negative zero written as zero) of the scenario, the
+    /// instance, its parameters and the criteria, so reordering a struct's
+    /// fields keeps the identity. The verdict code's identity is the source
+    /// closure the run's source snapshot records; together they pin what a
+    /// recorded verdict was computed by.
     pub fn identity(&self, criteria: &S::Criteria) -> Result<Sha256, IdentityError> {
         // JSON writes NaN and infinities as `null`, which would give
         // different thresholds one identity.
@@ -147,14 +149,14 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::*;
-    use crate::{Composition, Conformance, Estimate, name};
+    use crate::{Composition, Conformance, name};
 
     struct Port;
 
     impl Subject for Port {
-        const CONTRACT: &'static str = "toy::Port";
+        const CONTRACT: ContractName = name!(ContractName, "toy::Port");
 
-        fn declared_bounds() -> ReportedBounds {
+        fn ceilings() -> ReportedBounds {
             ReportedBounds::default()
         }
     }
@@ -188,6 +190,7 @@ mod tests {
                 type Params = $params;
                 type Criteria = Criteria;
                 type Trace = ();
+                type Finding = ();
 
                 fn resources(_: &$params) -> Resources {
                     Resources::default()
@@ -195,6 +198,7 @@ mod tests {
 
                 fn target(_: &$params) -> TargetCapabilities {
                     TargetCapabilities {
+                        chip: name!(ChipId, "esp32s31"),
                         composition: Composition::Any,
                         capabilities: Default::default(),
                     }
@@ -202,13 +206,13 @@ mod tests {
 
                 fn estimate(
                     _: &$params,
-                    _: &Bounds,
-                    _: &StandProfile,
+                    ceilings: &ReportedBounds,
+                    profile: &StandProfile,
                 ) -> Result<Estimate, WaitError> {
-                    Ok(Estimate::default())
+                    Estimate::from_waits(&[], &[], 0, ceilings, profile)
                 }
 
-                fn verdict((): &(), _: &Criteria) -> Verdict {
+                fn verdict((): &(), _: &Criteria) -> Verdict<()> {
                     Verdict::Pass
                 }
             }
@@ -233,6 +237,21 @@ mod tests {
         assert_ne!(
             a.identity(&criteria).unwrap(),
             other.identity(&criteria).unwrap()
+        );
+    }
+
+    #[test]
+    fn negative_zero_criteria_share_zero_s_identity() {
+        let instance = Instance::<Toy>::new(
+            name!(InstanceName, "x"),
+            Params {
+                b: 2,
+                a: Vec::new(),
+            },
+        );
+        assert_eq!(
+            instance.identity(&Criteria { at_most: -0.0 }).unwrap(),
+            instance.identity(&Criteria { at_most: 0.0 }).unwrap()
         );
     }
 

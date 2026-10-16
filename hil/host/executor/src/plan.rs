@@ -727,7 +727,7 @@ mod tests {
         let profile = profile(&[("toy.case", 10)]);
         let scenarios = [
             fixed("a", "toy.case", Some(STATION)),
-            fixed("b", "toy.case", Some("oer-esp32s31-bluetooth-system")),
+            fixed("b", "toy.case", Some("toy-bluetooth-system")),
             on("esp32c5", "c", "toy.case", None),
             fixed("d", "toy.case", None),
         ];

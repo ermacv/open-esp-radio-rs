@@ -246,6 +246,32 @@ const SCAN_REQ_AIR_MICROS: u32 = (1 + 4 + 2 + 12 + 3) * 8;
 /// The vendor's response-capable scheduler tail after `ADV_IND`.
 const RESPONSE_CAPABLE_TAIL_MICROS: u32 = 4;
 
+/// The length of a legacy advertising-channel PDU, header included: from
+/// the two header bytes alone up to the 37 payload bytes of a legacy PDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyPduLength(u8);
+
+impl LegacyPduLength {
+    /// The shortest legacy PDU: its header only.
+    pub const MIN: Self = Self(2);
+    /// The longest legacy PDU: its header and 37 payload bytes.
+    pub const MAX: Self = Self(39);
+
+    /// `length` bytes, or `None` outside `2..=39`.
+    pub const fn new(length: usize) -> Option<Self> {
+        if length >= Self::MIN.0 as usize && length <= Self::MAX.0 as usize {
+            Some(Self(length as u8))
+        } else {
+            None
+        }
+    }
+
+    /// The length in bytes.
+    pub const fn get(self) -> usize {
+        self.0 as usize
+    }
+}
+
 /// What one legacy advertising channel awaits after its PDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdvertisingResponse {
@@ -256,7 +282,7 @@ pub enum AdvertisingResponse {
     /// whichever exchange is longer.
     ScanResponse {
         /// The scan response PDU's length, header included.
-        length: usize,
+        length: LegacyPduLength,
         /// The set also accepts a connection indication.
         connectable: bool,
     },
@@ -265,11 +291,12 @@ pub enum AdvertisingResponse {
 }
 
 /// LE 1M air time of a legacy PDU of `length` bytes, header included.
-pub const fn legacy_air_micros(length: usize) -> NonZeroU32 {
+pub const fn legacy_air_micros(length: LegacyPduLength) -> NonZeroU32 {
     // Preamble, access address, header and CRC.
     const OVERHEAD: NonZeroU32 = NonZeroU32::new((1 + 4 + 2 + 3) * 8).unwrap();
-    // Legacy PDUs carry at most 37 payload bytes: it never saturates.
-    OVERHEAD.saturating_add((length as u32 - 2) * 8)
+    // The length holds the header and at most 37 payload bytes: it never
+    // underflows or saturates.
+    OVERHEAD.saturating_add((length.0 as u32 - 2) * 8)
 }
 
 /// Air time of one advertising channel's `pdu_length`-byte packet and the
@@ -277,10 +304,10 @@ pub const fn legacy_air_micros(length: usize) -> NonZeroU32 {
 /// a response-capable channel also covers the vendor's four-microsecond
 /// response-capable tail and the longest exchange that follows.
 pub fn advertising_channel_air(
-    pdu_length: usize,
+    pdu_length: LegacyPduLength,
     response: AdvertisingResponse,
 ) -> NonZeroRadioDuration<LeRadio> {
-    // Legacy wire lengths are bounded to 39 bytes, so every sum below
+    // `LegacyPduLength` bounds both lengths to 39 bytes, so every sum below
     // stays under 10,000 us: none saturates.
     let air = legacy_air_micros(pdu_length);
     let responses = match response {
@@ -515,20 +542,41 @@ mod advertising_tests {
         },
     };
 
+    fn length(bytes: usize) -> LegacyPduLength {
+        LegacyPduLength::new(bytes).unwrap()
+    }
+
+    #[test]
+    fn a_legacy_pdu_length_holds_its_header_and_at_most_37_payload_bytes() {
+        assert_eq!(LegacyPduLength::new(0), None);
+        assert_eq!(LegacyPduLength::new(1), None);
+        assert_eq!(LegacyPduLength::new(2), Some(LegacyPduLength::MIN));
+        assert_eq!(LegacyPduLength::new(39), Some(LegacyPduLength::MAX));
+        assert_eq!(LegacyPduLength::new(40), None);
+        assert_eq!(LegacyPduLength::new(usize::MAX), None);
+        assert_eq!(
+            legacy_air_micros(LegacyPduLength::MIN).get(),
+            (1 + 4 + 2 + 3) * 8
+        );
+    }
+
     #[test]
     fn a_legacy_pdu_takes_eight_microseconds_per_octet_on_le_1m() {
         // Preamble, access address and CRC around a 39-byte PDU.
-        assert_eq!(legacy_air_micros(39).get(), (1 + 4 + 39 + 3) * 8);
+        assert_eq!(
+            legacy_air_micros(LegacyPduLength::MAX).get(),
+            (1 + 4 + 39 + 3) * 8
+        );
     }
 
     #[test]
     fn a_response_capable_channel_covers_its_longest_exchange() {
-        let plain = advertising_channel_air(39, AdvertisingResponse::None);
+        let plain = advertising_channel_air(LegacyPduLength::MAX, AdvertisingResponse::None);
         assert_eq!(plain.get().as_micros(), 376);
         let scannable = advertising_channel_air(
-            39,
+            LegacyPduLength::MAX,
             AdvertisingResponse::ScanResponse {
-                length: 39,
+                length: LegacyPduLength::MAX,
                 connectable: false,
             },
         );
@@ -536,10 +584,10 @@ mod advertising_tests {
             scannable.get().as_micros(),
             376 + 4 + 150 + u64::from(SCAN_REQ_AIR_MICROS) + 150 + 376
         );
-        let directed = advertising_channel_air(14, AdvertisingResponse::Directed);
+        let directed = advertising_channel_air(length(14), AdvertisingResponse::Directed);
         assert_eq!(
             directed.get().as_micros(),
-            u64::from(legacy_air_micros(14).get())
+            u64::from(legacy_air_micros(length(14)).get())
                 + 4
                 + 150
                 + u64::from(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS)
@@ -548,7 +596,7 @@ mod advertising_tests {
 
     #[test]
     fn the_last_channel_needs_no_lead_after_it() {
-        let air = advertising_channel_air(39, AdvertisingResponse::None);
+        let air = advertising_channel_air(LegacyPduLength::MAX, AdvertisingResponse::None);
         assert_eq!(
             advertising_channel_spacing(air, TIMING),
             Ok(RadioDuration::from_micros(376 + 137))

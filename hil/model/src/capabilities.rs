@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(union.capabilities.len(), 2);
         let ble = of(
             s31,
-            Composition::Product(name!(CompositionName, "oer-esp32s31-bluetooth-system")),
+            Composition::Product(name!(CompositionName, "toy-bluetooth-system")),
             &[],
         );
         assert!(matches!(

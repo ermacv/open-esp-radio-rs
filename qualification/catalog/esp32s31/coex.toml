@@ -230,7 +230,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "BLE advertising dynamic priority"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The LE Controller core raises every third, second or single advertising event for intervals up to 25 ms, up to 50 ms and longer, as the vendor `coexAdv` level update does. While another radio shares the antenna, the ESP32-S31 radio role gives a legacy advertising item the vendor lanes 4, 0, 13, 13 and replaces lane zero with 4, 9 or 11 by the event's level from the vendor legacy table. Alone on the antenna every lane requests 15, a product choice. Legacy advertising only; extended and periodic advertising have no producer."
+scope-and-limitations = "The LE Controller's `coexistence` module raises every third, second or single advertising event for intervals up to 25 ms, up to 50 ms and longer, as the vendor `coexAdv` level update does. While another radio shares the antenna, the Bluetooth driver's `coexistence::advertising_priorities` gives a legacy advertising item the vendor lanes 4, 0, 13, 13 and replaces lane zero with 4, 9 or 11 by the event's level from the vendor legacy table. Alone on the antenna every lane requests 15, a product choice. The radio role that applied them was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration. Legacy advertising only; extended and periodic advertising have no producer."
 packages = ["oer-bluetooth-controller"]
 
 [[items]]
@@ -239,7 +239,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "BLE connection dynamic priority"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The LE Controller core raises a peripheral connection's first six events, events after more missed receptions than its interval allows and events during a local control procedure, as the vendor `coexConn` level update does. While another radio shares the antenna, the ESP32-S31 radio role gives the connection item base lane 4 and an event lane of 4, 9 or 11 by that level from the vendor connection table, and the link state the vendor coexistence protection. Alone on the antenna every lane requests 15. Peripheral connections only; there is no central role."
+scope-and-limitations = "The LE Controller's `coexistence` module raises a peripheral connection's first six events, events after more missed receptions than its interval allows and events during a local control procedure, as the vendor `coexConn` level update does. While another radio shares the antenna, the Bluetooth driver's `coexistence::connection_priorities` gives the connection item base lane 4 and an event lane of 4, 9 or 11 by that level from the vendor connection table, and `connection_protection` the link state the vendor coexistence protection. Alone on the antenna every lane requests 15. The radio role that applied them was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration. Peripheral connections only; there is no central role."
 packages = ["oer-bluetooth-controller"]
 
 [[items]]
@@ -248,7 +248,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "IEEE 802.15.4 operation priorities"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the [shared table](../../../espressif/coex/src/pti.rs), as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The composition publishes the vendor default levels resolved from the table at start or at `update_coexistence`; a later change of the shared table is not re-read at each scene, and the OpenThread role-dependent TX/RX level is not applied."
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the [shared table](../../../espressif/coex/src/pti.rs), as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The removed composition published the vendor default levels resolved from the table at start or at `update_coexistence` (#770, tag `legacy-radio-2026-10-16`); it did not re-read a later change of the shared table at each scene, and the OpenThread role-dependent TX/RX level is not applied."
 packages = ["oer-espressif-coex", "oer-esp32s31-hal"]
 
 [[items]]
@@ -306,7 +306,7 @@ section = "coex-protocol-integration-and-lifetime"
 title = "Wi-Fi + IEEE 802.15.4 coexistence"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "The radio runtime's `enable_ieee802154_coex` enters IEEE 802.15.4 into the schedule as `esp_coex_wifi_i154_enable` does, and the IEEE MAC publishes its scene priorities; no composition runs Wi-Fi and IEEE 802.15.4 together yet."
+scope-and-limitations = "The participant counting and status bits in `oer-espressif-coex` reproduce how `esp_coex_wifi_i154_enable` enters IEEE 802.15.4 into the schedule, and the IEEE MAC scenes hold its priorities; the radio runtime's `enable_ieee802154_coex` that ran them was removed (#770, tag `legacy-radio-2026-10-16`), and #771 brings the shared radio system back."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-ble-ieee-802-15-4-coexistence"

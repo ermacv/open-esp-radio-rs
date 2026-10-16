@@ -97,8 +97,9 @@ flowchart TD
     G --> C[Hardware coex timer bank]
 ```
 
-PHY supplies the algorithms, demand and the concurrent domain; the radio
-system composition owns the arbiter and runs the vendor periodic tracking;
+PHY supplies the algorithms, demand and the concurrent domain; a radio system
+composition owns the arbiter and runs the vendor periodic tracking (none
+exists since #770; #771 brings it back);
 coex supplies the hardware arbitration mechanism. Tracking follows the vendor
 admission: the arbiter lease is the PHY lock, and the tracking graph brackets
 its RF-sensitive regions with the grant-protect request instead of pausing

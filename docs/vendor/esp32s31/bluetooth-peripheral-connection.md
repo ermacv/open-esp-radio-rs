@@ -1,5 +1,10 @@
 # ESP32-S31 BLE peripheral-connection hardware boundary
 
+The open radio role, runtime and Controller core that this page compares
+with the vendor were removed in #770 (tag `legacy-radio-2026-10-16`); the
+passages that name them describe that tagged implementation, and the kept
+memory codecs, executor and portable pieces still follow them.
+
 This reference describes reviewed hardware-facing facts consumed by the Rust
 driver. Vendor Controller architecture does not define the open ownership model.
 Portable Link Layer policy remains in `crates/protocols/bluetooth/le/ll`; this document
@@ -149,7 +154,7 @@ vendor's dynamic priority control: `coexConn.c.o_1.o`
 `r_sym_coexConn_BqYv...` installs base lanes 4 from the default table
 `04 04 08`, and `r_sym_coexConn_sQLo...` replaces lane zero for every event
 with 4, 9 or 11 from the table `04 09 0b 04 09 0b 08 06 03 14 02 28 01 50`
-at the event's level. The Controller core raises the first six events,
+at the event's level. The kept `coexistence` module of the LE Controller raises the first six events,
 events after more missed receptions than the interval allows (3 up to
 12.5 ms, 2 up to 25 ms, 1 up to 50 ms, none beyond) and events during a
 local control procedure (`r_sym_coexConn_zaMn...`). `r_sym_coexConn_H75Y...`
@@ -229,8 +234,8 @@ epoch. It does not reproduce the vendor allocator or make the workspace
 connection-private. A distinct memory-layer transition consumes the
 resulting opaque environment link, privately installs the `workspace + 8`
 configuration endpoint and adjacent disabled-CTE policy, and returns a new
-affine graph state. The radio role admits each connection event against one
-fresh Controller-time sample and writes the requested window into the private
+affine graph state. The radio role admitted each connection event against one
+fresh Controller-time sample and wrote the requested window into the private
 descriptor; the executor rejects an overlapping window instead of displacing
 it, so the descriptor always carries the window the Link Layer core planned.
 
@@ -249,8 +254,8 @@ consumer is link-state `+0x08`, as `r_ble_lll_conn_use_rxbuf_from_link_state`
 selects; the connection pool instance owns that chain. Each event stays with
 the executor from list-zero insertion through `RUN`, the fenced finished-list
 capture and the completion walk. The completion walk returns the item; the role
-then copies every contiguous completed RX PDU, reports the captured anchor and
-the peer's acknowledgement, and preserves the live connection link state for
+then copied every contiguous completed RX PDU, reported the captured anchor and
+the peer's acknowledgement, and preserved the live connection link state for
 the next event.
 
 The lineage identifies `r_sym_ble_mLYtT1I4BQmunJL36NqV` as

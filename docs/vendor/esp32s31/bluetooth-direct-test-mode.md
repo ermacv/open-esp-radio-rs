@@ -1,11 +1,16 @@
 # ESP32-S31 Bluetooth LE Direct Test Mode contracts
 
+The open radio role, runtime and Controller core that this page compares
+with the vendor were removed in #770 (tag `legacy-radio-2026-10-16`); the
+passages that name them describe that tagged implementation, and the kept
+memory codecs, executor and portable pieces still follow them.
+
 This reference describes the DTM descriptor, scheduler, timing and ownership
 contracts of the pinned vendor Controller and how the open implementation
 follows them. DTM is a Lower Link Layer role; its implementation does not
 require the vendor allocator, callback registry or RTOS. The portable
 [DTM session](../../../crates/protocols/bluetooth/le/ll/src/dtm.rs) plans the
-test events, the radio role lowers each event into the controller-memory
+test events, the removed radio role lowered each event into the controller-memory
 graph, and supported HCI commands belong to the portable
 [HCI crate](../../../crates/protocols/bluetooth/hci/).
 
@@ -113,7 +118,7 @@ item. It stores link-state byte `+0x61` into bits 27:20 of `+0x14`, replaces
 the receiver's `+0x2c` with literal one and recomputes the times and `+0x0c`
 the same way. The memory codec's
 [`DtmSchedulerItemReviewedWords`](../../../crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm_event_image.rs)
-applies these transforms; the radio role copies the power only for an event
+applies these transforms; the radio role copied the power only for an event
 after the first one of a test instance.
 
 Channel and PHY inputs are typed. `r_sym_ble_2a66ZbcncZhAIIYsMGHk`
@@ -135,14 +140,14 @@ no overlap check or lock/modify request: while a test runs, it owns list zero.
 The DTM item carries allocation kind five and a private chain at link-state
 `+0x64`, so the scheduler item is always the single head.
 
-The open radio role follows that order with an explicit test mode. Opening a
-test instance moves the role from shared scheduling to a test session, which
+The open radio role followed that order with an explicit test mode. Opening a
+test instance moved the role from shared scheduling to a test session, which
 owns the Link Layer exclusively (Core Specification Vol 6, Part F):
-advertising, scanning and connection requests are refused as busy until the
-session has ended. A test event that finds the scheduler busy returns the
-`StopScheduler` step; the runtime stops the scheduler with the common
-lifecycle sequence, resumes it, and the idle scheduler then takes the event as
-the list-zero head and runs. An idle scheduler takes it directly. The
+advertising, scanning and connection requests were refused as busy until the
+session had ended. A test event that found the scheduler busy returned the
+`StopScheduler` step; the runtime stopped the scheduler with the common
+lifecycle sequence, resumed it, and the idle scheduler then took the event as
+the list-zero head and ran. An idle scheduler took it directly. The
 executor's idle insertion also writes the unexecuted status and clears the
 list-state bytes the executor itself uses for its mirror.
 
@@ -227,7 +232,7 @@ current time plus the margin and a configured lead plus 15, or at RF-ready.
 Conversions between raw controller ticks and scheduler microseconds are
 `r_sched_timer_convertTimeToUs` (`r_sym_sched_TYdJzWTeOAsagss1aIFj`) and
 `r_sched_timer_convertTimeToTicks` (`r_sym_sched_sNmTBa8gkKuVLZu7GU1A`). One
-standalone raw tick is half a microsecond. The radio role derives the item's
+standalone raw tick is half a microsecond. The radio role derived the item's
 `+0x0c` through the same two projections of its retained Controller epoch.
 
 ## Completion and recycling
@@ -257,8 +262,8 @@ With capacity one, the two bound RX header slots alternate deterministically
 between packet-bearing tail and packetless predecessor. The memory crate
 models that bounded rotation, exposes no raw header words and returns either
 no packet or one typed result projection. The executor's completion walk
-returns every executed item; the radio role then drains its receive graph and
-reports one test result per receiver event before the event ends.
+returns every executed item; the radio role then drained its receive graph and
+reported one test result per receiver event before the event ends.
 
 ## Test End
 
@@ -266,10 +271,9 @@ reports one test result per receiver event before the event ends.
 result. When a test is active, it stops the scheduler with
 `r_btdm_sched_stop`, unregisters the DTM event, calls `r_ble_phy_init` and
 frees the graph. Cancelling a listed test event in the open radio role
-returns the `StopScheduler` step instead of opening the cancellation hold;
-after the stop and resume the event leaves its list through the idle path and
-ends as not executed. A test event that is still waiting for insertion leaves
-at once.
+returned the `StopScheduler` step instead of opening the cancellation hold;
+after the stop and resume the event left its list through the idle path and
+ended as not executed. A test event still waiting for insertion left at once.
 
 There is one intentional HCI difference. The vendor callback increments the
 shared count for a successful transmitter event and Test End serializes it.

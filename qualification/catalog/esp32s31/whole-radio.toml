@@ -87,7 +87,7 @@ section = "whole-radio-exclusive-ownership-and-client-handoff"
 title = "PHY client acquire/release state"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[PHY ownership](../phy/FEATURES.md#lifecycle-boundaries) has typed acquisition, tracking and release bookkeeping. The production supervisor quiesces an idle Wi-Fi frontier, checks stopped MAC/RX hardware, releases the client and drives the final-client RF-close/cold-release chain. Multi-protocol client release remains uncomposed."
+scope-and-limitations = "[PHY ownership](../phy/FEATURES.md#lifecycle-boundaries) has typed acquisition, tracking and release bookkeeping. The production supervisor that quiesced an idle Wi-Fi frontier, checked stopped MAC/RX hardware, released the client and drove the final-client RF-close/cold-release chain was removed (#762, tag `legacy-wifi-2026-10-16`). Multi-protocol client release remains uncomposed."
 packages = ["oer-esp32s31-phy"]
 
 [[items]]
@@ -204,7 +204,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "RF sleep / modem power-down"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "PHY exposes exact RF close. The production Wi-Fi supervisor can either wake that closed RF domain while retaining registration, or continue through temperature-sensor shutdown, route-clock release, captured Wi-Fi clock/reset restoration and cold-owner reconstruction. These explicit idle transactions do not implement timed modem sleep or protocol power-save signaling."
+scope-and-limitations = "PHY exposes exact RF close. The production Wi-Fi supervisor that either woke that closed RF domain while retaining registration, or continued through temperature-sensor shutdown, route-clock release, captured Wi-Fi clock/reset restoration and cold-owner reconstruction, was removed (#762, tag `legacy-wifi-2026-10-16`). These explicit idle transactions do not implement timed modem sleep or protocol power-save signaling."
 
 [[items]]
 id = "whole-radio-active-operation-power-saving-and-shutdown-rf-wake-resume"
@@ -212,7 +212,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "RF wake / resume"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "PHY implements a fail-stop retained RF wake transaction and the production Wi-Fi supervisor composes it from a fully stopped, final-client frontier through Wi-Fi client reacquisition and RX restoration. Bluetooth and IEEE 802.15.4 resume, scheduled sleep, cancellation policy above the owner actor and hardware qualification remain incomplete."
+scope-and-limitations = "PHY implements a fail-stop retained RF wake transaction; the production Wi-Fi supervisor that composed it from a fully stopped, final-client frontier through Wi-Fi client reacquisition and RX restoration was removed (#762, tag `legacy-wifi-2026-10-16`). Bluetooth and IEEE 802.15.4 resume, scheduled sleep, cancellation policy above the owner actor and hardware qualification remain incomplete."
 
 [[items]]
 id = "whole-radio-active-operation-power-saving-and-shutdown-full-powered-shutdown"
@@ -220,7 +220,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Full powered shutdown"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The Wi-Fi production supervisor composes idle quiescence and cold-owner return. The projected Bluetooth idle powered-release fact defines its standalone boundary. IEEE 802.15.4 and joint-protocol shutdown remain uncomposed; these idle paths do not establish arbitrary active/faulted-role teardown."
+scope-and-limitations = "The Wi-Fi production supervisor (#762, tag `legacy-wifi-2026-10-16`) and the Bluetooth composition (#770, tag `legacy-radio-2026-10-16`) that composed idle quiescence and cold-owner return were removed; #771 brings the shared radio system back. IEEE 802.15.4 and joint-protocol shutdown remain uncomposed; these idle paths do not establish arbitrary active/faulted-role teardown."
 
 [[items]]
 id = "whole-radio-active-operation-power-saving-and-shutdown-cold-reconstruction-after-shutdown"

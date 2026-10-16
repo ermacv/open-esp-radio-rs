@@ -66,12 +66,19 @@ pub fn connection_event_span(
 }
 
 /// The connection allowances of a scheduler profile whose preparation lead
-/// is `preparation_lead_micros`, below [`LE_1M_EVENT_MICROS`].
+/// is `preparation_lead_micros`, or `None` when the lead leaves no event
+/// time: it must lie below [`LE_1M_EVENT_MICROS`].
 pub const fn connection_allowances(
     preparation_lead_micros: u32,
     local_sleep_clock_ppm: u16,
-) -> ConnectionAllowances {
-    ConnectionAllowances {
+) -> Option<ConnectionAllowances> {
+    let Some(event_micros) = LE_1M_EVENT_MICROS.checked_sub(preparation_lead_micros) else {
+        return None;
+    };
+    if event_micros == 0 {
+        return None;
+    }
+    Some(ConnectionAllowances {
         local_sleep_clock_ppm,
         widening_jitter: RadioDuration::from_micros(WIDENING_JITTER_MICROS as u64),
         receive_guard: RadioDuration::from_micros(RECEIVE_GUARD_MICROS as u64),
@@ -80,13 +87,11 @@ pub const fn connection_allowances(
             NonZeroU64::new(BOUNDARY_GUARD_MICROS as u64).unwrap(),
         ),
         first_event_guard: RadioDuration::from_micros(FIRST_EVENT_GUARD_MICROS as u64),
-        event_length: RadioDuration::from_micros(
-            (LE_1M_EVENT_MICROS - preparation_lead_micros) as u64,
-        ),
+        event_length: RadioDuration::from_micros(event_micros as u64),
         first_event_length: RadioDuration::from_micros(
             (LE_1M_EVENT_MICROS + BOUNDARY_GUARD_MICROS) as u64,
         ),
-    }
+    })
 }
 
 #[cfg(test)]

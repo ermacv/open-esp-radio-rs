@@ -97,7 +97,7 @@ table; the verdict depends on no stand operation.
 
 | Role | Decides | Owner |
 | --- | --- | --- |
-| Wire contract | Messages, keys, framing; the platform trace events; which keys an image built with given features serves | `oer-hil-protocol`, `oer-hil-trace`, `oer-hil-image-keys` |
+| Wire contract | Messages, keys, framing; which keys an image built with given features serves | `oer-hil-protocol`, `oer-hil-image-keys` |
 | HIL agent | How a board serves the protocol | `oer-hil-agent` and the chip runtimes under `hil/targets/` |
 | Board support | How a board is flashed, started, reset, observed and examined after a failure | `oer-device-*` and `oer-stand-board` (ports, the device lock, the one receipted image write, starts, the reset ladder, OpenOCD, power, consoles), `oer-hil-flash` (the flash operation: lease, write, journal, start), `oer-hil-lab` (`post_mortem`) |
 | Stand | Who holds which board, fixture and air; recovery and quarantine | `oer-stand-file` (the stand file, board names, state paths), `oer-stand-arbiter` (claims, queue, job tickets), `oer-stand-journal` (board journal), `oer-stand-discover`, `oer-stand-doctor` and `oer-stand-ssh` (discovery, doctor, SSH), `oer-hil-lab` (a run's configuration and lock, cell observation, fixture software leases, `recovery`), `cargo stand` and `cargo hil` |

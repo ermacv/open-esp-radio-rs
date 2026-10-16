@@ -708,7 +708,7 @@ section = "phy-protocol-consumer-composition"
 title = "Protocol-client ownership — Wi-Fi"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "Wi-Fi bring-up joins the shared domain as a client (`join_wifi`) before MAC startup; the runtime retains the `WifiPhyMembership` and leaves through `leave_wifi` at release"
+scope-and-limitations = "Wi-Fi bring-up joins the shared domain as a client (`join_wifi`) before MAC startup and leaves through `leave_wifi` at release; the Wi-Fi runtime that retained the `WifiPhyMembership` was removed (#762, tag `legacy-wifi-2026-10-16`)"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-client-ownership-bluetooth"
@@ -832,7 +832,7 @@ section = "phy-protocol-consumer-composition"
 title = "Resume after RF sleep — Wi-Fi"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "the idle production supervisor composes final-client release, RF close/wake, Wi-Fi client reacquisition and stopped-owner reconstruction while retaining the registered PHY epoch; this immediate cycle is not scheduled modem sleep"
+scope-and-limitations = "the idle production supervisor that composed final-client release, RF close/wake, Wi-Fi client reacquisition and stopped-owner reconstruction while retaining the registered PHY epoch was removed (#762, tag `legacy-wifi-2026-10-16`); this immediate cycle is not scheduled modem sleep"
 
 [[items]]
 id = "phy-protocol-consumer-resume-after-rf-sleep-bluetooth"
@@ -856,7 +856,7 @@ section = "phy-protocol-consumer-composition"
 title = "Complete last-client RF/analog shutdown — Wi-Fi"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "the production Wi-Fi supervisor quiesces an idle role frontier, releases the final client, executes target RF close, restores the captured route-owned clock/reset baseline during cold-owner reunion, and can cold-restart with the final-state cache"
+scope-and-limitations = "the production Wi-Fi supervisor that quiesced an idle role frontier, released the final client, executed target RF close, restored the captured route-owned clock/reset baseline during cold-owner reunion and cold-restarted with the final-state cache was removed (#762, tag `legacy-wifi-2026-10-16`)"
 
 [[items]]
 id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-ieee802154"
@@ -904,7 +904,7 @@ section = "phy-lifecycle-boundaries"
 title = "RF sleep/power-down"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor can either wake immediately while retaining the registration epoch or continue through captured route-owned clock/reset restoration for a cold restart. Scheduled modem sleep and protocol power-save composition remain absent."
+scope-and-limitations = "The last-client owner performs a default-profile pre-close temperature sample and exact finite current-vendor RF close. The production Wi-Fi supervisor that woke immediately while retaining the registration epoch or continued through captured route-owned clock/reset restoration for a cold restart was removed (#762, tag `legacy-wifi-2026-10-16`). Scheduled modem sleep and protocol power-save composition remain absent."
 
 [[items]]
 id = "phy-lifecycle-boundaries-stop-tracking-release-last-client"

@@ -76,7 +76,7 @@ gaps = [
 id = "peripheral-security-current-primitives"
 composition = "production"
 scope = "Portable LL security and HCI security procedures supply the existing key, encryption and packet-authentication primitives"
-limits = "The Controller core composes them for the peripheral connection: HCI key delivery and rejection, encryption start, pause and restart, authenticated reception and termination on authentication failure. The listed HIL scenarios define the required acceptance evidence; the broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
+limits = "The removed Controller core composed them for the peripheral connection (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds it: HCI key delivery and rejection, encryption start, pause and restart, authenticated reception and termination on authentication failure. The listed HIL scenarios define the required acceptance evidence; the broader link-layer-encryption declaration and an advertised Encryption feature bit do not establish this lifecycle or SMP/GATT interoperability"
 source-paths = [
   "crates/protocols/bluetooth/le/ll/src/security.rs",
   "crates/protocols/bluetooth/hci/src/lib.rs",

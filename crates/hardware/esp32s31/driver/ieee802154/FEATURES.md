@@ -31,10 +31,10 @@ Canonical section: `ieee802154-qualification-scope-mapping`.
 
 Canonical section: `ieee802154-capability-sources-and-publication-scope`.
 Portable `RadioCapabilities` is a vocabulary; the engine's `RADIO_CAPABILITIES`
-keeps the set the ESP32-S31 radio role advertised as source coverage (the role
-was removed in #770, tag `legacy-radio-2026-10-16`). `CSMA_CA` and
-`TRANSMIT_RETRIES` in it were the role's software above the engine's single
-attempt; the engine implements the rest. Vendor API
+declares what the engine itself implements as source coverage. It omits
+`CSMA_CA` and `TRANSMIT_RETRIES`: the engine transmits each frame once, and
+the backoffs and retries the removed ESP32-S31 radio role ran (tag
+`legacy-radio-2026-10-16`) belong above the port (#563 decision 8). Vendor API
 declarations are inventory references rather than open-driver evidence.
 
 ## PHY and RF

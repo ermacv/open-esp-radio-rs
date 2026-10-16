@@ -11,6 +11,13 @@ fn single_interface_table_keeps_the_recovered_values() {
     let caps = capabilities(LEVELS, false);
     assert_eq!(caps.operations, RADIO_CAPABILITIES);
     assert!(!caps.operations.contains(RadioCapabilities::MULTI_PAN));
+    // A single attempt per frame: CSMA-CA and retries live above the port.
+    assert!(!caps.operations.contains(RadioCapabilities::CSMA_CA));
+    assert!(
+        !caps
+            .operations
+            .contains(RadioCapabilities::TRANSMIT_RETRIES)
+    );
     assert_eq!(caps.interfaces, 1);
     assert_eq!(caps.transmit_power.map(|power| power.reset_dbm), Some(20));
     assert_eq!(

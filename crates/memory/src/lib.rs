@@ -26,7 +26,7 @@ pub use affine_spsc::{
     AffineSpscReceiver, AffineSpscSendPermit, AffineSpscSender, AffineSpscTryReceiveError,
     AffineSpscTrySendError, UniqueQueueIndex,
 };
-pub use indexed_custody::{CustodyDomain, IndexedCustody, RetainedName};
+pub use indexed_custody::{CustodyDomain, Drained, IndexedCustody, Quarantine, RetainedName};
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
     PinnedDmaTxPoolHandle, PinnedDmaTxRadioLease, ReturningStableDmaBacking,

@@ -14,7 +14,8 @@ The portable entry is an integration boundary; it cannot add a second IRQ
 registry or change the backing's reclamation proof.
 
 `scope::driver::Driver` is the unbranded installation owner. Its `drive`
-method borrows it through the core's single affine DriverLoan until retirement; that future owns neither
+method borrows it through the core's single affine DriverLoan until retirement;
+that future owns neither
 Driver nor the backing lease. The executable binding in
 [`scope/tests/lifecycle.rs`](src/scope/tests/lifecycle.rs) uses the real
 shared `Installed`, `run_port`, `PortEnd`, `FailStopped` and `Abandon` types.
@@ -115,11 +116,15 @@ IRQ and buffer drop counters all stay zero.
 
 The body runs on the caller's executor. Scheduling only pends a separate
 driver step. The body moves its result into consuming `ScopeAccess::retire`, which requests
-retirement and retains that result until the driver accounts for its work. Detachment masks MAC, POWER
+retirement and retains that result until the driver accounts for its work.
+Detachment masks MAC, POWER
 and driver-SWI, closes admission, waits for entered actors, and calls the
 synchronous `stop(&mut Driver)` exactly once **only after successful drain**.
-The successful output contains a returned lease and either retired owners or
-opaque quarantined owners after cancellation. Quarantined owners expose no
+The successful output contains a returned lease and owners chosen by the
+fact `stop` returns, not by the path: `Stopped` owners after a quiescent
+stop (retire, `ScopeAccess::abandon` or cancellation alike; the core's
+fail-stop still quarantines, #763), opaque quarantined owners
+after an unconfirmed one. Quarantined owners expose no
 restart, clock-release or extraction operation. IRQ `quiesce` consumes its
 epoch once; there is no `AlreadyQuiesced` state or refusal.
 
@@ -165,7 +170,13 @@ A-MPDU storage keeps its backing owners in `ManuallyDrop`, so forgetting the
 DMA owner and then destroying its arena cannot free those allocations. Host
 regressions read the retained bytes after the metadata and arena end.
 
-Ordinary retirement recovers the by-value radio owner and inactive IRQ setup.
+A stop that read DMA quiescent (`StopOutcome::Quiescent`) on any of the
+form's own paths (`ScopeAccess::retire`/`abandon`, a cancelled
+`DriverScope`, a lost `Driver`) recovers the by-value radio owner and
+inactive IRQ setup; an unconfirmed one quarantines them. The core's
+fail-stop and whole-run cancel (`oer-radio-port`) still keep the Driver
+quarantined even after a quiescent stop; that is #763's work. Until the HAL
+reading lands every production stop is unconfirmed.
 The resulting stopped installation may consume its Wi-Fi clock obligation
 through `WifiClocked::release_clocks`, whose exact result is
 `Result<ClockReleased, (StoppedInstallation, ClockPoisoned)>`. Success moves
@@ -273,10 +284,12 @@ send without the audited permission bound.
 ### Direct publication to a separate executor
 
 `scope::commands::bridge` is the command-boundary prototype. It does not
-implement `PortBackend`, endpoints or retune hardware. `Held::bind` consumes
-one command authority and one `&'static mut ExecutionStorage<S, P>`, returning
-caller-side Held and an independently movable executor. Only permanent
-records, private place names and their SPSC endpoints cross to that executor;
+implement `PortBackend`, endpoints or retune hardware. The only public
+binding is `Bridged::bind(hardware, authority, storage)`: it consumes one
+command authority and one `&'static mut ExecutionStorage<S, P>`, returning
+caller-side Held and the `Bridged` composite, which owns the driver's
+hardware and the executor. Only permanent records, private place names and
+their SPSC endpoints cross to that executor;
 Context, complete InFlight, MPDU leases and KeyUse remain in Held. Context may
 borrow a non-Send value. A payload may likewise retain a short CPU-only tag:
 `ProjectExecution::project` takes its narrow GAT view as an associated
@@ -301,7 +314,12 @@ the first. Names contain only their index. The private `CustodyDomain`
 implementations and paired endpoints prevent mixing identical layouts from
 two installations; the index alone is not this association proof. There is
 no RefCell, Cell<Option>, free-credit pool, occupancy admission check or
-async send-permit. Initialization bits serve only destructor accounting.
+async send-permit. The ordinary end is
+`Held::finish(&mut executor, &DriverStopped)` after proven DMA quiescence
+on any of the form's own stop paths: consuming Held ends every producer, then the executor
+withdraws every pending record. It returns every retained owner; destroying
+a non-empty store only quarantines its values (erasing keys) and leaks them,
+never dropping an owner.
 
 Both setup and phase keep their original S/P capacities and FIFO order.
 Enable is the last setup record; the executor then services phase. Disable
@@ -321,8 +339,19 @@ Immediately afterwards it calls `Zeroize` **on that owner in the permanent
 record, before publishing its reply**. Withdrawal erases the same cell
 without programming hardware and returns `Withdrawn`, never `Applied`.
 The original permission returns from Held with its key already erased; a
-retry must supply new material. Normal key destruction also zeroizes storage;
-quarantine deliberately retains unprocessed records until reset. This does
+retry must supply new material. Normal key destruction also zeroizes storage.
+`Held::finish` and the executor's drop withdraw pending records and erase
+their keys. After every stop whose drain completed, whatever DMA fact it
+returned, the form itself withdraws every pending record of the executor
+inside the driver's `Bridged` hardware and zeroes its key, on every stop
+path, before any owner can be quarantined (#766 6232304479; erasing after
+both DMA facts at the stop call is the owner decision 6233071141). No receipt is
+involved: the sealed `OwnsDma` tells the form where the executor is (UI
+pair `owns_dma_sealed`). Two cases leave record copies until reset: a drain
+timeout (`ScopePoisoned`), where no stop runs, and a key command the caller
+still publishes through Held's endpoints after the stop, because the
+quarantined executor never withdraws it: the senders are not closed at the
+erase, so a composition must not publish after a stop. This does
 not promise erasure of compiler temporaries created by moves.
 
 The key regressions pause before reply publication and inspect the actual
@@ -333,21 +362,49 @@ withdrawal preserves the applied prefix and returns every original permission.
 Every await in the bridge is a reply wait holding only a mutable endpoint
 loan. Cancellation leaves the operation in Held and the execution record in
 permanent storage, in a state which finish/retire/abandon can account for.
-After confirmed drain, the caller may withdraw all remaining owners.
-The consuming model `Executor::withdraw_pending` returns queued records as
-`Completion::Withdrawn` without applying them; already completed replies
-retain `Completion::Applied`. Withdrawal cannot fabricate a TSF sample. A reply distinguishes `Applied<T>`
+After a stop that proved DMA quiescent (`DriverStopped`, on any of the
+form's own stop paths; not yet through the core's fail-stop or whole-run
+cancel, #763),
+`Held::finish` returns every remaining owner.
+The executor's drop and the form's erase after a stop return queued records
+as `Completion::Withdrawn` without applying them; already completed replies
+retain `Completion::Applied`. Withdrawal cannot fabricate a TSF sample. A reply
+distinguishes `Applied<T>`
 from `Withdrawn(T)`. Applied's constructor and fields are private; only an
 applied CloseGate/Disable reply can issue GateBarrier/Disabled. Taking the
 original owner consumes its Applied receipt. A withdrawn command cannot be
 substituted for this proof. UI twins reject both substitution and forged
 Applied construction; a regression withdraws CloseGate and Disable without
 executing either.
-Producers must have ended and the executor worker must have joined first. After
-unconfirmed shutdown it must explicitly use the core's `Quarantined<Held>`;
-no new quarantine type or destructor-driven hardware stop is introduced.
-Dropping the quarantine receipt, forgetting Held or forgetting a reply
-future cannot run Context/MPDU destructors or free the permanent records.
+`Held::finish` consumes Held, so producers have ended, and borrows the
+executor, so no worker step runs. The form's erase after a stop runs with
+exclusive access to the executor (every actor drained), not after producers
+ended; the executor's drop likewise. After
+an unconfirmed stop Held is quarantined: dropping it, wrapping it in the
+core's `Quarantined<Held>` or forgetting it leaks every owner and never runs
+a Context/MPDU destructor; a reply future cannot free the permanent records.
+`Held::finish(&mut executor, &DriverStopped)` is the only release: it refuses
+another binding's executor with `ForeignExecutor` (pointer identity of the
+record stores), takes every replied record back out of the static storage
+(`HeldOwners::records_taken_back`) and yields the owners in `HeldOwners`.
+
+The DMA brand (#766 6230985075, 6231653302, 6232304479) is the DMA owner's
+type `D` (production `RadioRuntimeOwner`, the S31's one Wi-Fi DMA). Outside
+the form, `Bridged<HW, S, P>::bind` is the only way to bind a Held: it
+returns `Held<…, HW::Dma>` and the composite that owns `HW` and its
+`Executor<HW::Dma, S, P>`. What the types enforce:
+- the executor steps only through `Bridged::step`, on the DMA owner of the
+  `HW` it is installed with (UI pair `bridge_step_through_composite`);
+- `Held::finish` takes only a `DriverStopped<'_, D>` for its own `D` (UI
+  pair `bridge_finish_foreign_dma`);
+- the proof borrows the stopped owners, and `StoppedOwners::parts` lends
+  only the executor beside it, never the hardware, so no step can restart
+  DMA before finish releases the frames (UI pair
+  `stopped_proof_excludes_dma`);
+- only the form implements `OwnsDma` (UI pair `owns_dma_sealed`).
+They do not make `D` a singleton: that `RadioRuntimeOwner` has one value
+per image is the HAL's ownership, and two bindings for one `D` are told
+apart at run time by `ForeignExecutor`.
 The test pauses a step on the second thread across those transitions and
 checks zero drops and three still-reserved pinned TX allocations. Ordinary
 Held destruction alone is **not** a hardware shutdown operation.
@@ -364,7 +421,11 @@ reusable Released backing remains part of the production installation.
 
 The RV32 link fixture places the entire execution store in
 `.critical.data.open_radio_commands`; the ELF audit checks its full range in
-SRAM. It is separate from the exclusively borrowed driver region. For
+SRAM and inside the `__runtime_critical_data_*`/`__runtime_critical_bss_*`
+ranges the staged runtime entry re-copies or zeroes at every reset. Any
+production `ExecutionStorage` placement must keep that property: pending record key copies
+left by a drain timeout must not survive a reset (#766 6226430314). It is
+separate from the exclusively borrowed driver region. For
 `T=2, K=2, S=4, P=15`, the record/queue backing is **2688 B**, independent of
 future or Context size. The caller-side representative Held is **548 B**
 (context word and three-word MPDU owner), and the executor is **44 B**.
@@ -375,7 +436,8 @@ order rings and one scheduled handoff; it keeps S+P retained-owner cells,
 S+P record cells, four order rings and two projection function pointers.
 
 Host `command_to_step_host_latency_fixture` reports 256 command-to-step
-samples using the actual request/reply wakers, including OS scheduling. These values neither set DrainBound nor
+samples using the actual request/reply wakers, including OS scheduling. These
+values neither set DrainBound nor
 bound RF retune. Production maxima, SRAM budgeting and the whole executable
 driver graph require the S31-2 measurement profile and HIL evidence.
 
@@ -583,7 +645,7 @@ scatter/gather implementation or the complete lower-MAC backend.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 5304 B executable sections; 5574 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 2833 / 2865 B, including the separate 2688 B bridge backing; local command stores 1088 B; fixture caller frame 3392 B, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
+| Affine lease, IRQ consumers, epoch and FIFO credits at compile time; finite atomic admission drain and IRQ-bank transactions at run time | 5498 B executable sections; 5768 B with diagnostics; one monomorphization per scheduler binding | Fixed permanent backing 124 B per installation, 156 B with diagnostics; 12 B ISR slot; total writable statics 2833 / 2865 B, including the separate 2688 B bridge backing; local command stores 1088 B; fixture caller frame 3328 B, separate 4096 B stack; backing size is independent of the body's future size | `ScopeStorage`, `ScopeLease`, `DriverScope`, `Released` / `Poisoned`, borrowed `IrqDiagnostics`; no `Context: 'static` | Consumers must own their IRQ handle; global snapshots lose IRQ fields; poison cannot yield hardware or a lease | Inline future storage cannot survive a timeout followed by free; priority ordering cannot prove cross-core quiescence | Reject bindings whose linked graph leaves SRAM, whose callbacks remain unresolved, or whose fixed backing and stack exceed composition's measured budget |
 
 Run `cargo test -p oer-esp32s31-ieee80211-form` and `cargo xtask check ui`.
 Generated ELF files and closure reports remain under ignored

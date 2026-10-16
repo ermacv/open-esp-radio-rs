@@ -1,8 +1,8 @@
 #![no_std]
-use oer_memory::{CustodyDomain, IndexedCustody, RetainedName};
+use oer_memory::{CustodyDomain, IndexedCustody, Quarantine, RetainedName};
 
 #[cfg(not(ui_reject))]
-pub fn finish<T, D: CustodyDomain<N>, const N: usize>(
+pub fn finish<T: Quarantine, D: CustodyDomain<N>, const N: usize>(
     storage: &IndexedCustody<T, D, N>,
     name: RetainedName<D::Name, N>,
 ) -> T {
@@ -10,7 +10,7 @@ pub fn finish<T, D: CustodyDomain<N>, const N: usize>(
 }
 
 #[cfg(ui_reject)]
-pub fn finish<T, D: CustodyDomain<N>, const N: usize>(
+pub fn finish<T: Quarantine, D: CustodyDomain<N>, const N: usize>(
     storage: &IndexedCustody<T, D, N>,
     name: D::Name,
 ) -> T {

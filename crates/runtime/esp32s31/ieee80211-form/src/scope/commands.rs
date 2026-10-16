@@ -258,6 +258,37 @@ pub enum PhaseCommand<'id, Caps: Ieee80211Capabilities, SC, AC, C, M> {
     Disable(Disable<'id>),
 }
 
+/// Quarantine erases key material in place; every permission and owner stays.
+#[allow(unsafe_code, reason = "command quarantine only zeroes key bytes")]
+// SAFETY: only key bytes are zeroed in place; every permission, MPDU owner
+// and context stays where it is, and nothing is awaited.
+unsafe impl<'id, Caps: Ieee80211Capabilities, SC, AC, C, M> oer_memory::Quarantine
+    for PhaseCommand<'id, Caps, SC, AC, C, M>
+{
+    fn quarantine(&mut self) {
+        match self {
+            Self::InstallPairwise { key, .. } | Self::MutateGroup { key, .. } => {
+                zeroize::Zeroize::zeroize(key);
+            }
+            Self::Configure(_)
+            | Self::SampleTsf(_)
+            | Self::Submit(_)
+            | Self::RemovePairwise(_)
+            | Self::CloseGate(_)
+            | Self::OpenGate
+            | Self::Disable(_) => {}
+        }
+    }
+}
+/// Setup commands carry no key material; quarantine keeps them as they are.
+#[allow(unsafe_code, reason = "setup quarantine does nothing")]
+// SAFETY: the method does nothing, so it releases and moves nothing.
+unsafe impl<'id, Caps: Ieee80211Capabilities, SC, AC> oer_memory::Quarantine
+    for SetupCommand<'id, Caps, SC, AC>
+{
+    fn quarantine(&mut self) {}
+}
+
 /// Storage owned by Held, with two exclusive SPSC endpoint pairs. There is
 /// no general-purpose send operation: every producer method consumes one of
 /// the bounded admissions from this installation's sole mint.
@@ -799,11 +830,11 @@ struct QueuedSender<'q, T, const N: usize> {
     queue: AffineIndexedSpscSender<'q, Entry<T, N>, N>,
     wake: &'q AtomicWaker,
 }
-enum Sender<'q, T, const N: usize> {
+enum Sender<'q, T: oer_memory::Quarantine, const N: usize> {
     Queued(QueuedSender<'q, T, N>),
     Direct(bridge::DirectSender<'q, T, N>),
 }
-impl<T, const N: usize> Sender<'_, T, N> {
+impl<T: oer_memory::Quarantine, const N: usize> Sender<'_, T, N> {
     fn send(&mut self, entry: Entry<T, N>) {
         match self {
             Self::Queued(sender) => {

@@ -9,7 +9,7 @@ use atomic_waker::AtomicWaker;
 use core::{
     cell::UnsafeCell,
     future::poll_fn,
-    marker::PhantomPinned,
+    marker::{PhantomData, PhantomPinned},
     mem::{ManuallyDrop, MaybeUninit},
     pin::Pin,
     ptr,
@@ -136,6 +136,38 @@ impl DriverLifecycle {
 
 mod sealed {
     pub trait InterruptOwner {}
+    /// The form's own view of a driver's hardware; only the form implements it.
+    pub trait OwnsDma {
+        /// The type of the DMA owner a bridge executor reaches.
+        type Dma;
+        /// The DMA owner, for the composite's executor step.
+        fn dma(&mut self) -> &mut Self::Dma;
+        /// Withdraw every pending bridge record and zero its key copy. The
+        /// form calls it after every stop whose drain completed.
+        fn erase_pending_keys(&mut self);
+    }
+}
+
+/// A driver's hardware, as the form knows it: which DMA owner its records
+/// reach (`Dma`) and where their key copies live.
+///
+/// Sealed (#766 6232304479): only the form implements it, for
+/// [`RadioRuntimeOwner`] (the S31's one Wi-Fi DMA, owning no executor) and
+/// for the composite [`commands::bridge::Bridged`], which owns hardware and
+/// its bridge executor and is the only way to step that executor. So the
+/// form itself finds every key copy it erases after a completed stop, and a
+/// stop proof names the DMA its records could reach.
+pub trait OwnsDma: sealed::OwnsDma {}
+impl<H: sealed::OwnsDma> OwnsDma for H {}
+
+/// The bare radio owner, as the placement example installs it, owns no
+/// bridge executor and so no key copy.
+impl sealed::OwnsDma for RadioRuntimeOwner {
+    type Dma = RadioRuntimeOwner;
+    fn dma(&mut self) -> &mut RadioRuntimeOwner {
+        self
+    }
+    fn erase_pending_keys(&mut self) {}
 }
 
 /// Only the real moderated epoch implements this outside this module's tests.
@@ -391,6 +423,53 @@ enum Quiescence {
     TimedOut,
 }
 
+/// How closing ended: every actor left and stop reported its DMA fact, or an
+/// actor may still be inside the installation.
+enum Closed {
+    Stopped(StopOutcome),
+    TimedOut,
+}
+
+/// What the driver's stop proved about the installation's DMA.
+#[must_use = "only a quiescent stop permits returning DMA-reachable owners"]
+pub enum StopOutcome {
+    /// Every DMA channel is inactive and no descriptor is owned by hardware.
+    Quiescent(DmaQuiescent),
+    /// Stop ran, but DMA quiescence was not read or cannot be trusted. After
+    /// either outcome the drain completed, so the form itself then withdraws
+    /// every pending bridge record of the hardware and zeroes its key copy
+    /// before any owner can go into quarantine (#766 6226430314, 6232304479).
+    Unconfirmed,
+}
+
+/// Evidence that the installation's DMA no longer touches its memory.
+///
+/// No production code can build it: only the model fixtures construct it,
+/// and the HAL has no DMA-quiescence reading yet, so every production stop
+/// reports `Unconfirmed`.
+pub struct DmaQuiescent {
+    _private: (),
+}
+impl DmaQuiescent {
+    /// The model fixtures' stand-in for that reading.
+    ///
+    /// # Safety
+    /// The caller has just read, through typed PAC accessors, that every DMA
+    /// channel of this installation is inactive and that no descriptor is
+    /// owned by hardware, using an indication confirmed against the vendor
+    /// and cited with `SOURCE`. Owners returned on this evidence are reused
+    /// at once; a wrong claim lets hardware write memory that has a new
+    /// owner. Without such an indication the stop reports `Unconfirmed`.
+    #[allow(
+        unsafe_code,
+        reason = "reusing DMA-reachable memory rests on the stop's hardware reading"
+    )]
+    #[cfg(test)]
+    pub(crate) const unsafe fn confirmed() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// Time allowed for entered actors to leave after synchronous masking.
 /// Construct it from the worst finite driver step, the complete IRQ path
 /// (including nested handlers / cross-core serialization), and scheduling /
@@ -491,7 +570,7 @@ impl<P, E, S> Clock for ScopeRoute<P, E, S> {
 /// so a body pending after abandon holds no second shutdown obligation.
 pub struct ScopeAccess<
     'latch,
-    H: Send + 'static = RadioRuntimeOwner,
+    H: OwnsDma + Send + 'static = RadioRuntimeOwner,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -504,8 +583,13 @@ pub struct ScopeAccess<
 pub struct ScopeAbandoned {
     _private: (),
 }
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    ScopeAccess<'_, H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> ScopeAccess<'_, H, I, P, E, S>
 {
     pub fn irq(&self) -> &IrqPublisher<'_> {
         &self.scope.irq().mac
@@ -537,14 +621,52 @@ pub struct ReturnedOwners<H, I, P, E, S = fn(&P, WakePlan)> {
 }
 #[must_use]
 pub enum DetachedOwners<H> {
-    Retired(H),
-    Abandoned(Quarantined<H>),
+    /// Every actor drained and stop proved DMA quiescent, on any of the form's own stop paths.
+    Stopped(StoppedOwners<H>),
+    /// Stop could not prove DMA quiescence: keep everything until reset.
+    Unconfirmed(Quarantined<H>),
+}
+
+/// Owners whose stop read their DMA quiescent. Only a quiescent stop builds
+/// this value, so its proof cannot be forged.
+#[must_use = "lend the stop proof, then take the owners"]
+pub struct StoppedOwners<H> {
+    owners: H,
+}
+impl<H: OwnsDma, I, P, E, S> StoppedOwners<ReturnedOwners<H, I, P, E, S>> {
+    /// The DMA-quiescence proof of exactly these owners. While it lives the
+    /// owners cannot be moved, so their hardware cannot be installed again
+    /// in any scope and the proof cannot become stale.
+    pub fn stopped(&self) -> DriverStopped<'_, H::Dma> {
+        DriverStopped {
+            _scope: PhantomData,
+            _dma: PhantomData,
+        }
+    }
+}
+impl<H> StoppedOwners<H> {
+    /// Take the owners, ending every proof borrowed from them.
+    pub fn into_owners(self) -> H {
+        self.owners
+    }
+}
+
+/// Proof that the returned hardware's DMA is quiescent: every channel
+/// inactive and no descriptor owned by hardware, read by the driver's stop.
+/// It borrows those owners ([`StoppedOwners::stopped`]) and names their DMA
+/// owner type `D`: a bridge Held bound for `D` finishes only on it. The S31
+/// image has one Wi-Fi DMA, so the type names that peripheral (#766
+/// 6230985075).
+#[must_use = "lend the stop proof to every store that retains DMA owners"]
+pub struct DriverStopped<'scope, D> {
+    _scope: PhantomData<&'scope ()>,
+    _dma: PhantomData<fn() -> D>,
 }
 
 /// Successful quiescence returns the affine lease for another installation.
 #[must_use]
 pub struct ReleasedScope<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner,
     P: Sync + 'static,
     E: 'static,
@@ -553,6 +675,7 @@ pub struct ReleasedScope<
     pub lease: ScopeLease<H, I, P, E, S>,
     pub owners: DetachedOwners<ReturnedOwners<H, I::Detached, P, E, S>>,
 }
+
 /// No lease, owner or HardwareStopped proof can be recovered from this receipt.
 /// Hardware may still be running. Masks, closed admission and permanent DMA /
 /// owner quarantine preserve memory safety. The composition must report this
@@ -563,7 +686,7 @@ pub struct ScopePoisoned {
 }
 #[must_use]
 pub enum ScopeReturn<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -575,7 +698,7 @@ pub enum ScopeReturn<
 /// An output slot, outside every registered callback's reachable memory.
 /// None means no return was delivered (for example, the future was forgotten).
 pub struct ScopeReturnLatch<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -583,8 +706,13 @@ pub struct ScopeReturnLatch<
 > {
     returned: Option<ScopeReturn<H, I, P, E, S>>,
 }
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    ScopeReturnLatch<H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> ScopeReturnLatch<H, I, P, E, S>
 {
     pub const fn new() -> Self {
         Self { returned: None }
@@ -593,8 +721,13 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         self.returned
     }
 }
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    Default for ScopeReturnLatch<H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> Default for ScopeReturnLatch<H, I, P, E, S>
 {
     fn default() -> Self {
         Self::new()
@@ -606,7 +739,7 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
 /// no shared take(), installed flag, allocator or fallible second acquisition.
 /// Context is not stored here and has no 'static requirement.
 pub struct ScopeStorage<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -620,8 +753,13 @@ pub struct ScopeStorage<
     _pin: PhantomPinned,
 }
 type BackingCell<T> = UnsafeCell<MaybeUninit<T>>;
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    ScopeStorage<H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> ScopeStorage<H, I, P, E, S>
 {
     pub const fn new() -> Self {
         Self {
@@ -653,13 +791,13 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         // extracts. Closed entry rejects all later ISR/driver projections.
     }
 
-    fn close_and_stop(&self, bound: DrainBound) -> Quiescence {
+    fn close_and_stop(&self, bound: DrainBound) -> Closed {
         self.detach_entry();
         let irq = self.irq();
         let quiescence = irq.route.slot.close(bound, &*irq.route);
         (irq.route.acknowledge)(&irq.route.platform);
         if matches!(quiescence, Quiescence::TimedOut) {
-            return Quiescence::TimedOut;
+            return Closed::TimedOut;
         }
         irq.route
             .slot
@@ -678,11 +816,16 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         let mut control = IrqControl {
             owner: &irq.interrupts,
         };
-        (driver.callbacks.stop)(&mut driver.hardware, &mut control);
-        Quiescence::Drained
+        let outcome = (driver.callbacks.stop)(&mut driver.hardware, &mut control);
+        // Every actor drained and stop returned, so this has exclusive
+        // access. Erase after either DMA fact: the core's fail-stop and
+        // whole-run cancel quarantine Driver even after a quiescent stop
+        // (#763), and Held::finish only finds these records already withdrawn.
+        sealed::OwnsDma::erase_pending_keys(&mut *driver.hardware);
+        Closed::Stopped(outcome)
     }
 
-    fn abandon(&self, bound: DrainBound) -> Quiescence {
+    fn abandon(&self, bound: DrainBound) -> Closed {
         // The core grants one abandon call and then quarantines Driver
         // without Drop. This path never extracts the initialized regions.
         let irq = self.irq();
@@ -704,8 +847,13 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
         ScopeLease { memory }
     }
 }
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    Default for ScopeStorage<H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> Default for ScopeStorage<H, I, P, E, S>
 {
     fn default() -> Self {
         Self::new()
@@ -713,7 +861,7 @@ impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: Wak
 }
 #[must_use = "retain the unique pinned SRAM lease until release or permanent quarantine"]
 pub struct ScopeLease<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -721,8 +869,13 @@ pub struct ScopeLease<
 > {
     memory: Pin<&'static mut ScopeStorage<H, I, P, E, S>>,
 }
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>>
-    ScopeLease<H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> ScopeLease<H, I, P, E, S>
 {
     fn storage(&self) -> &ScopeStorage<H, I, P, E, S> {
         self.memory.as_ref().get_ref()
@@ -827,7 +980,7 @@ struct IrqRegion<I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeSchedu
     completion: AtomicWaker,
 }
 struct DriverRegion<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner,
     P: Sync + 'static,
     E: 'static,
@@ -841,14 +994,14 @@ struct DriverRegion<
 }
 
 /// The bounded hardware operations bound by the installation's safety proof.
-pub struct DriverCallbacks<H, I: InterruptOwner> {
+pub struct DriverCallbacks<H: OwnsDma, I: InterruptOwner> {
     step: fn(&mut H, &mut IrqControl<'_, I>, DriverEvents, DriverStatus) -> DriverStep,
-    stop: fn(&mut H, &mut IrqControl<'_, I>),
+    stop: fn(&mut H, &mut IrqControl<'_, I>) -> StopOutcome,
 }
-impl<H, I: InterruptOwner> DriverCallbacks<H, I> {
+impl<H: OwnsDma, I: InterruptOwner> DriverCallbacks<H, I> {
     pub const fn new(
         step: fn(&mut H, &mut IrqControl<'_, I>, DriverEvents, DriverStatus) -> DriverStep,
-        stop: fn(&mut H, &mut IrqControl<'_, I>),
+        stop: fn(&mut H, &mut IrqControl<'_, I>) -> StopOutcome,
     ) -> Self {
         Self { step, stop }
     }
@@ -859,7 +1012,7 @@ impl<H, I: InterruptOwner> DriverCallbacks<H, I> {
     reason = "only the exclusive admitted executor projects DriverRegion"
 )]
 unsafe fn invoke<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner,
     P: Sync + 'static,
     E: 'static,
@@ -963,7 +1116,7 @@ unsafe fn power_entry<I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeS
 #[must_use]
 pub struct DriverScope<
     'latch,
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -975,7 +1128,7 @@ pub struct DriverScope<
 }
 impl<
     'latch,
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner,
     P: Sync + 'static,
     E: 'static,
@@ -999,8 +1152,8 @@ impl<
     /// synchronously poll, reenter driver dispatch or destroy the scope.
     /// IRQ preemption is permitted. Step reports Retired only after observing
     /// RetireRequested and accounting for all accepted work; stop stops
-    /// hardware/DMA before returning and
-    /// runs once after quiescence.
+    /// hardware and DMA, runs once after quiescence, and returns
+    /// `StopOutcome::Quiescent` only on the reading `DmaQuiescent` requires.
     /// It is never invoked on timeout. Schedulers
     /// and composition wakers (including clone/drop) ONLY pend execution: they
     /// never synchronously poll or detach. All reachable callback data survive
@@ -1118,7 +1271,7 @@ impl<
         .await;
     }
 
-    fn close_and_stop(&self) -> Quiescence {
+    fn close_and_stop(&self) -> Closed {
         self.lease.storage().close_and_stop(self.bound)
     }
 
@@ -1145,12 +1298,15 @@ impl<
         self.complete_after(quiescence)
     }
 
-    fn complete_after(&mut self, quiescence: Quiescence) -> ScopeReturn<H, I, P, E, S> {
-        if matches!(quiescence, Quiescence::TimedOut) {
-            // Do not inspect, move or drop anything an admitted actor can use.
-            // Losing this affine lease leaves its static backing quarantined.
-            return ScopeReturn::Poisoned(ScopePoisoned { _private: () });
-        }
+    fn complete_after(&mut self, closed: Closed) -> ScopeReturn<H, I, P, E, S> {
+        let stop = match closed {
+            Closed::Stopped(stop) => stop,
+            Closed::TimedOut => {
+                // Do not inspect, move or drop anything an admitted actor can
+                // use. Losing this affine lease leaves its backing quarantined.
+                return ScopeReturn::Poisoned(ScopePoisoned { _private: () });
+            }
+        };
         #[allow(
             unsafe_code,
             reason = "closed admission and zero actors permit unique owner recovery"
@@ -1179,10 +1335,13 @@ impl<
                 route: ManuallyDrop::take(&mut irq.route),
             }
         };
-        let owners = if irq.lifecycle.snapshot() == DriverStatus::Retired {
-            DetachedOwners::Retired(owners)
-        } else {
-            DetachedOwners::Abandoned(Quarantined::new(owners))
+        // The DMA fact decides, whatever path stopped the driver: retire,
+        // fail-stop and a lost owner all return owners after a quiescent stop.
+        let owners = match stop {
+            StopOutcome::Quiescent(DmaQuiescent { _private: () }) => {
+                DetachedOwners::Stopped(StoppedOwners { owners })
+            }
+            StopOutcome::Unconfirmed => DetachedOwners::Unconfirmed(Quarantined::new(owners)),
         };
         // The non-Drop driver projection ends with this function, before the
         // returned lease can be used. IRQ's owned waker is destroyed here.
@@ -1190,8 +1349,13 @@ impl<
         ScopeReturn::Released(ReleasedScope { lease, owners })
     }
 }
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>> Drop
-    for DriverScope<'_, H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> Drop for DriverScope<'_, H, I, P, E, S>
 {
     fn drop(&mut self) {
         self.latch.returned = Some(self.complete());

@@ -37,6 +37,23 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
   ends immediately through fail-stop, without a second disable/drain. The
   model retains poisoned owners even after the quarantine receipt drops.
 
+- S31 form custody: dropping `Held` or an `oer-memory` `IndexedCustody` never
+  releases an owner. It quarantines (leaks) every retained MPDU, ticket and
+  permission, erasing key copies only. Owners return only through
+  `Held::finish`, which needs a `DriverStopped`. On the form's own paths the
+  DMA fact decides, not the stop path: retire, `ScopeAccess::abandon`, a
+  cancelled scope and a lost `Driver` all release after a stop that read DMA
+  quiescent (`StopOutcome::Quiescent`), and none release after
+  `Unconfirmed`. The core's fail-stop and whole-run cancel still quarantine
+  the Driver even after a quiescent stop (#763). The proof and Held are
+  branded by the DMA owner type `D` (`OwnsDma::Dma`, production
+  `RadioRuntimeOwner`). `OwnsDma` is sealed; a Held binds and its executor
+  steps only through the `Bridged` composite, and `StoppedOwners::parts`
+  lends only the executor. After every completed stop the form itself erases
+  the pending keys of the executor in `Bridged`: never add a receipt or an
+  outside `OwnsDma` implementation. A key command published through Held
+  after the stop keeps its record copy until reset.
+
 - S31 RX positions retain `RingIndex<COUNT>` from address validation through
   descriptor traversal and append. Extract `get()` only at an array or
   diagnostic boundary. A position from another ring capacity cannot enter

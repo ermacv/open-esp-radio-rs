@@ -17,6 +17,8 @@ enum AfterCancel {
 pub(super) struct Cut {
     point: AwaitPoint,
     after: AfterCancel,
+    /// Whether the fixture's stop reads its DMA as quiescent.
+    quiescent: bool,
     slot: &'static ScopeSlot,
     pub cancel: Arc<AtomicBool>,
     polls: Count,
@@ -64,14 +66,16 @@ impl Cut {
     }
 
     pub fn finished(&self, state: &S31State) {
-        let retired = matches!(self.after, AfterCancel::Retire) && self.polls.get() != 0;
+        // The DMA fact decides, not the path: after a quiescent stop retire,
+        // abandon and an unstarted finish all release; after an unconfirmed
+        // one they all quarantine.
         match state {
             State::Released(released) => {
-                assert!(retired);
-                assert!(matches!(&released.owners, DetachedOwners::Retired(_)));
+                assert!(self.quiescent, "only a quiescent stop releases");
+                assert!(matches!(&released.owners, DetachedOwners::Stopped(_)));
             }
             State::Quarantined(_) => {
-                assert!(!retired);
+                assert!(!self.quiescent, "a quiescent stop releases on every path");
             }
         }
         assert!(!self.slot.open.load(Ordering::Acquire));
@@ -85,7 +89,10 @@ impl Cut {
 
 #[test]
 fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
-    for point in [AwaitPoint::CoreRequest, AwaitPoint::ExecutorRetirement] {
+    for (point, quiescent) in [AwaitPoint::CoreRequest, AwaitPoint::ExecutorRetirement]
+        .into_iter()
+        .flat_map(|point| [true, false].map(|q| (point, q)))
+    {
         for polls in 0..=3 {
             for after in [
                 AfterCancel::Finish,
@@ -94,6 +101,7 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
             ] {
                 let (route, slot, platform) = make_route();
                 let mut hardware = hardware(&platform);
+                hardware.dma_quiescent = quiescent;
                 let (work, audit) = work::DmaQueue::populated();
                 hardware.work = work;
                 let stops = hardware.stops.clone();
@@ -101,6 +109,7 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
                 let cut = Cut {
                     point,
                     after,
+                    quiescent,
                     slot,
                     cancel: Arc::default(),
                     polls: Count::default(),
@@ -139,9 +148,13 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
                 drop(uninstalled);
                 drop(run);
                 assert_eq!(stops.get(), 1, "outer cancellation must not stop twice");
+                // A quiescent stop returns the hardware on every path, so
+                // dropping the uninstalled owners drops it exactly once; an
+                // unconfirmed one keeps it quarantined, never dropped.
                 assert_eq!(
                     drops.get(),
-                    usize::from(matches!(after, AfterCancel::Retire) && polls != 0)
+                    usize::from(quiescent),
+                    "{point:?}, {after:?}, {polls}, {quiescent}"
                 );
                 assert!(latch.into_return().is_none(), "finish recovered explicitly");
             }
@@ -151,10 +164,17 @@ fn cancellation_at_every_drive_await_preserves_retire_abandon_and_finish() {
 
 #[test]
 fn whole_run_cancellation_at_every_drive_await_abandons_once() {
-    for point in [AwaitPoint::CoreRequest, AwaitPoint::ExecutorRetirement] {
+    // Both DMA facts: the core's abandon maps an unconfirmed stop to
+    // Abandon::Unconfirmed (lifecycle.rs Backend::abandon); either way the
+    // core quarantines Driver (#763).
+    for (point, quiescent) in [AwaitPoint::CoreRequest, AwaitPoint::ExecutorRetirement]
+        .into_iter()
+        .flat_map(|point| [true, false].map(|q| (point, q)))
+    {
         for polls in 0..=3 {
             let (route, slot, platform) = make_route();
             let mut hardware = hardware(&platform);
+            hardware.dma_quiescent = quiescent;
             let (work, audit) = work::DmaQueue::populated();
             hardware.work = work;
             let stops = hardware.stops.clone();
@@ -162,6 +182,7 @@ fn whole_run_cancellation_at_every_drive_await_abandons_once() {
             let cut = Cut {
                 point,
                 after: AfterCancel::Finish,
+                quiescent,
                 slot,
                 cancel: Arc::default(),
                 polls: Count::default(),

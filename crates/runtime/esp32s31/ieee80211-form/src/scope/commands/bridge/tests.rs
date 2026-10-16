@@ -32,8 +32,9 @@ impl Drop for Counted<'_> {
         self.0.set(self.0.get() + 1);
     }
 }
+/// The model DMA owner: the `D` every bridge binding in these tests names.
 #[derive(Default)]
-struct Hardware {
+pub(crate) struct Hardware {
     operations: Vec<Operation>,
     keys: Vec<[u8; 16]>,
 }
@@ -49,7 +50,7 @@ impl ModelHardware for Hardware {
         Observation(self.operations.len() as u64)
     }
 }
-type Store<'id, 'context> = Held<
+type Store<'id, 'context, D = Hardware> = Held<
     'id,
     Caps,
     Counted<'context>,
@@ -60,6 +61,7 @@ type Store<'id, 'context> = Held<
     2,
     4,
     15,
+    D,
 >;
 
 #[test]
@@ -353,7 +355,7 @@ fn key_withdrawal_keeps_the_applied_prefix_and_erases_unexecuted_keys() -> Resul
             // Owners stay in Held; finish withdraws only the pending suffix.
             drop(wait);
             drop(tx);
-            executor.withdraw_pending();
+            drop(executor); // its drop withdraws every queued record
             for (n, expected) in expected.into_iter().enumerate() {
                 let command = match replies.phase().await {
                     Reply::Applied(reply) if n < completed => {
@@ -397,6 +399,40 @@ fn key_withdrawal_keeps_the_applied_prefix_and_erases_unexecuted_keys() -> Resul
         }))?;
     }
     Ok(())
+}
+
+#[test]
+fn erase_pending_keys_withdraws_every_pending_key_and_keeps_the_executor() {
+    // The drained-but-unconfirmed path: the backend erases pending record
+    // keys before quarantine; nothing is programmed and the executor stays.
+    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut executor) =
+            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+        let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+        let mut tx = setup.enable();
+        executor.step(&mut Hardware::default());
+        let _enable = applied(replies.setup().await);
+        let secret = zeroize::Zeroizing::new([0x5a; 16]);
+        for permission in r.installs {
+            tx.install_pairwise(permission, Ccmp128Key::new(&secret));
+        }
+        executor.erase_pending_keys();
+        for _ in 0..2 {
+            let Reply::Withdrawn(PhaseCommand::InstallPairwise { key, .. }) = replies.phase().await
+            else {
+                panic!("each pending key is withdrawn");
+            };
+            assert_eq!(key.as_bytes(), &[0; 16]);
+        }
+        let mut hardware = Hardware::default();
+        assert_eq!(
+            executor.step(&mut hardware),
+            None,
+            "nothing pending remains"
+        );
+        assert!(hardware.operations.is_empty(), "no key was programmed");
+    }));
 }
 
 #[test]
@@ -549,6 +585,18 @@ struct PausedHardware {
     proceed: mpsc::Receiver<()>,
     seen: Option<TxImage>,
 }
+impl PausedHardware {
+    /// The same DMA owner before the paused transmit: it only applies setup.
+    fn idle() -> Self {
+        let (entered, _) = mpsc::channel();
+        let (_, proceed) = mpsc::channel();
+        Self {
+            entered,
+            proceed,
+            seen: None,
+        }
+    }
+}
 impl ModelHardware for PausedHardware {
     fn apply(&mut self, operation: Operation, _: &[u8; 16]) -> Observation {
         if let Operation::Transmit(image) = operation {
@@ -570,11 +618,13 @@ fn second_core_step_survives_forget_or_quarantine_without_context_or_dma_drop() 
         let drops = Cell::new(0);
         ready(branded::<CommandPools<2, 2>, _>(async |mint| {
             let r = mint.into_pools();
-            let (mut held, mut executor) =
-                Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            let (mut held, mut executor) = Store::<PausedHardware>::bind(
+                r.bridge,
+                Box::leak(Box::new(ExecutionStorage::new())),
+            );
             let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
             let mut tx = setup.enable();
-            executor.step(&mut Hardware::default());
+            executor.step(&mut PausedHardware::idle());
             let _enable = applied(replies.setup().await);
             let [ticket, _] = r.tickets;
             let [admission, _] = r.core.tickets;
@@ -628,10 +678,10 @@ fn cancellation_during_another_cores_step_returns_original_owner_after_join() {
     ready(branded::<CommandPools<2, 2>, _>(async |mint| {
         let r = mint.into_pools();
         let (mut held, mut executor) =
-            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            Store::<PausedHardware>::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
         let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
         let mut tx = setup.enable();
-        executor.step(&mut Hardware::default());
+        executor.step(&mut PausedHardware::idle());
         let _enable = applied(replies.setup().await);
         let [ticket, _] = r.tickets;
         let [admission, _] = r.core.tickets;
@@ -670,13 +720,25 @@ fn cancellation_during_another_cores_step_returns_original_owner_after_join() {
 fn command_to_step_host_latency_fixture() {
     // Host scheduling observation only: never a production DrainBound or
     // retune deadline. Includes direct projection and inter-thread scheduling.
+    /// The one DMA owner of this binding; it samples only once armed.
+    struct Sample {
+        stamps: Option<(mpsc::Receiver<Instant>, mpsc::Sender<std::time::Duration>)>,
+    }
+    impl ModelHardware for Sample {
+        fn apply(&mut self, _: Operation, _: &[u8; 16]) -> Observation {
+            if let Some((stamps, times)) = &self.stamps {
+                times.send(stamps.recv().unwrap().elapsed()).unwrap();
+            }
+            Observation(0)
+        }
+    }
     ready(branded::<CommandPools<2, 2>, _>(async |mint| {
         let r = mint.into_pools();
         let (mut held, mut executor) =
-            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            Store::<Sample>::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
         let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
         let mut tx = setup.enable();
-        executor.step(&mut Hardware::default());
+        executor.step(&mut Sample { stamps: None });
         let _enable = applied(replies.setup().await);
         struct WakeThread(thread::Thread);
         impl std::task::Wake for WakeThread {
@@ -691,23 +753,10 @@ fn command_to_step_host_latency_fixture() {
         let (time_tx, time_rx) = mpsc::channel();
         let (parked_tx, parked_rx) = mpsc::channel();
         let worker = thread::spawn(move || {
-            struct Sample {
-                stamps: mpsc::Receiver<Instant>,
-                times: mpsc::Sender<std::time::Duration>,
-            }
-            impl ModelHardware for Sample {
-                fn apply(&mut self, _: Operation, _: &[u8; 16]) -> Observation {
-                    self.times
-                        .send(self.stamps.recv().unwrap().elapsed())
-                        .unwrap();
-                    Observation(0)
-                }
-            }
             let waker = Waker::from(std::sync::Arc::new(WakeThread(thread::current())));
             let mut cx = Context::from_waker(&waker);
             let mut hardware = Sample {
-                stamps: stamp_rx,
-                times: time_tx,
+                stamps: Some((stamp_rx, time_tx)),
             };
             assert!(executor.poll_step(&mut cx, &mut hardware).is_pending());
             parked_tx.send(()).unwrap();
@@ -756,7 +805,7 @@ fn command_to_step_host_latency_fixture() {
             "host bridge sizes: backing={} Held={} Executor={} bytes",
             core::mem::size_of::<ExecutionStorage<4, 15>>(),
             core::mem::size_of::<Store<'_, '_>>(),
-            core::mem::size_of::<Executor<4, 15>>()
+            core::mem::size_of::<Executor<Hardware, 4, 15>>()
         );
     }));
 }
@@ -815,16 +864,16 @@ fn command_acquire_precedes_desired_settings_and_ba_reads_on_another_core() {
     ready(branded::<CommandPools<2, 2>, _>(async |mint| {
         let r = mint.into_pools();
         let (mut held, mut executor) =
-            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            Store::<ReadDesired>::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
         let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
         let mut tx = setup.enable();
-        executor.step(&mut Hardware::default());
-        let _enable = applied(replies.setup().await);
         let desired = Arc::new(Desired {
             settings: AtomicU32::new(0),
             ba: AtomicU32::new(0),
         });
         let mut hardware = ReadDesired(desired.clone());
+        executor.step(&mut hardware);
+        let _enable = applied(replies.setup().await);
         let worker = thread::spawn(move || {
             loop {
                 if executor.step(&mut hardware).is_some() {
@@ -871,7 +920,7 @@ fn finish_after_cancel_withdraws_pending_commands_and_returns_every_dma_lease() 
             let wait = Box::pin(replies.phase());
             drop(wait);
             drop(tx);
-            executor.withdraw_pending();
+            drop(executor); // its drop withdraws every queued record
             for n in 0..2 {
                 let reply = replies.phase().await;
                 if n < completed {
@@ -912,7 +961,7 @@ fn withdrawn_close_and_disable_never_produce_applied_receipts() {
         let _enable = applied(replies.setup().await);
         tx.close_gate(r.gate);
         let _frozen = tx.disable();
-        executor.withdraw_pending();
+        drop(executor); // its drop withdraws every queued record
         assert!(matches!(
             replies.phase().await,
             Reply::Withdrawn(PhaseCommand::CloseGate(_))
@@ -924,4 +973,345 @@ fn withdrawn_close_and_disable_never_produce_applied_receipts() {
         assert_eq!(hardware.operations, [Operation::Enable]);
         pending(replies.phase());
     }));
+}
+
+/// One installation: enable, submit both tickets, execute one, then stop the
+/// executor on `stopped` and finish Held, returning the owners still held.
+fn run_and_finish(
+    drops: &Cell<usize>,
+    stopped: &crate::scope::DriverStopped<'_, Hardware>,
+) -> usize {
+    let mut pools = Vec::new();
+    let returned = ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut executor) =
+            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+        {
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            executor.step(&mut Hardware::default());
+            let _enable = applied(replies.setup().await);
+            for (n, (ticket, admission)) in r.tickets.into_iter().zip(r.core.tickets).enumerate() {
+                let (operation, pool) = payload::admit_with_pool(Counted(drops), ticket, n as u8);
+                tx.submit(operation, TxAdmission::Open(admission));
+                pools.push(pool);
+            }
+            executor.step(&mut Hardware::default());
+        }
+        let Ok(owners) = held.finish(&mut executor, stopped) else {
+            panic!("the binding's own executor proof finishes its Held");
+        };
+        assert_eq!(owners.setup.count(), 0);
+        owners
+            .phase
+            .filter(|command| matches!(command, PhaseCommand::Submit(_)))
+            .count()
+    }));
+    for pool in &pools {
+        assert_eq!(
+            pool.claimed_slots(),
+            0,
+            "every DMA lease returns to its pool"
+        );
+    }
+    returned
+}
+
+#[test]
+fn confirmed_stop_returns_every_pool_across_abort_and_restart_cycles() {
+    // Retire and a fail-stop with proven DMA quiescence both return every
+    // owner; repeated abort/restart cycles never shrink the pools. Each cycle
+    // leaks a new ExecutionStorage: the store has no reinstall method yet
+    // (the README's pending reusable Released backing item).
+    const CYCLES: usize = 8;
+    let drops = Cell::new(0);
+    for cycle in 0..CYCLES {
+        for abandon in [false, true] {
+            let returned = crate::scope::tests::with_stopped_scope(abandon, true, |stopped| {
+                let stopped = stopped.expect("a quiescent stop issues its proof");
+                run_and_finish(&drops, stopped)
+            });
+            assert_eq!(returned, 2);
+        }
+        assert_eq!(drops.get(), 4 * (cycle + 1));
+    }
+}
+
+#[test]
+fn unconfirmed_stop_issues_no_proof_and_keeps_the_quarantine() {
+    for abandon in [false, true] {
+        crate::scope::tests::with_stopped_scope(abandon, false, |stopped| {
+            assert!(stopped.is_none(), "an unconfirmed stop proves nothing");
+        });
+    }
+}
+
+#[test]
+fn another_bindings_executor_for_the_same_dma_is_refused_and_returns_held() {
+    // An executor for another DMA owner type cannot reach finish at all
+    // (tests/ui/bridge_finish_foreign_dma.rs). Two bindings for the same type
+    // are told apart by their permanent record stores.
+    crate::scope::tests::with_stopped_scope(false, true, |stopped| {
+        let stopped = stopped.expect("a quiescent stop issues its proof");
+        ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+            let r = mint.into_pools();
+            let (held, mut executor) =
+                Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            ready(branded::<CommandPools<2, 2>, _>(async |other| {
+                let o = other.into_pools();
+                // The other binding is never finished on this proof: it stays
+                // quarantined when dropped.
+                let (_other_held, mut other_executor) =
+                    Store::bind(o.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+                let Err(refused) = held.finish(&mut other_executor, stopped) else {
+                    panic!("another binding's executor cannot finish this Held");
+                };
+                assert!(refused.held.finish(&mut executor, stopped).is_ok());
+            }));
+        }));
+    });
+}
+
+#[test]
+fn a_key_sent_before_finish_is_withdrawn_and_its_record_taken_back() {
+    // Held::finish consumes Held, so every producer endpoint has ended; a key
+    // published just before finish is withdrawn, its permanent record is
+    // taken back out of the static storage, and its command returns.
+    crate::scope::tests::with_stopped_scope(true, true, |stopped| {
+        let stopped = stopped.expect("a quiescent stop issues its proof");
+        ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+            let r = mint.into_pools();
+            let (mut held, mut executor) =
+                Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+            {
+                let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+                let mut tx = setup.enable();
+                executor.step(&mut Hardware::default());
+                let _enable = applied(replies.setup().await);
+                let [install, _] = r.installs;
+                tx.install_pairwise(install, Ccmp128Key::new(&zeroize::Zeroizing::new([9; 16])));
+            }
+            let Ok(owners) = held.finish(&mut executor, stopped) else {
+                panic!("the binding's own executor finishes its Held");
+            };
+            let mut erased = 0;
+            for command in owners.phase {
+                if let PhaseCommand::InstallPairwise { key, .. } = command {
+                    assert_eq!(key.as_bytes(), &[0; 16]);
+                    erased += 1;
+                }
+            }
+            assert_eq!(erased, 1);
+            assert_eq!(
+                owners.records_taken_back, 1,
+                "finish withdrew and took back the late record"
+            );
+        }));
+    });
+}
+
+/// Publish one pairwise key and leave it pending, hand the executor to
+/// `erase`, then inspect the permanent record cell the withdrawal replied.
+fn pending_key_record(
+    erase: impl FnOnce(Executor<Hardware, 4, 15>) -> Option<Executor<Hardware, 4, 15>>,
+) {
+    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut executor) =
+            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+        let records = held.phase_lane.records;
+        {
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            executor.step(&mut Hardware::default());
+            let _enable = applied(replies.setup().await);
+            let [install, _] = r.installs;
+            tx.install_pairwise(install, Ccmp128Key::new(&zeroize::Zeroizing::new([9; 16])));
+        }
+        let kept = erase(executor);
+        // Inspect the permanent cell itself, not the Held command.
+        let Ok(mut name) = held.phase_lane.replied.try_receive() else {
+            panic!("the pending record was withdrawn");
+        };
+        records.with_mut(&mut name, |record| {
+            assert_eq!(record.completion, Completion::Withdrawn);
+            assert_eq!(
+                record.key.as_bytes(),
+                &[0; 16],
+                "the record's key copy is erased"
+            );
+        });
+        if let Some(mut executor) = kept {
+            let mut hardware = Hardware::default();
+            assert_eq!(
+                executor.step(&mut hardware),
+                None,
+                "nothing pending remains"
+            );
+            assert!(hardware.operations.is_empty(), "no key was programmed");
+        }
+    }));
+}
+
+#[test]
+fn dropping_the_executor_erases_the_record_copy_of_a_pending_key() {
+    // The same withdrawal Held::finish runs through erase_pending_keys.
+    pending_key_record(|executor| {
+        drop(executor);
+        None
+    });
+}
+
+#[test]
+fn erase_pending_keys_erases_the_record_copy_and_keeps_the_executor() {
+    pending_key_record(|mut executor| {
+        executor.erase_pending_keys();
+        Some(executor)
+    });
+}
+
+#[test]
+fn finish_reaches_the_executor_inside_the_stopped_hardware() {
+    // The composition: Bridged binds Held and installs the executor inside
+    // the scope's hardware; StoppedOwners::parts lends it with the proof.
+    let drops = Cell::new(0);
+    let mut pools = Vec::new();
+    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut bridge): (Store<'_, '_>, _) = Bridged::bind(
+            crate::scope::tests::fixture_hardware(),
+            r.bridge,
+            Box::leak(Box::new(ExecutionStorage::new())),
+        );
+        {
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            bridge.step();
+            let _enable = applied(replies.setup().await);
+            for (n, (ticket, admission)) in r.tickets.into_iter().zip(r.core.tickets).enumerate() {
+                let (operation, pool) = payload::admit_with_pool(Counted(&drops), ticket, n as u8);
+                tx.submit(operation, TxAdmission::Open(admission));
+                pools.push(pool);
+            }
+        }
+        crate::scope::tests::with_stopped_scope_owning(true, true, bridge, |stopped| {
+            let (executor, stopped) = stopped.expect("a quiescent stop lends its parts");
+            let Ok(owners) = held.finish(executor, stopped) else {
+                panic!("the executor inside the hardware finishes its Held");
+            };
+            assert_eq!(owners.phase.count(), 2);
+        });
+    }));
+    for pool in &pools {
+        assert_eq!(
+            pool.claimed_slots(),
+            0,
+            "every DMA lease returns to its pool"
+        );
+    }
+    assert_eq!(drops.get(), 2);
+}
+
+#[test]
+fn a_quiescent_stop_erases_pending_record_keys_before_any_finish() {
+    // The core's fail-stop and whole-run cancel quarantine Driver even after a
+    // quiescent stop (#763), so no finish may follow: the form erases the
+    // pending keys at the stop itself, whatever DMA fact it returned.
+    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut bridge): (Store<'_, '_>, _) = Bridged::bind(
+            crate::scope::tests::fixture_hardware(),
+            r.bridge,
+            Box::leak(Box::new(ExecutionStorage::new())),
+        );
+        let records = held.phase_lane.records;
+        {
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            bridge.step();
+            let _enable = applied(replies.setup().await);
+            let [install, _] = r.installs;
+            tx.install_pairwise(install, Ccmp128Key::new(&zeroize::Zeroizing::new([9; 16])));
+        }
+        crate::scope::tests::with_stopped_scope_owning(true, true, bridge, |stopped| {
+            assert!(stopped.is_some(), "a quiescent stop lends its parts");
+            let Ok(mut name) = held.phase_lane.replied.try_receive() else {
+                panic!("the stop withdrew the pending record before finish");
+            };
+            records.with_mut(&mut name, |record| {
+                assert_eq!(record.completion, Completion::Withdrawn);
+                assert_eq!(
+                    record.key.as_bytes(),
+                    &[0; 16],
+                    "the record's key copy is erased"
+                );
+            });
+        });
+    }));
+}
+
+#[test]
+fn an_unconfirmed_drained_stop_erases_pending_record_keys_before_quarantine() {
+    // #766 6226430314, 6232304479: with the drain complete, the form itself
+    // withdraws the pending records of the executor inside Bridged and erases
+    // their keys (the fixture's stop only reports Unconfirmed, and the API
+    // has no receipt); then the owners stay quarantined.
+    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut bridge): (Store<'_, '_>, _) = Bridged::bind(
+            crate::scope::tests::fixture_hardware(),
+            r.bridge,
+            Box::leak(Box::new(ExecutionStorage::new())),
+        );
+        let records = held.phase_lane.records;
+        {
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            bridge.step();
+            let _enable = applied(replies.setup().await);
+            let [install, _] = r.installs;
+            tx.install_pairwise(install, Ccmp128Key::new(&zeroize::Zeroizing::new([7; 16])));
+        }
+        crate::scope::tests::with_stopped_scope_owning(true, false, bridge, |stopped| {
+            assert!(stopped.is_none(), "an unconfirmed stop lends nothing");
+        });
+        let Ok(mut name) = held.phase_lane.replied.try_receive() else {
+            panic!("the unconfirmed stop withdrew the pending record");
+        };
+        records.with_mut(&mut name, |record| {
+            assert_eq!(record.completion, Completion::Withdrawn);
+            assert_eq!(
+                record.key.as_bytes(),
+                &[0; 16],
+                "the record's key copy is erased"
+            );
+        });
+    }));
+}
+
+#[test]
+fn dropping_held_is_the_quarantine_path_and_keeps_every_owner() {
+    let drops = Cell::new(0);
+    let mut pools = Vec::new();
+    ready(branded::<CommandPools<2, 2>, _>(async |mint| {
+        let r = mint.into_pools();
+        let (mut held, mut executor) =
+            Store::bind(r.bridge, Box::leak(Box::new(ExecutionStorage::new())));
+        {
+            let (setup, mut replies) = held.split(r.issuer, r.enable, r.disable);
+            let mut tx = setup.enable();
+            executor.step(&mut Hardware::default());
+            let _enable = applied(replies.setup().await);
+            let [ticket, _] = r.tickets;
+            let [admission, _] = r.core.tickets;
+            let (operation, pool) = payload::admit_with_pool(Counted(&drops), ticket, 0);
+            tx.submit(operation, TxAdmission::Open(admission));
+            pools.push(pool);
+        }
+        drop(held);
+    }));
+    assert_eq!(drops.get(), 0, "an unconfirmed stop never drops an owner");
+    for pool in &pools {
+        assert_eq!(pool.claimed_slots(), MODEL_FRAGMENTS);
+    }
 }

@@ -186,9 +186,12 @@ impl<'a, 'context> PortBackend for Backend<'a, 'context> {
         state
     }
     fn abandon(&mut self, call: Quarantine) -> Abandon {
+        // Abandon::Stopped only when stop proved DMA quiescent.
         match self.storage.abandon(self.bound) {
-            Quiescence::Drained => Abandon::Stopped(call.stopped()),
-            Quiescence::TimedOut => Abandon::Unconfirmed(call),
+            Closed::Stopped(StopOutcome::Quiescent(_)) => Abandon::Stopped(call.stopped()),
+            Closed::Stopped(StopOutcome::Unconfirmed) | Closed::TimedOut => {
+                Abandon::Unconfirmed(call)
+            }
         }
     }
 }
@@ -298,7 +301,7 @@ fn loan_retires_then_core_detaches_and_consumes_driver_into_released() {
     };
     assert_eq!(stops.get(), 1);
     assert_eq!(caller.detached.get(), 1);
-    assert!(matches!(released.owners, DetachedOwners::Retired(_)));
+    assert!(matches!(released.owners, DetachedOwners::Stopped(_)));
     drop(future);
     assert!(
         latch.into_return().is_none(),

@@ -66,9 +66,20 @@ pub(super) fn validate(contracts: &[SourceContract], root: &Path) -> Result<()> 
                 };
                 path.push(name);
                 let final_component = index + 1 == components.len();
-                let Ok(metadata) = fs::symlink_metadata(&path) else {
-                    valid = false;
-                    break;
+                // A missing file breaks the rule; any other failure to
+                // inspect it is the environment's.
+                let metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        valid = false;
+                        break;
+                    }
+                    Err(error) => {
+                        return Err(crate::with_context(
+                            error,
+                            format_args!("cannot inspect {}", relative.display()),
+                        ));
+                    }
                 };
                 if metadata.file_type().is_symlink()
                     || (final_component && !metadata.file_type().is_file())

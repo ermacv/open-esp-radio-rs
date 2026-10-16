@@ -232,17 +232,26 @@ pub(crate) struct EvidenceInputs {
     pub(crate) hil: HilEvidenceSummary,
     pub(crate) vendor_evidence_index: PathBuf,
     pub(crate) hil_catalog: PathBuf,
-    pub(crate) hil_runs: PathBuf,
+    /// The verified evidence archive copy the HIL evidence came from; none
+    /// when the evaluation read no runs.
+    pub(crate) hil_archive: Option<HilArchive>,
     /// The evidence directories the program declares that do not exist:
     /// they hold no evidence, so every obligation they would serve stays
     /// missing, and the report says so instead of reading them as empty.
     pub(crate) absent: Vec<AbsentDirectory>,
 }
 
+/// The evidence archive version an evaluation read, and where its copy is.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HilArchive {
+    pub(crate) version: String,
+    pub(crate) path: PathBuf,
+}
+
 /// A declared evidence directory that does not exist.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AbsentDirectory {
-    /// `vendor-evidence`, `hil-evidence` or `hil-runs`.
+    /// `vendor-evidence`.
     pub(crate) kind: &'static str,
     pub(crate) path: PathBuf,
     /// `absent`, or `stale` for a derived vendor evidence index computed
@@ -251,8 +260,7 @@ pub(crate) struct AbsentDirectory {
 }
 
 /// Which of `declared` (kind, repository path) do not exist below `root`;
-/// an empty path declares nothing. A dangling link, such as a checkout's
-/// `target/hil/runs` before its first run, counts as absent.
+/// an empty path declares nothing. A dangling link counts as absent.
 pub(crate) fn absent_directories(
     root: &Path,
     declared: &[(&'static str, &Path)],
@@ -269,19 +277,23 @@ pub(crate) fn absent_directories(
 }
 
 impl Qualification {
-    pub(crate) fn load_and_evaluate(path: &Path, root: &Path) -> Result<Self> {
-        ManifestDocument::load_and_validate(path, root)?.evaluate(root)
-    }
-
-    /// Record the program's qualifying HIL observations as tracked shards.
-    /// With `runs`, also explain what became of each scenario they observed.
-    /// Record the qualifying observations of `runs`, or of every run.
-    pub(crate) fn record_hil_evidence(
+    /// Evaluate the program at `path`; its HIL evidence is the runs of the
+    /// verified archive copy `archive`, none without one.
+    pub(crate) fn load_and_evaluate(
         path: &Path,
         root: &Path,
-        runs: Option<&BTreeSet<String>>,
-    ) -> Result<RecordedEvidence> {
-        ManifestDocument::load_and_validate(path, root)?.record_hil_evidence(root, runs)
+        archive: Option<&oer_hil_evidence_archive::Copy>,
+    ) -> Result<Self> {
+        let runs = archive.map_or(crate::hil::HilRuns::None, crate::hil::HilRuns::Archive);
+        ManifestDocument::load_and_validate(path, root)?.evaluate(root, runs)
+    }
+
+    /// Evaluate the program at `path` against the one run bundle at `run`,
+    /// for `verdict`: the result is never evidence and never reported as
+    /// readiness.
+    pub(crate) fn load_and_judge(path: &Path, root: &Path, run: &Path) -> Result<Self> {
+        ManifestDocument::load_and_validate(path, root)?
+            .evaluate(root, crate::hil::HilRuns::Unpublished(run))
     }
 
     pub(crate) fn is_ready(&self, id: &str) -> bool {
@@ -351,10 +363,6 @@ pub(super) struct ValidatedProgram {
 struct HilConfig {
     target: String,
     catalog: PathBuf,
-    runs: PathBuf,
-    /// Tracked evidence shards of qualifying observations; none when absent.
-    #[serde(default)]
-    evidence: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -463,9 +471,9 @@ impl ManifestDocument {
             return Err(format!("repository root {} is not a directory", root.display()).into());
         }
         let input = fs::read_to_string(path).map_err(|error| {
-            format!(
-                "cannot read qualification manifest {}: {error}",
-                path.display()
+            crate::with_context(
+                error,
+                format_args!("cannot read qualification manifest {}", path.display()),
             )
         })?;
         let document: Self = toml_edit::de::from_str(&input).map_err(|error| {
@@ -483,7 +491,6 @@ impl ManifestDocument {
         let target = slug(&self.target, "qualification target")?;
         slug(&self.hil.target, "HIL target")?;
         validate_relative_path(&self.hil.catalog)?;
-        validate_relative_path(&self.hil.runs)?;
 
         let mut required = BTreeSet::new();
         for id in &self.required_capabilities {
@@ -550,13 +557,18 @@ impl ManifestDocument {
     }
 }
 
-/// Every program below [`PROGRAMS`], relative to the repository root.
+/// Every program below [`PROGRAMS`], relative to the repository root; none
+/// when the directory does not exist (no program is selected).
 pub(crate) fn program_paths(root: &Path) -> Result<Vec<PathBuf>> {
+    if !root.join(PROGRAMS).exists() {
+        return Ok(Vec::new());
+    }
     let mut stack = vec![PathBuf::from(PROGRAMS)];
     let mut programs = vec![];
     while let Some(directory) = stack.pop() {
-        let entries = fs::read_dir(root.join(&directory))
-            .map_err(|error| format!("cannot read {}: {error}", directory.display()))?;
+        let entries = fs::read_dir(root.join(&directory)).map_err(|error| {
+            crate::with_context(error, format_args!("cannot read {}", directory.display()))
+        })?;
         for entry in entries {
             let entry = entry?;
             let path = directory.join(entry.file_name());
@@ -576,7 +588,9 @@ pub(crate) fn program_paths(root: &Path) -> Result<Vec<PathBuf>> {
 fn referenced_scenarios(root: &Path, catalog: &Path) -> Result<BTreeSet<String>> {
     let mut referenced = BTreeSet::new();
     for path in program_paths(root)? {
-        let input = fs::read_to_string(root.join(&path))?;
+        let input = fs::read_to_string(root.join(&path)).map_err(|error| {
+            crate::with_context(error, format_args!("cannot read {}", path.display()))
+        })?;
         let document: ManifestDocument = toml_edit::de::from_str(&input)
             .map_err(|error| format!("cannot parse {}: {error}", path.display()))?;
         if document.hil.catalog != catalog {
@@ -588,86 +602,12 @@ fn referenced_scenarios(root: &Path, catalog: &Path) -> Result<BTreeSet<String>>
     Ok(referenced)
 }
 
-/// A program whose `[hil]` section names `target`; every such program must
-/// name the same run and evidence directories, so any one records the same
-/// shards.
-pub(crate) fn hil_program(root: &Path, target: &str) -> Result<PathBuf> {
-    #[derive(Deserialize)]
-    struct Program {
-        hil: Option<serde_json::Value>,
-    }
-    let mut found: Option<(
-        PathBuf,
-        Option<serde_json::Value>,
-        Option<serde_json::Value>,
-    )> = None;
-    for path in program_paths(root)? {
-        let program: Program = toml_edit::de::from_str(&fs::read_to_string(root.join(&path))?)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
-        let Some(hil) = program.hil else { continue };
-        if hil.get("target").and_then(|v| v.as_str()) != Some(target) {
-            continue;
-        }
-        let (runs, evidence) = (hil.get("runs").cloned(), hil.get("evidence").cloned());
-        match &found {
-            None => found = Some((path, runs, evidence)),
-            Some((first, r, e)) if *r != runs || *e != evidence => {
-                return Err(format!(
-                    "{} and {} name different HIL run or evidence directories for {target}",
-                    first.display(),
-                    path.display()
-                )
-                .into());
-            }
-            Some(_) => {}
-        }
-    }
-    found
-        .map(|(path, ..)| path)
-        .ok_or_else(|| format!("no qualification program names HIL target {target}").into())
-}
-
 impl ValidatedProgram {
     pub(super) fn catalog(&self) -> &CatalogView {
         &self.document.catalog
     }
 
-    /// Record the qualifying HIL observations of this program's runs as
-    /// tracked shards bound to their sources; returns the scenarios recorded.
-    fn record_hil_evidence(
-        self,
-        root: &Path,
-        runs: Option<&BTreeSet<String>>,
-    ) -> Result<RecordedEvidence> {
-        let document = self.document;
-        let hil_target = slug(&document.hil.target, "HIL target")?;
-        let evidence = document
-            .hil
-            .evidence
-            .as_deref()
-            .ok_or("the program's [hil] section names no evidence directory")?;
-        let repository = RepositoryState::read(root)?;
-        let index = HilEvidenceIndex::load_selected(
-            root,
-            &document.hil.runs,
-            evidence,
-            &hil_target,
-            &repository,
-            runs,
-        )?;
-        let sources = crate::hil::shard::tracked_sources(root, &index)?;
-        let recorded =
-            crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources, runs)?;
-        let verdicts = match runs {
-            Some(runs) => {
-                crate::hil::shard::explain(root, &index, runs, &recorded, evidence, &sources)?
-            }
-            None => Vec::new(),
-        };
-        Ok(RecordedEvidence { recorded, verdicts })
-    }
-
-    fn evaluate(self, root: &Path) -> Result<Qualification> {
+    fn evaluate(self, root: &Path, runs: crate::hil::HilRuns<'_>) -> Result<Qualification> {
         let document = self.document;
         let program_source = document
             .program_source
@@ -682,31 +622,21 @@ impl ValidatedProgram {
             PathBuf::from(oer_vendor_artifacts::project::evidence_shards(&hil_target));
         let evidence = NativeEvidence::load(root, &vendor_evidence_index, &hil_target)?;
         let scenario_catalog = ScenarioCatalog::load(root, &document.hil.catalog)?;
-        let hil_index = HilEvidenceIndex::load(
-            root,
-            &document.hil.runs,
-            document.hil.evidence.as_deref().unwrap_or(Path::new("")),
-            &hil_target,
-            &repository,
-        )?;
+        let hil_index = HilEvidenceIndex::from_runs(root, runs, &hil_target, &repository)?;
         let mut evidence_inputs = EvidenceInputs {
             verification_entries: evidence.entries(),
             verification_current_release_entries: evidence.current_entries(),
             hil: hil_index.summary().clone(),
             vendor_evidence_index: vendor_evidence_index.clone(),
             hil_catalog: document.hil.catalog.clone(),
-            hil_runs: document.hil.runs.clone(),
-            absent: absent_directories(
-                root,
-                &[
-                    ("vendor-evidence", &vendor_evidence_index),
-                    (
-                        "hil-evidence",
-                        document.hil.evidence.as_deref().unwrap_or(Path::new("")),
-                    ),
-                    ("hil-runs", &document.hil.runs),
-                ],
-            ),
+            hil_archive: match runs {
+                crate::hil::HilRuns::Archive(copy) => Some(HilArchive {
+                    version: copy.manifest().version().to_string(),
+                    path: copy.root().to_owned(),
+                }),
+                crate::hil::HilRuns::None | crate::hil::HilRuns::Unpublished(_) => None,
+            },
+            absent: absent_directories(root, &[("vendor-evidence", &vendor_evidence_index)]),
         };
         if !evidence.stale.is_empty() {
             evidence_inputs.absent.push(AbsentDirectory {
@@ -1099,8 +1029,13 @@ fn validate_vendor_anchors(id: &str, anchors: &[PathBuf], root: &Path) -> Result
                 return Err(format!("unsafe vendor anchor {}", anchor.display()).into());
             };
             path.push(name);
+            // A missing anchor breaks a rule; any other failure to inspect
+            // it stays the environment's.
             let metadata = fs::symlink_metadata(&path).map_err(|error| {
-                format!("cannot inspect vendor anchor {}: {error}", anchor.display())
+                crate::with_context(
+                    error,
+                    format_args!("cannot inspect vendor anchor {}", anchor.display()),
+                )
             })?;
             let final_component = index + 1 == components.len();
             if metadata.file_type().is_symlink()
@@ -1386,10 +1321,3 @@ impl NativeEvidence {
 
 #[cfg(test)]
 pub(crate) mod tests;
-
-/// The scenarios a recording wrote, and, for requested runs, what became of
-/// each scenario they observed: `(run, scenario, verdict)`.
-pub(crate) struct RecordedEvidence {
-    pub(crate) recorded: Vec<String>,
-    pub(crate) verdicts: Vec<(String, String, crate::hil::shard::RunVerdict)>,
-}

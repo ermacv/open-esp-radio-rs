@@ -42,8 +42,18 @@ and [named checks](../../../qualification/README.md#named-checks).
 cargo xtask check capabilities --changed <file>
 cargo qualification catalog check --catalog qualification/catalog/esp32s31/wifi-phy.toml
 cargo qualification validate --manifest qualification/targets/<chip>/<program>.toml
-cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --capability <id>
+rm -rf target/hil/evidence-archive   # fetch never writes over a copy
+cargo hil archive fetch --out target/hil/evidence-archive
+cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --archive target/hil/evidence-archive --capability <id>
+cargo qualification check references
 cargo xtask check docs
 ```
+
+HIL evidence comes only from `--archive`, a verified copy of the pinned
+evidence archive version (`cargo hil archive fetch` reaches the network).
+Without it `status`, `next`, `plan` and `evaluate` read no HIL run (they
+print `INPUT hil-archive=none`) and satisfy no HIL obligation: never report
+a capability not ready on the `hil` axis from such a run. `cargo qualification verdict --run PATH` judges one
+stand run and is never evidence.
 
 `cargo qualification next … --capability <id>` lists the remaining work.

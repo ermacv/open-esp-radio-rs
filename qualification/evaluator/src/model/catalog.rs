@@ -700,8 +700,16 @@ fn read_contained_file(root: &Path, relative: &Path, kind: &str) -> Result<Strin
             return Err(format!("{kind} must be a contained repository-relative path").into());
         };
         path.push(name);
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|error| format!("cannot inspect {kind} {}: {error}", relative.display()))?;
+        // A path the catalog names that does not exist breaks a rule; any
+        // other failure to inspect it is the environment's.
+        let metadata = fs::symlink_metadata(&path).map_err(|error| {
+            let context = format!("cannot inspect {kind} {}", relative.display());
+            if error.kind() == std::io::ErrorKind::NotFound {
+                format!("{context}: {error}").into()
+            } else {
+                crate::with_context(error, context)
+            }
+        })?;
         let final_component = index + 1 == components.len();
         if metadata.file_type().is_symlink()
             || (final_component && !metadata.file_type().is_file())
@@ -714,8 +722,12 @@ fn read_contained_file(root: &Path, relative: &Path, kind: &str) -> Result<Strin
             .into());
         }
     }
-    fs::read_to_string(&path)
-        .map_err(|error| format!("cannot read {kind} {}: {error}", relative.display()).into())
+    fs::read_to_string(&path).map_err(|error| {
+        crate::with_context(
+            error,
+            format_args!("cannot read {kind} {}", relative.display()),
+        )
+    })
 }
 
 fn display_path(root: &Path, path: &Path) -> PathBuf {

@@ -285,14 +285,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &repository,
-    )
-    .unwrap();
+    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert!(
         index
             .evidence_for(
@@ -307,29 +300,55 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
             .is_some()
     );
 
+    // `verdict` reads that one bundle by its path, and no other run beside
+    // it; a path that is no bundle is an error, never an empty verdict.
+    fs::create_dir_all(root.join("runs/run-0")).unwrap();
+    let one = HilEvidenceIndex::from_runs(&root, HilRuns::Unpublished(&run), "chip-a", &repository)
+        .unwrap();
+    assert_eq!(one.summary().directories, 1);
+    assert_eq!(one.summary().qualifying, index.summary().qualifying);
+    assert!(
+        HilEvidenceIndex::from_runs(
+            &root,
+            HilRuns::Unpublished(&root.join("runs/run-9")),
+            "chip-a",
+            &repository,
+        )
+        .is_err()
+    );
+    fs::remove_dir(root.join("runs/run-0")).unwrap();
+    // A relative root resolves the run's path once: the path `verdict`
+    // passes already starts with it.
+    let cwd = std::env::current_dir().unwrap();
+    let relative = cwd
+        .components()
+        .skip(1)
+        .map(|_| std::path::Component::ParentDir.as_os_str())
+        .collect::<PathBuf>()
+        .join(root.strip_prefix("/").unwrap());
+    let from_relative = HilEvidenceIndex::from_runs(
+        &relative,
+        HilRuns::Unpublished(&relative.join("runs/run-1")),
+        "chip-a",
+        &repository,
+    )
+    .unwrap();
+    assert_eq!(from_relative.summary().directories, 1);
+    // Without runs, nothing is read.
+    let none = HilEvidenceIndex::from_runs(&root, HilRuns::None, "chip-a", &repository).unwrap();
+    assert_eq!(none.summary().directories, 0);
+
     let stale_repository = RepositoryState {
         commit: "different-commit".to_owned(),
         dirty: false,
     };
-    let stale = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &stale_repository,
-    )
-    .unwrap();
+    let stale =
+        HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &stale_repository).unwrap();
     assert_eq!(stale.summary().qualifying, 0);
     // Every chip's runs share the store: another chip's run is neither
     // evidence nor an invalid bundle of this program.
-    let other_chip = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "other-target",
-        &repository,
-    )
-    .unwrap();
+    let other_chip =
+        HilEvidenceIndex::load(&root, Path::new("runs"), "other-target", &repository).unwrap();
     assert_eq!(other_chip.summary().qualifying, 0);
     assert!(other_chip.summary().invalid.is_empty());
 
@@ -346,14 +365,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     seal(&run);
-    let replayed = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &repository,
-    )
-    .unwrap();
+    let replayed = HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert_eq!(replayed.summary().current_source_producer, 0);
     assert_eq!(replayed.summary().qualifying, 0);
 
@@ -375,14 +387,8 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     seal(&run);
-    let planned_replay = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &repository,
-    )
-    .unwrap();
+    let planned_replay =
+        HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert_eq!(planned_replay.summary().current_source_producer, 0);
     assert_eq!(planned_replay.summary().qualifying, 0);
 
@@ -394,7 +400,6 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         HilEvidenceIndex::rejection(HilEvidenceIndex::load(
             &root,
             Path::new("runs"),
-            Path::new("evidence"),
             "chip-a",
             &repository,
         ))
@@ -412,7 +417,6 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         HilEvidenceIndex::rejection(HilEvidenceIndex::load(
             &root,
             Path::new("runs"),
-            Path::new("evidence"),
             "chip-a",
             &repository,
         ))
@@ -456,14 +460,7 @@ fn unsealed_running_run_is_mutable_state_not_evidence() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &repository,
-    )
-    .unwrap();
+    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert_eq!(index.summary().directories, 1);
     assert_eq!(index.summary().bundles, 1);
     assert_eq!(index.summary().incomplete, 0);
@@ -489,14 +486,7 @@ fn manifestless_generated_run_is_incomplete_not_an_error() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &repository,
-    )
-    .unwrap();
+    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert_eq!(index.summary().directories, 1);
     assert_eq!(index.summary().bundles, 0);
     assert_eq!(index.summary().incomplete, 1);
@@ -525,7 +515,6 @@ fn malformed_existing_manifest_still_fails_closed() {
     let error = HilEvidenceIndex::rejection(HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
-        Path::new("evidence"),
         "chip-a",
         &repository,
     ))
@@ -573,7 +562,6 @@ fn unsealed_completed_run_still_fails_closed() {
     let error = HilEvidenceIndex::rejection(HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
-        Path::new("evidence"),
         "chip-a",
         &repository,
     ))
@@ -711,143 +699,6 @@ pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
     resolved
 }
 
-#[test]
-fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
-    let root = std::env::temp_dir().join(format!(
-        "open-radio-qualification-hil-shard-{}",
-        std::process::id()
-    ));
-    if root.exists() {
-        fs::remove_dir_all(&root).unwrap();
-    }
-    let run = root.join("runs/run-1");
-    fs::create_dir_all(&run).unwrap();
-    fs::write(
-        run.join("manifest.json"),
-        serde_json::to_vec_pretty(&json!({
-            "schema": 2, "run_id": "run-1", "target": "chip-a", "state": "completed",
-            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
-            "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    fs::write(
-        run.join("suite.json"),
-        serde_json::to_vec_pretty(&json!({
-            "schema": 2, "run_id": "run-1", "target": "chip-a", "outcome": "passed",
-            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
-            "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
-                "blocked": 0, "interrupted": 0},
-            "scenarios": [{
-                "schema": 2, "scenario": "station-reconnect", "outcome": "passed",
-                "required_repetitions": 2,
-                "repetitions": [
-                    {"schema": 2, "repetition": 1, "outcome": "passed", "failure": null,
-                        "measurements": [{"name": "received", "value": 40, "unit": "count", "semantics": 1, "better": null,
-                            "threshold": null, "verdict": null}]},
-                    {"schema": 2, "repetition": 2, "outcome": "passed", "failure": null}
-                ],
-                "failure": null,
-            }]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    add_current_build(&root, &run);
-    seal(&run);
-    fs::create_dir_all(root.join("firmware/src")).unwrap();
-    fs::write(root.join("firmware/src/lib.rs"), "one").unwrap();
-    let requirement = HilRequirement {
-        scenario: "station-reconnect".to_owned(),
-        checks: vec![],
-        minimum_repetitions: 2,
-        bounds: Vec::new(),
-    };
-    let (runs, evidence) = (Path::new("runs"), Path::new("evidence"));
-    let repository = RepositoryState {
-        commit: "abc123".to_owned(),
-        dirty: false,
-    };
-    let index = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &repository).unwrap();
-    let recorded = shard::distill(
-        &root,
-        &index,
-        evidence,
-        "chip-a",
-        &[PathBuf::from("firmware")],
-        None,
-    )
-    .unwrap();
-    assert_eq!(recorded, ["station-reconnect"]);
-    // The shard names its observer build, stored once beside it.
-    let shard: serde_json::Value =
-        read_json(&root.join("evidence/station-reconnect.json")).unwrap();
-    let observer = &shard["subject"]["observer"];
-    assert!(observer.get("build").is_none());
-    let build = oer_hil_run_bundle_format::observer::store::path(
-        &root.join(evidence),
-        observer["build_sha256"].as_str().unwrap(),
-    )
-    .unwrap();
-    assert!(build.is_file());
-
-    // Without the run bundle and at another commit, the shard still
-    // qualifies, with its measurements.
-    fs::remove_dir_all(root.join("runs")).unwrap();
-    let later = RepositoryState {
-        commit: "later-commit".to_owned(),
-        dirty: false,
-    };
-    let index = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).unwrap();
-    assert_eq!(index.summary().shards, 1);
-    assert_eq!(index.summary().current_shards, 1);
-    assert!(
-        index
-            .evidence_for(&requirement, &ScenarioCatalog::default())
-            .is_some()
-    );
-    assert_eq!(
-        index.scenarios["station-reconnect"][0].measurements[0],
-        [
-            json!({"name": "received", "value": 40, "unit": "count", "semantics": 1, "better": null, "threshold": null,
-            "verdict": null})
-        ]
-    );
-
-    // A changed firmware source makes it stale.
-    fs::write(root.join("firmware/src/lib.rs"), "two").unwrap();
-    let index = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).unwrap();
-    assert_eq!(index.summary().current_shards, 0);
-    assert!(
-        index
-            .evidence_for(&requirement, &ScenarioCatalog::default())
-            .is_none()
-    );
-
-    // A shard whose observer build is missing fails closed.
-    fs::write(root.join("firmware/src/lib.rs"), "one").unwrap();
-    let stored = fs::read(&build).unwrap();
-    fs::remove_file(&build).unwrap();
-    assert!(HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).is_err());
-    fs::write(&build, stored).unwrap();
-    assert!(HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).is_ok());
-
-    // A shard binding a source that no longer exists fails closed instead
-    // of reading as stale.
-    fs::rename(root.join("firmware"), root.join("moved")).unwrap();
-    let error = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later)
-        .expect_err("a missing bound source")
-        .to_string();
-    assert!(error.contains("does not exist"), "{error}");
-    fs::rename(root.join("moved"), root.join("firmware")).unwrap();
-
-    // A shard names its own scenario, and only shards live in the directory.
-    fs::write(root.join("evidence/notes.txt"), "").unwrap();
-    assert!(HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).is_err());
-    fs::remove_dir_all(root).unwrap();
-}
-
 /// The current observer's side of an assessment depends on the workload
 /// alone and a recorded build is shared by the runs that name it: however
 /// many runs a store holds, the current graph is projected once per
@@ -927,14 +778,7 @@ fn observer_assessment_work_does_not_grow_with_the_runs() {
         dirty: false,
     };
     observer::work::take();
-    let index = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &repository,
-    )
-    .unwrap();
+    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert_eq!(
         index.summary().qualifying,
         runs.len(),
@@ -957,14 +801,7 @@ fn observer_assessment_work_does_not_grow_with_the_runs() {
         commit: "other-commit".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &other,
-    )
-    .unwrap();
+    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &other).unwrap();
     assert_eq!(index.summary().qualifying, 0);
     assert_eq!(observer::work::take().build_loads, 0);
     assert!(
@@ -972,18 +809,6 @@ fn observer_assessment_work_does_not_grow_with_the_runs() {
             .iter()
             .all(|o| o.exclusions == [decision::Exclusion::DifferentCommit])
     );
-    let named = runs.map(str::to_owned).into_iter().collect::<BTreeSet<_>>();
-    let index = HilEvidenceIndex::load_selected(
-        &root,
-        Path::new("runs"),
-        Path::new("evidence"),
-        "chip-a",
-        &other,
-        Some(&named),
-    )
-    .unwrap();
-    assert_eq!(observer::work::take().build_loads, 1);
-    assert_eq!(index.summary().qualifying, 0);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1042,14 +867,7 @@ fn a_referenced_observer_build_is_the_only_stored_form() {
         dirty: false,
     };
     let evaluate = || {
-        HilEvidenceIndex::load(
-            &root,
-            Path::new("runs"),
-            Path::new("evidence"),
-            "chip-a",
-            &repository,
-        )
-        .map(|index| {
+        HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).map(|index| {
             let evidence = index.evidence_for(&requirement, &ScenarioCatalog::default());
             format!("{:?} {evidence:?}", index.summary())
         })
@@ -1085,181 +903,72 @@ fn a_referenced_observer_build_is_the_only_stored_form() {
     );
     fs::remove_file(&build).unwrap();
     assert!(evaluate().is_err(), "a missing build");
+    // `verdict` reads that bundle as one that is not valid (exit 1).
+    let error =
+        HilEvidenceIndex::from_runs(&root, HilRuns::Unpublished(&run), "chip-a", &repository)
+            .unwrap_err();
+    assert!(error.is::<crate::verdict::Invalid>(), "{error}");
+    // A build the store holds but cannot be read is the environment's
+    // (exit 3), not the bundle's.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(&build, &stored).unwrap();
+        fs::set_permissions(&build, fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = fs::read(&build).is_ok();
+        let result =
+            HilEvidenceIndex::from_runs(&root, HilRuns::Unpublished(&run), "chip-a", &repository);
+        fs::set_permissions(&build, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::remove_file(&build).unwrap();
+        if !readable {
+            let error = result.unwrap_err();
+            assert!(!error.is::<crate::verdict::Invalid>(), "{error}");
+        }
+    }
     fs::write(&build, stored).unwrap();
     assert_eq!(evaluate().unwrap(), referenced);
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// A run that archived its source snapshot records the same shard from any
-/// checkout, bound to the snapshot's sources; recording one run leaves the
-/// shards of scenarios only other runs observed untouched.
-#[test]
-fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
-    let root = std::env::temp_dir().join(format!(
-        "open-radio-qualification-hil-scoped-{}",
-        std::process::id()
-    ));
-    if root.exists() {
-        fs::remove_dir_all(&root).unwrap();
-    }
-    let observe = |id: &str, scenario: &str, started: u64| {
-        let run = root.join("runs").join(id);
-        fs::create_dir_all(&run).unwrap();
+    // A run document that cannot be read is the store's failure (exit 3),
+    // not an invalid bundle.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
         fs::write(
-            run.join("manifest.json"),
-            serde_json::to_vec_pretty(&json!({
-                "schema": 2, "run_id": id, "target": "chip-a", "state": "completed",
-                "started_unix_millis": started, "finished_unix_millis": started + 100,
-                "duration_millis": 100,
-                "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            run.join("suite.json"),
-            serde_json::to_vec_pretty(&json!({
-                "schema": 2, "run_id": id, "target": "chip-a", "outcome": "passed",
-                "started_unix_millis": started, "finished_unix_millis": started + 100,
-                "duration_millis": 100,
-                "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
-                    "blocked": 0, "interrupted": 0},
-                "scenarios": [{
-                    "schema": 2, "scenario": scenario, "outcome": "passed",
-                    "required_repetitions": 1,
-                    "repetitions": [{"schema": 2, "repetition": 1, "outcome": "passed", "failure": null}],
-                    "failure": null,
-                }]
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        add_current_build(&root, &run);
-        // The run's snapshot holds its own firmware source.
-        let snapshot = run.join("source/snapshot");
-        fs::create_dir_all(&snapshot).unwrap();
-        let bytes = format!("{id} source");
-        let sha256 = oer_durable::sha256_bytes(bytes.as_bytes());
-        let stored = oer_hil_schema::snapshot::object(
-            &root.join(oer_hil_schema::snapshot::OBJECTS),
-            &sha256,
-        );
-        fs::create_dir_all(stored.parent().unwrap()).unwrap();
-        fs::write(stored, &bytes).unwrap();
-        fs::write(
-            snapshot.join("manifest.json"),
-            serde_json::to_vec(&json!({"schema": 1, "sources": [{
-                "name": "repository", "commit": "abc123", "dirty": false,
-                "files": [{"path": "firmware/src/lib.rs", "size_bytes": bytes.len(),
-                    "sha256": sha256, "mode": 0o644}],
-            }]}))
-            .unwrap(),
+            run.join("plan.json"),
+            serde_json::to_vec(&json!({ "firmware": null })).unwrap(),
         )
         .unwrap();
         seal(&run);
-    };
-    observe("run-1", "station-reconnect", 100);
-    observe("run-2", "station-roam", 200);
-    fs::create_dir_all(root.join("firmware/src")).unwrap();
-    let (runs, evidence) = (Path::new("runs"), Path::new("evidence"));
-    let repository = RepositoryState {
-        commit: "abc123".to_owned(),
-        dirty: false,
-    };
-    let record = |run: &str| {
-        let only = BTreeSet::from([run.to_owned()]);
-        let index = HilEvidenceIndex::load_selected(
-            &root,
-            runs,
-            evidence,
-            "chip-a",
-            &repository,
-            Some(&only),
-        )
-        .unwrap();
-        shard::distill(
-            &root,
-            &index,
-            evidence,
-            "chip-a",
-            &[PathBuf::from("firmware")],
-            Some(&only),
-        )
-        .unwrap()
-    };
-    let shard = |scenario: &str| fs::read(root.join(format!("evidence/{scenario}.json"))).ok();
-
-    fs::write(root.join("firmware/src/lib.rs"), "checkout one").unwrap();
-    assert_eq!(record("run-2"), ["station-roam"]);
-    let roam = shard("station-roam").unwrap();
-    assert_eq!(record("run-1"), ["station-reconnect"]);
-    let first = shard("station-reconnect").unwrap();
-    assert_eq!(
-        shard("station-roam").unwrap(),
-        roam,
-        "another run's shard is untouched"
-    );
-
-    // Another checkout content records the same bytes: the snapshot binds.
-    fs::write(root.join("firmware/src/lib.rs"), "checkout two").unwrap();
-    assert_eq!(record("run-1"), ["station-reconnect"]);
-    assert_eq!(shard("station-reconnect").unwrap(), first);
-    let recorded: serde_json::Value = serde_json::from_slice(&first).unwrap();
-    let snapshot_digest = {
-        let name = "firmware/src/lib.rs";
-        let bytes = b"run-1 source";
-        let mut hash = Sha256::new();
-        hash.update((name.len() as u64).to_le_bytes());
-        hash.update(name.as_bytes());
-        hash.update((bytes.len() as u64).to_le_bytes());
-        hash.update(bytes);
-        format!("{:x}", hash.finalize())
-    };
-    assert_eq!(recorded["sources"][0]["path"], "firmware");
-    assert_eq!(recorded["sources"][0]["sha256"], snapshot_digest);
-
-    // Each requested run explains what became of each scenario it observed.
-    let explain = |run: &str, commit: &str| {
-        let only = BTreeSet::from([run.to_owned()]);
-        let repository = RepositoryState {
-            commit: commit.to_owned(),
-            dirty: false,
-        };
-        let index = HilEvidenceIndex::load_selected(
-            &root,
-            runs,
-            evidence,
-            "chip-a",
-            &repository,
-            Some(&only),
-        )
-        .unwrap();
-        let sources = [PathBuf::from("firmware")];
-        let recorded =
-            shard::distill(&root, &index, evidence, "chip-a", &sources, Some(&only)).unwrap();
-        shard::explain(&root, &index, &only, &recorded, evidence, &sources).unwrap()
-    };
-    assert_eq!(
-        explain("run-1", "abc123"),
-        [(
-            "run-1".to_owned(),
-            "station-reconnect".to_owned(),
-            shard::RunVerdict::Recorded
-        )]
-    );
-    // At another commit, the run names the sources that differ from its snapshot.
-    let verdicts = explain("run-1", "def456");
-    assert_eq!(verdicts.len(), 1);
-    let verdict = &verdicts[0].2;
-    assert_eq!(verdict.id(), "different-commit");
-    assert_eq!(
-        verdict.detail(),
-        "run inputs differ from the checkout in: firmware"
-    );
-    assert_eq!(
-        explain("missing-run", "abc123")[0].2,
-        shard::RunVerdict::NotFound
-    );
+        assert_eq!(evaluate().unwrap(), referenced, "a readable plan");
+        // Read after the seal verified it, a plan that cannot be read is
+        // still the environment's.
+        let plan = run.join("plan.json");
+        fs::set_permissions(&plan, fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = fs::read(&plan).is_ok();
+        let bundle = RunBundle::open(&run).unwrap().unwrap();
+        let result = super::plan_replays_firmware(&bundle);
+        fs::set_permissions(&plan, fs::Permissions::from_mode(0o644)).unwrap();
+        if !readable {
+            let error = result.unwrap_err();
+            assert!(crate::hil::environment_error(&*error), "{error}");
+        }
+        for name in ["manifest.json", "plan.json"] {
+            let document = run.join(name);
+            assert!(document.is_file(), "{name}");
+            fs::set_permissions(&document, fs::Permissions::from_mode(0o000)).unwrap();
+            let readable = fs::read(&document).is_ok();
+            let result = HilEvidenceIndex::from_runs(
+                &root,
+                HilRuns::Unpublished(&run),
+                "chip-a",
+                &repository,
+            );
+            fs::set_permissions(&document, fs::Permissions::from_mode(0o644)).unwrap();
+            if !readable {
+                let error = result.unwrap_err();
+                assert!(!error.is::<crate::verdict::Invalid>(), "{name}: {error}");
+            }
+        }
+    }
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1301,7 +1010,6 @@ fn a_bundle_the_writer_seals_is_admitted_through_the_shared_reader() {
         HilEvidenceIndex::load(
             root.path(),
             Path::new("runs"),
-            Path::new("evidence"),
             "chip-a",
             &RepositoryState {
                 commit: String::new(),
@@ -1352,7 +1060,6 @@ fn runs_of_another_schema_are_counted_by_schema() {
     let index = HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
-        Path::new("evidence"),
         "chip-a",
         &RepositoryState {
             commit: "abc123".to_owned(),
@@ -1419,16 +1126,7 @@ fn an_observer_build_of_an_older_schema_is_another_observer() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let load = || {
-        HilEvidenceIndex::load(
-            &root,
-            Path::new("runs"),
-            Path::new("evidence"),
-            "chip-a",
-            &repository,
-        )
-        .unwrap()
-    };
+    let load = || HilEvidenceIndex::load(&root, Path::new("runs"), "chip-a", &repository).unwrap();
     assert_eq!(
         load().summary().qualifying,
         1,
@@ -1459,4 +1157,45 @@ fn an_observer_build_of_an_older_schema_is_another_observer() {
         [decision::Exclusion::ObserverIdentityNotEstablished]
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+/// A file a bundle lacks is the bundle's, however it is read; any other I/O
+/// failure and a cancellation are the environment's.
+#[test]
+fn a_missing_file_is_the_bundles_other_io_the_environments() {
+    use std::io::{Error, ErrorKind};
+    for (kind, environment) in [
+        (ErrorKind::NotFound, false),
+        (ErrorKind::InvalidData, false),
+        (ErrorKind::PermissionDenied, true),
+    ] {
+        let error: Box<dyn std::error::Error> = Box::new(Error::new(kind, "x"));
+        assert_eq!(
+            crate::hil::environment_error(&*error),
+            environment,
+            "{kind:?}"
+        );
+        assert_eq!(
+            crate::hil::bundle_error(error).is::<crate::verdict::Invalid>(),
+            !environment
+        );
+    }
+    assert!(!crate::hil::environment_error(
+        &*Box::<dyn std::error::Error>::from("broken")
+    ));
+}
+
+/// A cached failure to hash the observer's inputs stays an I/O failure, so
+/// `verdict` reports it as the environment's.
+#[test]
+fn a_cached_io_failure_stays_one() {
+    let io: Box<dyn std::error::Error> = Box::new(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "denied",
+    ));
+    let restored = observer::restore(&observer::keep(io));
+    assert!(restored.is::<std::io::Error>());
+    assert!(!crate::hil::bundle_error(restored).is::<crate::verdict::Invalid>());
+    let other: Box<dyn std::error::Error> = "not a graph".into();
+    assert!(!observer::restore(&observer::keep(other)).is::<std::io::Error>());
 }

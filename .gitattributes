@@ -1,6 +1,3 @@
-# Observer builds named by their SHA-256: one line of several megabytes that
-# `cargo xtask hil evidence` writes; a diff of one says nothing to review.
-hil/evidence/*/observers/*.json -diff linguist-generated=true
 # Register publication outputs (`cargo registers generate`): never edited by
 # hand. The raw PACs and binding indexes are derived from the SVD, which stays
 # diffable; `git diff --text` shows them when needed.

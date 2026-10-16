@@ -3308,6 +3308,7 @@ version = "0.1.0"
 dependencies = [
  "oer-command-tree",
  "oer-durable",
+ "oer-hil-evidence-archive",
  "oer-hil-observer",
  "oer-hil-run-bundle",
  "oer-hil-run-bundle-format",

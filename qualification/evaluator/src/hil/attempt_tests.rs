@@ -87,7 +87,6 @@ impl Fixture {
         HilEvidenceIndex::load(
             &self.root,
             Path::new("runs"),
-            Path::new("evidence"),
             "chip-a",
             &RepositoryState {
                 commit: "current".into(),

@@ -64,7 +64,7 @@ pub(super) fn verified(
         if !fs::metadata(&stored).is_ok_and(|metadata| metadata.len() == file.size_bytes)
             || crate::digests()
                 .sha256_file(&stored)
-                .map_err(|error| error.to_string())?
+                .map_err(crate::boxed)?
                 != file.sha256
         {
             return Ok(None);

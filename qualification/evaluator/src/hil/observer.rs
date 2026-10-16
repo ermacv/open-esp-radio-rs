@@ -3,7 +3,7 @@ use super::*;
 pub(super) use oer_hil_run_bundle_format::observer::inputs as build_inputs;
 use serde_json::{Value, json};
 
-/// One prepared configuration shared by archive loading and shards. Loading it
+/// One prepared configuration shared by every run an evaluation reads. Loading it
 /// only reads files; producer preparation is an explicit xtask operation.
 ///
 /// Everything an assessment needs of the current observer depends on the
@@ -33,7 +33,7 @@ struct Workload {
     projection: Value,
     units: Value,
     /// The workload's source inputs and their digests, hashed on first use.
-    inputs: std::cell::OnceCell<std::result::Result<Inputs, String>>,
+    inputs: std::cell::OnceCell<std::result::Result<Inputs, Kept>>,
 }
 
 #[derive(Debug)]
@@ -57,9 +57,9 @@ impl Workload {
 
     fn inputs(&self, root: &Path) -> Result<&Inputs> {
         self.inputs
-            .get_or_init(|| self.hash_inputs(root).map_err(|error| error.to_string()))
+            .get_or_init(|| self.hash_inputs(root).map_err(keep))
             .as_ref()
-            .map_err(|error| error.clone().into())
+            .map_err(restore)
     }
 
     fn hash_inputs(&self, root: &Path) -> Result<Inputs> {
@@ -504,7 +504,7 @@ fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>>
                         relative.to_string_lossy().into_owned(),
                         crate::digests()
                             .sha256_file(&root.join(relative))
-                            .map_err(|error| error.to_string())?,
+                            .map_err(crate::boxed)?,
                     );
                 }
             }
@@ -632,5 +632,26 @@ mod tests {
             &prefixes
         ));
         assert!(!selected(Path::new("Cargo.lock"), &prefixes));
+    }
+}
+
+/// An error kept in a cache: its text, and its kind when it is an I/O
+/// failure, so that it stays one when read back (`verdict` reports an I/O
+/// failure as the environment's, any other as the bundle's).
+pub(super) type Kept = (Option<std::io::ErrorKind>, String);
+
+pub(super) fn keep(error: Box<dyn std::error::Error>) -> Kept {
+    (
+        error
+            .downcast_ref::<std::io::Error>()
+            .map(std::io::Error::kind),
+        error.to_string(),
+    )
+}
+
+pub(super) fn restore(kept: &Kept) -> Box<dyn std::error::Error> {
+    match kept {
+        (Some(kind), message) => Box::new(std::io::Error::new(*kind, message.clone())),
+        (None, message) => message.clone().into(),
     }
 }

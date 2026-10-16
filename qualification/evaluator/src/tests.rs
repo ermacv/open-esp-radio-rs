@@ -73,7 +73,6 @@ catalog-capabilities = [{selected}]
 [hil]
 target = "test-target"
 catalog = "scenarios"
-runs = "missing-runs"
 "#
             ),
         )
@@ -90,9 +89,9 @@ runs = "missing-runs"
             output_directory: None,
             capability: None,
             details: false,
-            hil_target: None,
-            runs: Vec::new(),
-            pending: false,
+            archive: None,
+            run: None,
+            candidate: None,
             changed: Vec::new(),
             base: None,
             drops: None,
@@ -337,7 +336,7 @@ host-tests = [{manifest = "crate/Cargo.toml", filter = "owner::tests", source = 
 
 #[test]
 fn removed_commands_are_rejected() {
-    for removed in ["check", "gate"] {
+    for removed in ["gate", "hil-evidence"] {
         let error = parse_arguments([
             removed.to_owned(),
             "--manifest".to_owned(),
@@ -346,6 +345,30 @@ fn removed_commands_are_rejected() {
         .unwrap_err();
         assert!(error.to_string().contains("unknown qualification command"));
     }
+    for words in [
+        vec!["check"],
+        vec!["check", "refs"],
+        vec!["check", "--manifest", "m.toml"],
+    ] {
+        assert_eq!(
+            usage_status(
+                &words
+                    .iter()
+                    .map(|word| word.to_string())
+                    .collect::<Vec<_>>()
+            ),
+            2,
+            "{words:?}"
+        );
+    }
+    assert_eq!(usage_status(&["verdict".to_owned()]), 2);
+    assert_eq!(usage_status(&["gate".to_owned()]), 1);
+    // `check` is a group: only `check references` remains of it.
+    let error = parse_arguments(["check", "--manifest", "m.toml"].map(str::to_owned)).unwrap_err();
+    assert!(
+        error.to_string().contains("unknown check operation"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -524,6 +547,8 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
             Command::CatalogAnchors => &["--catalog", "c.toml"],
             Command::CatalogRender => &["--manifest", "m.toml", "--out", "out"],
             Command::Readiness => &["--out", "out"],
+            Command::CheckReferences => &[],
+            Command::Verdict => &["--run", "run"],
             _ => &["--manifest", "m.toml"],
         };
         let base = command
@@ -536,13 +561,13 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
         for option in every.iter().filter(|option| !required.contains(option)) {
             let mut arguments = base.clone();
             // The alternatives to a manifest replace it.
-            if matches!(*option, "--catalog" | "--hil-target")
+            if *option == "--catalog"
                 && let Some(at) = arguments.iter().position(|word| word == "--manifest")
             {
                 arguments.drain(at..at + 2);
             }
             arguments.push(option.to_string());
-            if !matches!(*option, "--details" | "--pending") {
+            if *option != "--details" {
                 arguments.push(String::from("value"));
             }
             assert_eq!(
@@ -561,7 +586,8 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
             "plan",
             "validate",
             "evaluate",
-            "hil-evidence",
+            "check",
+            "verdict",
             "readiness",
             "catalog"
         ]
@@ -571,9 +597,224 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
         .find(|node| node.path == ["qualification", "catalog"])
         .unwrap();
     assert_eq!(catalog.subcommands, ["check", "render", "anchors"]);
+    let check = tree
+        .iter()
+        .find(|node| node.path == ["qualification", "check"])
+        .unwrap();
+    assert_eq!(check.subcommands, ["references"]);
     let render = tree
         .iter()
         .find(|node| node.path == ["qualification", "catalog", "render"])
         .unwrap();
     assert!(render.flags.iter().any(|flag| flag == "--out"));
+}
+
+#[test]
+fn an_archive_copy_is_read_only_against_the_pin() {
+    let root = tempfile::tempdir().unwrap();
+    assert!(archive_copy(root.path(), None).unwrap().is_none());
+    // Without a pin, no copy is any version's.
+    let error = archive_copy(root.path(), Some(Path::new("copy"))).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("pins no evidence archive version"),
+        "{error}"
+    );
+    // A copy that is not the pinned version's is refused.
+    let manifest = oer_hil_evidence_archive::Manifest::new(
+        oer_hil_evidence_archive::Payload {
+            sha256: oer_hil_evidence_archive::Sha256::of(b"payload"),
+            bytes: 7,
+        },
+        vec![oer_hil_evidence_archive::RunRef {
+            run: oer_hil_evidence_archive::RunId::parse("1-a").unwrap(),
+            sha256: oer_hil_evidence_archive::Sha256::of(b"seal"),
+        }],
+    )
+    .unwrap();
+    oer_hil_evidence_archive::Pin::new(
+        oer_hil_evidence_archive::Repository::parse("o/evidence").unwrap(),
+        manifest,
+    )
+    .write(&root.path().join(oer_hil_evidence_archive::PIN))
+    .unwrap();
+    fs::create_dir(root.path().join("copy")).unwrap();
+    fs::write(root.path().join("copy/manifest.json"), "{}").unwrap();
+    let error = archive_copy(root.path(), Some(Path::new("copy"))).unwrap_err();
+    assert!(
+        error.to_string().contains("is not the manifest of version"),
+        "{error}"
+    );
+}
+
+fn judged(status: &'static str) -> verdict::Judged {
+    verdict::Judged {
+        program: String::from("qualification/targets/p.toml"),
+        capability: String::from("base"),
+        scenario: String::from("static"),
+        status,
+        passed: usize::from(status == "satisfied"),
+        failed: usize::from(status != "satisfied"),
+        excluded: 0,
+    }
+}
+
+#[test]
+fn a_verdict_is_never_evidence_and_fails_on_an_unmet_requirement() {
+    let run = Path::new("runs/1-a");
+    let (lines, outcome) = verdict::report(run, &[judged("satisfied")]);
+    assert!(outcome.is_ok());
+    assert_eq!(lines.len(), 3);
+    assert!(
+        lines.iter().all(|line| line.contains("not-evidence")),
+        "{lines:?}"
+    );
+    assert!(lines[0].contains("not-published") && lines[2].contains("not-published"));
+    let (_, outcome) = verdict::report(run, &[judged("satisfied"), judged("unresolved-failure")]);
+    assert!(outcome.unwrap_err().is::<verdict::Unmet>());
+    // A run that observed nothing a program requires gives no verdict.
+    let (_, outcome) = verdict::report(run, &[]);
+    let error = outcome.unwrap_err();
+    assert!(!error.is::<verdict::Unmet>());
+    assert!(
+        error.to_string().contains("observed no scenario"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_verdict_reads_a_run_of_another_chip_as_none_and_refuses_a_missing_one() {
+    let root = StaticProgramRoot::new("verdict-other-chip");
+    root.write_program("\"base\"", "\"base\"");
+    fs::create_dir_all(root.path.join(model::PROGRAMS)).unwrap();
+    fs::rename(
+        root.path.join("program.toml"),
+        root.path.join(model::PROGRAMS).join("test.toml"),
+    )
+    .unwrap();
+    let run = root.path.join("runs/1-a");
+    fs::create_dir_all(&run).unwrap();
+    fs::write(
+        run.join("manifest.json"),
+        r#"{"schema": 0, "run_id": "1-a", "target": "other-chip"}"#,
+    )
+    .unwrap();
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "."],
+        vec![
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+    ] {
+        oer_process::git::output(&root.path, args).unwrap();
+    }
+    assert_eq!(verdict::judge(&root.path, &run).unwrap(), []);
+    // A bundle of the program's chip that fails validation names why.
+    let broken = root.path.join("runs/2-b");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(
+        broken.join("manifest.json"),
+        format!(
+            r#"{{"schema": {}, "run_id": "2-b", "target": "test-target"}}"#,
+            oer_hil_run_bundle_format::run::RUN_SCHEMA
+        ),
+    )
+    .unwrap();
+    let error = verdict::judge(&root.path, &broken).unwrap_err();
+    assert!(error.is::<verdict::Invalid>(), "{error}");
+    assert!(error.to_string().contains("not valid: "), "{error}");
+    assert_eq!(exit_status(&*error, false), 1);
+    let error = verdict::judge(&root.path, &root.path.join("runs/9-z")).unwrap_err();
+    assert!(error.is::<verdict::Unjudged>(), "{error}");
+    assert!(error.to_string().contains("no run bundle"), "{error}");
+    assert_eq!(exit_status(&*error, false), 1);
+}
+
+/// No catalog record takes a field its reader does not know: a run
+/// reference cannot be written past `check references` (owner decision
+/// 6226361520 on #761, the citing field comes with its first record).
+#[test]
+fn catalogs_refuse_fields_they_do_not_read() {
+    for (index, (anchor, field)) in [
+        ("scope = \"Static source scope\"", "\ncited-runs = []"),
+        ("limitations = \"No readiness claim\"", "\nruns = []"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let root = StaticProgramRoot::new(&format!("unknown-field-{index}"));
+        root.write_program("\"base\"", "\"base\"");
+        let catalog = root.path.join("catalog/source.toml");
+        let text = fs::read_to_string(&catalog).unwrap();
+        assert!(text.contains(anchor), "{anchor}");
+        fs::write(
+            &catalog,
+            text.replacen(anchor, &format!("{anchor}{field}"), 1),
+        )
+        .unwrap();
+        let error = root.check().unwrap_err().to_string();
+        assert!(error.contains("unknown field"), "{field}: {error}");
+    }
+}
+
+#[test]
+fn check_references_and_verdict_exit_by_what_failed() {
+    assert_eq!(exit_status(&oer_process::Cancelled, false), 130);
+    let boxed: Box<dyn Error> = boxed(Box::new(oer_process::Cancelled));
+    assert_eq!(exit_status(&*boxed, false), 130);
+    assert_eq!(
+        exit_status(
+            &oer_hil_evidence_archive::Refused(String::from("rule")),
+            false
+        ),
+        1
+    );
+    assert_eq!(exit_status(&verdict::Unmet(1), false), 1);
+    assert_eq!(
+        exit_status(&verdict::Unjudged(String::from("runs/1-a")), false),
+        1
+    );
+    assert_eq!(
+        exit_status(&verdict::Invalid(String::from("seal")), false),
+        1
+    );
+    let failed: Box<dyn Error> = "read failed".into();
+    assert_eq!(exit_status(&*failed, false), 3);
+    // A failure reported only as text, such as an interrupted git query,
+    // is the cancellation's once Ctrl-C was requested.
+    assert_eq!(exit_status(&*failed, true), 130);
+}
+
+#[test]
+fn status_next_and_plan_say_which_archive_they_read() {
+    assert_eq!(archive_input(None), "INPUT\thil-archive=none");
+    assert_eq!(
+        archive_input(Some(String::from("evidence-0123"))),
+        "INPUT\thil-archive=evidence-0123"
+    );
+    // `plan`'s stdout stays its JSON.
+    assert!(input_on_stderr(Command::Plan));
+    assert!(!input_on_stderr(Command::Status));
+    assert!(!input_on_stderr(Command::Next));
+}
+
+#[test]
+fn only_a_bundle_failure_makes_a_verdict_invalid() {
+    let io: Box<dyn Error> = Box::new(std::io::Error::other("store unreadable"));
+    assert!(!hil::bundle_error(io).is::<verdict::Invalid>());
+    let cancelled: Box<dyn Error> = Box::new(oer_process::Cancelled);
+    assert!(!hil::bundle_error(cancelled).is::<verdict::Invalid>());
+    let broken: Box<dyn Error> = "a missing observer build".into();
+    assert!(hil::bundle_error(broken).is::<verdict::Invalid>());
 }

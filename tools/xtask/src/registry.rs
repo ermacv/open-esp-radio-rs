@@ -395,7 +395,7 @@ pub const CHECKS: &[Check] = &[
         id: "qualification",
         tier: Tier::Full,
         job: "models",
-        summary: "every qualification program validates and evaluates its tracked HIL and derived vendor evidence",
+        summary: "every qualification program validates against the derived vendor evidence, and the evidence archive pin holds every cited run",
         trigger: Some(|change| {
             touches(
                 change,

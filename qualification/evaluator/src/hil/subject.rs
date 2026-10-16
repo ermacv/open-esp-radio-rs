@@ -7,14 +7,14 @@
 use super::*;
 use serde::Serialize;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct FileIdentity {
     pub(super) path: PathBuf,
     pub(super) size_bytes: u64,
     pub(super) sha256: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct FirmwareIdentity {
     pub(super) image: Option<String>,
     pub(super) build_id: Option<String>,
@@ -23,7 +23,7 @@ pub(super) struct FirmwareIdentity {
     pub(super) replayed: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct ObservationSubject {
     /// The runner's observer record, naming its build by digest; the build
     /// is read only while a decision needs it.
@@ -68,19 +68,6 @@ impl Serialize for ObserverReference {
     }
 }
 
-/// A read reference names no store yet: it is resolved against its own with
-/// [`ObservationSubject::resolve_observer`] before use.
-impl<'de> Deserialize<'de> for ObserverReference {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        Ok(Self {
-            record: serde_json::Value::deserialize(deserializer)?,
-            store: PathBuf::new(),
-        })
-    }
-}
-
 impl ObserverReference {
     /// The stored `record` whose build lives in `store`. The build must be
     /// present there and hash to its name, else resolving fails.
@@ -96,11 +83,18 @@ impl ObserverReference {
         let digest = observer_store::build_digest(&record).unwrap_or_default();
         let path = observer_store::path(store, digest)
             .map_err(|error| format!("HIL observer proof: {error}"))?;
+        // A missing build is the bundle's; any other failure to read it is
+        // the store's, and stays an I/O failure.
         let sha256 = crate::digests().sha256_file(&path).map_err(|error| {
-            format!(
-                "HIL observer proof: build {} is missing: {error}",
-                path.display()
-            )
+            let missing = error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound);
+            let context = format!("HIL observer proof: build {}", path.display());
+            if missing {
+                format!("{context} is missing: {error}").into()
+            } else {
+                crate::with_context(crate::boxed(error), context)
+            }
         })?;
         if sha256 != digest {
             return Err(format!(
@@ -130,7 +124,7 @@ impl ObserverReference {
         #[cfg(test)]
         super::observer::work::count(|work| work.build_loads += 1);
         oer_hil_run_bundle_format::observer::store::attach(&self.record, &self.store)
-            .map_err(|error| format!("HIL observer proof: {error}").into())
+            .map_err(|error| crate::with_context(crate::boxed(error), "HIL observer proof"))
     }
 }
 
@@ -156,14 +150,6 @@ impl ObservationSubject {
         Ok(subject)
     }
 
-    /// Resolve the observer reference against `store`, which must hold its
-    /// build.
-    pub(super) fn resolve_observer(&mut self, store: &Path) -> Result<()> {
-        if let Some(observer) = &mut self.observer {
-            *observer = ObserverReference::resolve(observer.record.clone(), store)?;
-        }
-        Ok(())
-    }
     pub(super) fn from_parts(
         run: &Path,
         repository: &RepositoryProvenance,
@@ -245,8 +231,6 @@ pub(super) fn file(run: &Path, relative: &Path) -> Result<Option<FileIdentity>> 
     Ok(Some(FileIdentity {
         path: relative.to_owned(),
         size_bytes: fs::metadata(&path)?.len(),
-        sha256: crate::digests()
-            .sha256_file(&path)
-            .map_err(|error| error.to_string())?,
+        sha256: crate::digests().sha256_file(&path).map_err(crate::boxed)?,
     }))
 }

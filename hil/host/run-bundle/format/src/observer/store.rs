@@ -65,11 +65,22 @@ pub fn store(directory: &Path, build: &Value) -> Result<String> {
 }
 
 /// The build with `sha256` under `directory`, after checking that its bytes
-/// hash to that digest.
+/// hash to that digest. A build that is absent is a message; any other
+/// failure to read it stays an I/O error, so a reader can tell a broken
+/// store from a broken bundle.
 pub fn load(directory: &Path, sha256: &str) -> Result<Value> {
     let file = path(directory, sha256)?;
-    let bytes = fs::read(&file)
-        .map_err(|error| format!("observer build {} is missing: {error}", file.display()))?;
+    let bytes = fs::read(&file).map_err(|error| -> Box<dyn std::error::Error + Send + Sync> {
+        let context = format!("observer build {}", file.display());
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!("{context} is missing: {error}").into()
+        } else {
+            Box::new(std::io::Error::new(
+                error.kind(),
+                format!("{context}: {error}"),
+            ))
+        }
+    })?;
     if oer_durable::sha256_bytes(&bytes) != sha256 {
         return Err(format!(
             "observer build {} does not hash to its name",
@@ -167,6 +178,28 @@ pub fn collect_garbage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An absent build is a message; a build that cannot be read stays an
+    /// I/O error, so the evaluator reports it as the store's failure.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_build_stays_an_io_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let digest = oer_durable::sha256_bytes(b"{}");
+        let missing = load(directory.path(), &digest).unwrap_err();
+        assert!(!missing.is::<std::io::Error>(), "{missing}");
+        let file = path(directory.path(), &digest).unwrap();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, b"{}").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = fs::read(&file).is_ok();
+        let result = load(directory.path(), &digest);
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        if !readable {
+            assert!(result.unwrap_err().is::<std::io::Error>());
+        }
+    }
 
     fn embedded() -> Value {
         let build = json!({"schema": 2, "resolved": {"nodes": [1, 2, 3]}});

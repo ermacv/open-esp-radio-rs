@@ -55,7 +55,6 @@ impl Fixture {
         HilEvidenceIndex::load(
             &self.0,
             Path::new("runs"),
-            Path::new("evidence"),
             "chip-a",
             &RepositoryState {
                 commit: "current".into(),
@@ -188,7 +187,6 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     let historical = HilEvidenceIndex::load(
         &fixture.0,
         Path::new("runs"),
-        Path::new("evidence"),
         "chip-a",
         &RepositoryState {
             commit: "changed".into(),
@@ -284,7 +282,6 @@ fn engineering_work_distinguishes_unseen_incomplete_historical_and_failed_runs()
     let old = HilEvidenceIndex::load(
         &fixture.0,
         Path::new("runs"),
-        Path::new("evidence"),
         "chip-a",
         &RepositoryState {
             commit: "other".into(),

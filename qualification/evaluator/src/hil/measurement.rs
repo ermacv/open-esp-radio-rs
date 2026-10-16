@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// Validate recorded measurement values (a run's or a shard's) against the
+/// Validate a run's recorded measurement values against the
 /// run bundle's one measurement contract: each must be a measurement of
 /// this build's vocabulary, and together they must pass
 /// [`oer_hil_run_bundle_format::run::validation::validate_measurements`].

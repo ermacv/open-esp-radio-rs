@@ -11,9 +11,9 @@ states are derived from independent evidence. Qualification remains the sole
 readiness authority for the selected scope.
 
 The root-workspace [`evidence-shard/`](evidence-shard/README.md) library owns
-the shared vendor and HIL evidence shard format, validation, currency and
-reader/writer. The evaluator records HIL shards through it, and verification
-producers use the same format for their scenario evidence.
+the vendor evidence shard format, validation, currency and reader/writer that
+verification producers write and the evaluator reads. HIL evidence is the
+sealed runs of the [evidence archive](#evidence-ownership).
 
 Saved HIL evidence uses the current observer descriptor prepared by `cargo hil`
 or `cargo hil observer`. Evaluation reads it once and never builds or
@@ -38,11 +38,15 @@ cargo qualification next \
 ```
 
 Read existing evidence for a selected program, without running any checks
-(no program exists since #770; `<chip>/<program>` names one when it does):
+(no program exists since #770; `<chip>/<program>` names one when it does);
+HIL evidence comes only from `--archive`, a verified copy of the pinned
+evidence archive version (`cargo hil archive fetch --out DIR`, into a
+directory that does not exist yet: it never writes over an earlier copy):
 
 ```console
 cargo qualification status \
   --manifest qualification/targets/<chip>/<program>.toml \
+  --archive target/hil/evidence-archive \
   --json-report target/qualification/<program>.json
 
 cargo qualification next \
@@ -61,8 +65,10 @@ Invalid declarations and corrupt evidence still fail validation.
 `status` prints a compact state view and counts of original HIL observations,
 including excluded history. `status --details` expands scopes, limits, owner
 links and individual applicability decisions. JSON always contains the full
-selected map. Program mode validates the saved evidence archive and can take
-longer than the declarations-only view; it does not regenerate evidence.
+selected map. Program mode validates the evidence archive copy it is given and
+can take longer than the declarations-only view; it does not regenerate
+evidence. Without `--archive` it reads no HIL run, says so
+(`INPUT hil-archive=none`), and no HIL obligation is satisfied.
 
 The schema-1 JSON map separates source declarations, knowledge links, test
 selectors, original HIL decisions and explained work candidates. Static mode
@@ -303,15 +309,22 @@ Check a selected program without scanning the evidence archive:
 cargo qualification catalog check --manifest qualification/targets/<chip>/<program>.toml
 ```
 
-Use `evaluate --manifest PATH --json-report PATH` for a current evidence-backed
-assessment; its verdict says which selected capabilities are ready.
+Use `evaluate --manifest PATH --archive DIR --json-report PATH` for a current
+evidence-backed assessment; its verdict says which selected capabilities are
+ready. On the stand, `verdict --run PATH` judges one run bundle against the
+HIL requirements of every program with the same evaluator; its output is
+marked not published and not evidence, and no other command reads it.
 The catalog-check summary counts all loaded catalog declarations, including
 unselected ones; the evaluator report describes only the resolved product set.
 
 ## Execution selection
 
-`cargo qualification plan --manifest <program> [--capability <id>]` emits a
-read-only JSON selection from the same HIL decisions as `status` and `evaluate`.
+`cargo qualification plan --manifest <program> [--archive DIR] [--capability <id>]`
+emits a read-only JSON selection from the same HIL decisions as `status` and
+`evaluate`. Without `--archive` it reads no run (`INPUT hil-archive=none` on
+stderr), so no obligation is `satisfied`: a qualification scenario the
+firmware supports is `run`, an unsupported or investigation one keeps its
+state.
 Each obligation explains `satisfied`, `run`, `review` (inspect excluded
 observations), `investigate` (a current failure) or `unsupported`, and binds the
 digest of the scenario's current normalized document. It performs no build,
@@ -334,8 +347,8 @@ Every capability has five independent axes:
   MATCH entry in that index and no source-only anchor remains. One stale
   shard (a recorded source changed or gone, or another format schema) voids
   the whole index;
-- `hil` is derived from sealed schema-2 HIL run bundles and the tracked HIL
-  evidence shards recorded from them. Every required scenario
+- `hil` is derived from the sealed schema-2 HIL run bundles of the pinned
+  evidence archive version (`--archive`). Every required scenario
   must pass with enough repetitions in an independently sealed attempt or run
   bound to the current source inputs;
 - `async` is the reviewed declaration `bounded`, `incomplete`, or explicitly
@@ -420,10 +433,9 @@ do not change a readiness axis.
 ## Evidence ownership
 
 ```text
-reviewed capability declarations ─┐
-vendor evidence shards ────────────┤
-sealed HIL run bundles ────────────┼─> qualification evaluator ─> JSON/verdict
-tracked HIL evidence shards ───────┘
+reviewed capability declarations ───────┐
+vendor evidence shards ──────────────────┼─> qualification evaluator ─> JSON/verdict
+sealed HIL runs of the pinned archive ───┘
 ```
 
 Blobray and the HIL runner never decide product readiness. Blobray owns vendor
@@ -560,18 +572,77 @@ whose closure differs from the checkout; original outcomes and exclusions
 remain visible, and a commit change or another PASS does not establish that a
 failure was resolved.
 
-### Run bundles and tracked HIL evidence
+### Run bundles and the evidence archive
 
 A run bundle stays in ignored output, in the run store every checkout of the
 user shares (see [find and compare runs](../hil/host/runs.md#find-and-compare-runs)),
-and qualifies only for a checkout whose sources it binds. The evaluator reads
-the store only through the checkout's `target/hil/runs` link, which
-any `cargo hil` command creates.
+and qualifies only for a checkout whose sources it binds. Qualification
+evidence never comes from the run store (`verdict --run` reads a run there,
+but its result is no evidence). Its HIL evidence is the runs a decision cites, kept in
+the evidence archive ([#761](https://github.com/ermacv/open-esp-radio-rs/issues/761)
+Q7, [`oer-hil-evidence-archive`](../hil/host/evidence-archive/README.md)):
+
+1. a decision, a measured bound or the stand profile cites a run by its
+   reference, its ID and the SHA-256 of its seal (`integrity.json`);
+2. `cargo hil archive pack` writes an immutable version of exactly the cited
+   runs, named `evidence-<SHA-256 of its manifest>`, with the observer
+   builds and source objects they name: the runs the pinned version already
+   holds from its downloaded, verified copy, so a version keeps them after
+   the run store pruned them, the others from the run store (owner decision
+   [6231504542](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6231504542)).
+   `cargo hil archive ref` takes a run the pinned version holds and the run
+   store no longer has from the pin's manifest. Before `pack` and `publish`
+   create anything, `cargo qualification check references --candidate FILE`
+   holds the version's runs to rules 1 and 2 against the repository's
+   citations, so a release `check references` would reject is never made.
+   The run store keeps the version's runs pinned until it is published:
+   `cargo hil archive ref` pins the runs it names at once for its own
+   selection, `pack` hands that selection's pins to the version, and `cargo
+   hil archive unpin VERSION|SELECTION` drops the pins of a version packed but
+   never published or of a selection;
+3. `cargo hil archive publish` releases it in the private archive
+   repository, never overwriting or deleting one; a draft whose upload was
+   interrupted is deleted by hand, which keeps rule 5 because a draft is not
+   yet in the archive. It then writes the pin `evidence/archive.toml` in
+   `qualification/`, which repeats the manifest;
+4. `cargo qualification check references`, in the gate and CI, checks
+   offline that the pin hashes to its version, that every cited run is in it
+   with the same digest (rule 2) and that it holds no run nothing cites
+   (rule 1) (owner decision
+   [6225000924](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6225000924));
+   the gate reads no runs;
+5. `cargo hil archive fetch --out DIR` downloads the pinned version where
+   the archive is reachable, and `status`, `next`, `plan`, `readiness` and
+   `evaluate --archive DIR` read only that copy, verified against the pin
+   when opened, with the checkout's current observer descriptor
+   (`target/hil/current-observer.json`, which `cargo hil observer` prepares)
+   (owner decision
+   [6225298347](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6225298347)).
+
+No tracked record cites a run yet. The stand profile's type
+(`oer-hil-model`) already holds each span's `evidence` references, but no
+profile is tracked; the PR that tracks the first one adds its reader to
+`check references`. A qualification decision or a measured bound gets its
+citing field with the first record that cites, in one PR together with its
+reader in `check references` and its test (owner decision
+[6226361520](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6226361520)). Until then
+catalogs, programs and the stand profile refuse every field their reader does
+not know, so no reference can be written past it, and `check references`
+prints how many citations it checked (`citations=0`).
+
+On the stand, `cargo qualification verdict --run PATH` judges one run bundle
+against the HIL requirements of every program with the same evaluator. Its
+output says the run is not published and not evidence, and no other command
+reads it. Its exit status is 1 when the run does not meet a requirement it
+observed, observed none a program requires, is of no program's chip or its
+bundle is not valid (the reason is printed), 2 for a usage error, 3 when the
+command itself failed and 130 on Ctrl-C.
+
 The runner's observer proof names the build its executable was compiled from,
 which most runs share. A run's manifest names that build by
 digest, and the build is stored once in `observers/<build_sha256>.json` next to
-the store's `runs` directory, as the exact bytes the digest is computed over.
-A shard does the same with `observers/` next to it in the evidence directory.
+the `runs` directory of a store or an archive copy, as the exact bytes the
+digest is computed over.
 The evaluator fails closed when a named build is missing or its bytes do not
 hash to its name. A stored record that embeds its build instead is an error.
 A build holds the observer's resolved Cargo graph, each of Cargo's nodes (a
@@ -585,57 +656,24 @@ together, and drops it before the next, while the current observer's side
 (its projection per workload and the digests of that workload's inputs) is
 computed once.
 Digests of sealed files are remembered in the user's cache per file identity
-and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
---hil-target TARGET)` records
-the latest qualifying observation of every scenario as a tracked shard in the
-program's `[hil] evidence` directory (`hil/evidence/<chip>/`). A shard holds
-the observation's outcome, repetitions, measurements and failures, the run's
-completion seal, the observation subject (observer proof, firmware identity,
-repository provenance) and the executed scenario document, and the digests of
-the sources the firmware and observer were built from. The runner records, per
-image, the repository files its build read in the bundle's
-`firmware/<image>/source-inputs.json` (schema 2): the sources Cargo's dep-info
-lists for the runtime and bootstrap binaries, the repository inputs their build
-scripts declare (linker scripts), each compiled package's manifest and build
-script, both firmware workspaces' manifests (release profile and `[patch]`)
-and lock files, the Cargo configuration and toolchain files above them, the
-workspace manifest the compiled packages inherit from, the stack policy and
-partition table, and the sources of the image builder, packer and memory
-auditor. A shard binds those files, its own observer's manifest directories
-and the observer's lock, toolchain and input registry, so a change in another
-radio's driver leaves it current. A record of another schema is an error.
-The evaluator independently takes the path-package closure of the image's
-runtime (with the features its build provenance records) and bootstrap for
-the image's target from the repository model (`oer-repo`); when the recorded
-list lacks the manifest of any package found there, the shard falls back to
-the broad binding. An observation whose
-firmware was built with inherited `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS` is
-never recorded: no source binding covers the builder's environment, and
-`hil-evidence` names the skipped run. Firmware builds drop inherited
-`CARGO_PROFILE_*`, `CARGO_BUILD_*` and `CARGO_TARGET_*` variables except the
-job count and target directory. A replayed
-image, or one built without this repository's image builder, has no recorded
-inputs and binds the path packages of
-`hil/targets/esp32s31` and `platform/esp32s31` and every qualifying observer
-instead. The evaluator reads shards next to run bundles. A shard whose
-recorded sources all match the checkout supports its scenario whatever else the
-repository changed, and those digests stand for the observer's identity; a
-changed source makes it stale until the scenario runs again and is recorded,
-and a bound source that no longer exists is an error: record the scenario again
-or delete the shard.
-Running scenarios never writes tracked files: recording is an explicit step,
-`cargo qualification hil-evidence --hil-target <chip> --pending` (this
-checkout's pending clean runs, which leave the pending list once observed) or
-`--run ID`; the evaluator reads the runs itself with the checkout's current
-observer descriptor, and the stand never runs it. `cargo hil evidence
-pending` lists what is not recorded yet. `--hil-target` selects the
-programs naming that HIL target, which must agree on their run and evidence
-directories. Commit the shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
+and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it).
+The runner records, per image, the repository files its build read in the
+bundle's `firmware/<image>/source-inputs.json` (schema 2): the sources Cargo's
+dep-info lists for the runtime and bootstrap binaries, the repository inputs
+their build scripts declare (linker scripts), each compiled package's manifest
+and build script, both firmware workspaces' manifests (release profile and
+`[patch]`) and lock files, the Cargo configuration and toolchain files above
+them, the workspace manifest the compiled packages inherit from, the stack
+policy and partition table, and the sources of the image builder, packer and
+memory auditor. Firmware builds drop inherited `CARGO_PROFILE_*`,
+`CARGO_BUILD_*` and `CARGO_TARGET_*` variables except the job count and
+target directory. `INPUT` reports `hil-archive`, the version read or `none`.
 
 ### Bundle validation and attempt seals
 
-The HIL runner writes bundles below `target/hil/runs/<run-id>/`, and
-qualification reads them through the run bundle's one typed reader
+The HIL runner writes bundles into the run store (`target/hil/runs/<run-id>/`
+links to it); qualification reads those of an archive copy, or the one
+`verdict` names, through the run bundle's one typed reader
 (`oer-hil-run-bundle`): its independence is the seals it verifies and the
 files it hashes again at admission, not a second reader. It checks
 `integrity.json`, every indexed file hash,
@@ -643,7 +681,7 @@ manifest/suite identity, current source applicability,
 scenario outcome and repetition count. Markdown reports are not proof inputs.
 A generated run directory without a manifest is incomplete mutable execution
 state, ignored as evidence and counted as `hil-incomplete` in console
-output and `evidence_inputs.hil.incomplete` in schema-4 JSON reports;
+output and `evidence_inputs.hil.incomplete` in schema-5 JSON reports;
 `hil-directories` counts every entry while `hil-bundles` counts only entries
 that have published a manifest. A published run that fails validation (a
 malformed manifest, a broken integrity or attempt seal, material that does not
@@ -676,8 +714,11 @@ Use a JSON report for CI and downstream presentation:
 ```console
 cargo qualification evaluate \
   --manifest qualification/targets/<chip>/<program>.toml \
+  --archive target/hil/evidence-archive \
   --json-report target/qualification/<program>.json
 ```
+
+Without `--archive` the HIL counts are zero: no run is read.
 
 The console `INPUT` row and JSON `evidence_inputs` object expose how many
 verification rows and HIL directories were observed, how many are incomplete
@@ -687,11 +728,10 @@ per-obligation decisions still enforce checks, repetitions and failures.
 `hil-current-source-producer` / `hil.current_source_producer` counts direct
 source bindings independently of dirty state.
 
-An evidence directory that does not exist (the vendor evidence index, the
-HIL evidence directory, or the checkout's `target/hil/runs` link before its
-first run) holds no evidence: the evaluator prints
-`EVIDENCE-DIR absent kind=… path=… shards=0` (`bundles=0` for runs), and
-every obligation it would serve stays `missing`. A vendor evidence index
+A vendor evidence index that does not exist holds no evidence: the evaluator
+prints `EVIDENCE-DIR absent kind=vendor-evidence path=… shards=0`, and every
+obligation it would serve stays `missing`; an evaluation without `--archive`
+satisfies no HIL obligation. A vendor evidence index
 stale for the checkout holds none either and prints
 `EVIDENCE-DIR stale kind=vendor-evidence path=… shards=0`. A path that an
 existing tracked record names and that does not exist remains an error.
@@ -753,8 +793,6 @@ current observer compatibility. The registry's `build.profile` selects the
 required host profile (`debug` maps to Cargo's `dev`). An observation whose
 observer differs from the current one in sources, dependencies, features,
 compiler, profile or Cargo settings is excluded. The observer is assessed
-only for an observation nothing else excludes, or of a run `hil-evidence
---run` or `--pending` names (a stale snapshot may still be recorded): an
-observation already excluded, for example by its commit, is listed without
-an observer exclusion, so evaluation time follows the current runs, not the
-store.
+only for an observation nothing else excludes: an observation already
+excluded, for example by its commit, is listed without an observer exclusion,
+so evaluation time follows the current runs, not every run read.

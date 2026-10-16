@@ -10,8 +10,17 @@ use super::{BTreeMap, BTreeSet, Path, PathBuf, Result, validate_regular_referenc
 pub(super) struct WorkspacePackages(BTreeMap<String, PathBuf>);
 
 impl WorkspacePackages {
+    /// The packages of the checkout at `root`. A failure to read the
+    /// checkout (git, a manifest) is the environment's, an I/O error, never
+    /// a broken catalog rule.
     pub(super) fn load(root: &Path) -> Result<Self> {
-        let model = oer_repo::Model::load(&oer_repo::Repo::load(root)?)?;
+        // `oer-repo` reports its failures as text; a cancellation among
+        // them still exits 130 (`exit_status`).
+        let environment = |error: String| {
+            std::io::Error::other(format!("cannot read the repository's packages: {error}"))
+        };
+        let repo = oer_repo::Repo::load(root).map_err(environment)?;
+        let model = oer_repo::Model::load(&repo).map_err(environment)?;
         let mut packages = BTreeMap::new();
         for package in model.packages() {
             if packages

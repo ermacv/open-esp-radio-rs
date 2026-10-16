@@ -9,8 +9,9 @@ name: Claude review
 # read-only tools and a read-only token, following REVIEW.md, from inputs a
 # step prepares (the diff, the PR and the issues it closes); a tool call the
 # policy denies fails the review. A separate job publishes the review, files
-# an issue for each finding (or one for a failed review) and sets the
-# informational claude-runtime-review status. It never blocks a merge.
+# an issue for each finding (or one for a review without a verdict, its
+# budget stop named as such, or whose findings could not be filed) and sets
+# the informational claude-runtime-review status. It never blocks a merge.
 on:
   pull_request_target:
     types: [opened, reopened, ready_for_review]
@@ -73,6 +74,7 @@ jobs:
       id-token: write
     outputs:
       result: ${{ steps.claude.outputs.result }}
+      incomplete: ${{ steps.claude.outputs.incomplete }}
     steps:
       # Trusted main at the workspace root; the PR head is only read, in pr/.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,7 +110,14 @@ jobs:
       - name: Install the Claude Agent SDK
         run: |
           python3 -m venv "$RUNNER_TEMP/review"
-          "$RUNNER_TEMP/review/bin/pip" install --quiet --only-binary=:all: claude-agent-sdk==0.2.160
+          "$RUNNER_TEMP/review/bin/pip" install --quiet --only-binary=:all: claude-agent-sdk==0.2.168
+      # An SDK that does not know the model guesses its cost, so the budget
+      # stop is wrong: fail here, before any API call.
+      - name: Check that the SDK knows the model
+        env:
+          CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5-5' }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: '"$RUNNER_TEMP/review/bin/python" .github/scripts/claude_review.py --check-model'
       - id: claude
         name: Review with read-only tools
         # Below the job's limit: a step timeout fails the job, which publish
@@ -152,25 +161,27 @@ jobs:
           BRANCH: ${{ needs.target.outputs.branch }}
           OUTCOME: ${{ needs.review.result }}
           RESULT: ${{ needs.review.outputs.result }}
+          INCOMPLETE: ${{ needs.review.outputs.incomplete }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           status() {
             gh api "repos/$GH_REPO/statuses/$HEAD" -f context=claude-runtime-review \
               -f state="$1" -f description="$2" -f target_url="$RUN" >/dev/null
           }
-          # failed DESCRIPTION: the review's findings reach no session. The
-          # PR may merge before the review ends, and the status shows only on
-          # an open PR's head, so file a `review: …` issue naming the branch,
-          # which `cargo xtask ci-status` lists after the merge too. Each step
-          # tolerates the other's failure.
+          # failed DESCRIPTION [TITLE]: the review's findings reach no
+          # session. The PR may merge before the review ends, and the status
+          # shows only on an open PR's head, so file a `review: …` issue
+          # naming the branch, which `cargo xtask ci-status` lists after the
+          # merge too. TITLE names an outcome other than "did not complete",
+          # such as the budget stop. Each step tolerates the other's failure.
           failed() {
             status error "$1" || echo "::warning::The error status was not set"
-            printf 'The Claude review of #%s at `%s` ([run](%s)) failed: %s. Its findings reached no session. While #%s is open, comment `@claude review` on it; once merged, review its diff against the current `main` and file what still holds. Then close this issue.\n\n<!-- claude-review-branch: %s -->\n' \
+            printf 'The Claude review of #%s at `%s` ([run](%s)) did not reach a session: %s. This is not a finding about the PR. While #%s is open, comment `@claude review` on it; once merged, review its diff against the current `main` and file what still holds. Then close this issue.\n\n<!-- claude-review-branch: %s -->\n' \
               "$PR" "$HEAD" "$RUN" "$1" "$PR" "$BRANCH" >"$RUNNER_TEMP/review-failure.md"
             # The issue-label policy validates the labels and checks that
             # GitHub kept them.
             PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/issue_labels.py create \
-              --title "review: Claude review of #$PR did not complete" \
+              --title "review: Claude review of #$PR ${2:-did not complete}" \
               --body-file "$RUNNER_TEMP/review-failure.md" \
               --label kind:bug --label area:tooling --label priority:P1 \
               >/dev/null || echo "::warning::The failure issue was not filed either"
@@ -179,6 +190,7 @@ jobs:
           # A newer review of this PR cancelled this one and sets the status;
           # a review that ran out of time failed at its step's limit instead.
           if [ "$OUTCOME" = cancelled ]; then exit 0; fi
+          if [ -n "$INCOMPLETE" ]; then failed "Review $INCOMPLETE" "did not complete: budget"; fi
           if [ "$OUTCOME" != success ] || [ -z "$RESULT" ]; then
             failed "Review did not complete ($OUTCOME); no verdict"
           fi

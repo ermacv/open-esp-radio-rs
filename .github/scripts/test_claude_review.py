@@ -62,6 +62,47 @@ class Failure(unittest.TestCase):
         self.assertIsNone(review.failure(result(structured_output=report, permission_denials=[])))
 
 
+class Model(unittest.TestCase):
+    def check(self, stderr):
+        calls = []
+
+        def run(command, **options):
+            calls.append((command, options))
+            return SimpleNamespace(stdout="", stderr=stderr)
+
+        sdk = SimpleNamespace(__file__="/venv/claude_agent_sdk/__init__.py", __version__="0.2.168")
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk}):
+            reason = review.check_model("claude-sonnet-5-5", run)
+        return reason, calls
+
+    def test_an_unknown_model_fails_the_setup(self):
+        signal = '[claude-code:unrecognized_model] {"model":"claude-sonnet-5-5","query_source":"sdk"}'
+        reason, _ = self.check(f"isn't described by this version's model catalog\n{signal}\nNot logged in")
+        self.assertIn("claude-agent-sdk 0.2.168 does not know claude-sonnet-5-5", reason)
+
+    def test_a_known_model_passes_without_credentials(self):
+        reason, calls = self.check("Not logged in · Please run /login")
+        self.assertIsNone(reason)
+        command, options = calls[0]
+        self.assertEqual(command, ["/venv/claude_agent_sdk/_bundled/claude", "-p", "--model",
+                                   "claude-sonnet-5-5", "ok"])
+        self.assertEqual(sorted(options["env"]), ["HOME", "PATH"])
+
+
+class Budget(unittest.TestCase):
+    STAT = " a.rs | 2 +-\n 2 files changed, 900 insertions(+), 40 deletions(-)\n"
+
+    def test_a_budget_stop_is_its_own_outcome_naming_the_size(self):
+        stopped = result(subtype="error_max_budget_usd", is_error=True, errors=["budget reached"])
+        self.assertEqual(review.budget_stop(stopped, self.STAT),
+                         "did not complete: budget ($5) spent on a PR of "
+                         "2 files changed, 900 insertions(+), 40 deletions(-)")
+
+    def test_other_outcomes_are_not_budget_stops(self):
+        self.assertIsNone(review.budget_stop(None, self.STAT))
+        self.assertIsNone(review.budget_stop(result(is_error=True, api_error_status=500), self.STAT))
+
+
 class Policy(unittest.TestCase):
     def test_only_read_only_commands_run_without_a_prompt(self):
         commands = [t for t in review.ALLOWED_TOOLS if t.startswith("Bash(")]

@@ -33,9 +33,15 @@ identical path and title is caught too, and a differently worded repeat it
 fails to recognize is filed anew) and
 sets the informational commit status `claude-runtime-review`: success with
 the number of findings filed, error when the review did not complete or its
-findings could not be filed. The review runs in parallel with CI and may
-fail after the merge, so a failure also files a `review: …` issue naming the
-branch, which `cargo xtask ci-status` lists like a finding: while the PR is
+findings could not be filed. A review its budget stopped is told apart from
+a failed one: its status and issue say `did not complete: budget` and name
+the PR's size, though the status is still error and the publish job still
+fails, since no verdict exists. Before any API call, a setup step fails the job when the pinned
+Agent SDK does not know the configured model, since its cost accounting and
+so the budget stop would rest on a guess. The review runs in parallel with
+CI and may fail after the merge, so each of these outcomes also files a
+`review: …` issue naming the branch and saying it is not a finding about the
+PR; `cargo xtask ci-status` lists it like a finding: while the PR is
 open, a `@claude review` comment reviews it again; once merged, whoever takes
 the issue reviews its diff against the current `main`. Findings are filed
 before the PR review is posted, so a failed post loses none. A finding whose issue was closed as fixed

@@ -6,6 +6,10 @@ and REVIEW.md from main, and the structured report becomes the step output
 `result` for the publish job. The monthly API credits of Max and Team plans
 cover the Agent SDK but not Claude Code GitHub Actions, hence this script.
 
+`--check-model` runs before the review: it fails the workflow's setup when
+the installed SDK's Claude Code does not know the configured model, since its
+cost accounting, and so the budget stop, then rests on a guess.
+
 Authentication is workload identity federation: the CLI exchanges the GitHub
 OIDC token in ANTHROPIC_IDENTITY_TOKEN_FILE and re-reads that file whenever
 it refreshes its access token, so a background task keeps the file fresh.
@@ -15,7 +19,9 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 from urllib.request import Request, urlopen
 
 import issue_labels
@@ -73,6 +79,39 @@ async def refresh_identity_token(path):
             await asyncio.to_thread(write_identity_token, path)
         except Exception as error:  # The current token stays valid a while.
             print(f"::warning::OIDC token refresh failed: {type(error).__name__}", flush=True)
+
+
+# What Claude Code prints, before any API call, for a model its catalog does
+# not describe.
+UNRECOGNIZED_MODEL = "[claude-code:unrecognized_model]"
+
+
+def check_model(model, run=subprocess.run):
+    """Why the SDK's bundled Claude Code does not know model, or None.
+
+    It runs one print-mode query with no credentials and an empty home, so
+    nothing reaches the API: the CLI names an unknown model before it finds
+    that it is not logged in."""
+    import claude_agent_sdk
+
+    cli = Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"
+    with tempfile.TemporaryDirectory() as home:
+        output = run([str(cli), "-p", "--model", model, "ok"], capture_output=True, text=True,
+                     timeout=120, env={"PATH": os.environ.get("PATH", ""), "HOME": home})
+    if UNRECOGNIZED_MODEL in output.stdout + output.stderr:
+        return (f"claude-agent-sdk {claude_agent_sdk.__version__} does not know {model}: update "
+                "the pinned SDK in claude-review.yml or set CLAUDE_REVIEW_MODEL to a model it knows")
+    return None
+
+
+def budget_stop(result, diff_stat):
+    """The outcome of a review its budget stopped, naming the PR's size, or
+    None for a review that did not stop on its budget."""
+    if result is None or result.subtype != "error_max_budget_usd":
+        return None
+    lines = diff_stat.strip().splitlines()
+    size = lines[-1].strip() if lines else "size unknown"
+    return f"did not complete: budget (${MAX_BUDGET_USD:g}) spent on a PR of {size}"
 
 
 def failure(result):
@@ -146,6 +185,12 @@ def filed_findings(recorded):
 
 
 def main():
+    if sys.argv[1:] == ["--check-model"]:
+        if reason := check_model(os.environ["CLAUDE_REVIEW_MODEL"]):
+            print(f"::error::{reason}")
+            return 1
+        print(f"Claude review: the SDK knows {os.environ['CLAUDE_REVIEW_MODEL']}")
+        return 0
     pr, head = os.environ["REVIEW_PR"], os.environ["REVIEW_HEAD"]
     token_file = Path(os.environ["RUNNER_TEMP"]) / "anthropic-identity-token"
     write_identity_token(token_file)
@@ -157,6 +202,14 @@ def main():
               + filed_findings(review_findings.recorded(issue_labels.GitHub(os.environ["GH_TOKEN"]))))
     result = asyncio.run(review(prompt, guidance, os.environ["CLAUDE_REVIEW_MODEL"], token_file))
     token_file.unlink(missing_ok=True)
+    # A stop on the budget is its own outcome, not a failure of this step:
+    # the publish job reports it under its own title, still as an error
+    # status, since the review produced no verdict.
+    if stopped := budget_stop(result, (Path(INPUTS) / "diff.stat").read_text()):
+        print(f"::warning::Claude review {stopped}")
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            output.write(f"incomplete={stopped}\n")
+        return 0
     if reason := failure(result):
         print(f"::error::Claude review failed: {reason}")
         return 1

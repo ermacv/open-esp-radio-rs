@@ -3044,6 +3044,7 @@ dependencies = [
  "oer-stand-arbiter",
  "oer-time",
  "postcard",
+ "postcard-schema",
  "serde",
 ]
 

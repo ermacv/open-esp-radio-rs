@@ -31,3 +31,16 @@ impl Tier {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smoke_and_the_stage_gate_have_budgets_and_the_others_report() {
+        assert_eq!(Tier::Smoke.budget_micros(), Some(300_000_000));
+        assert_eq!(Tier::StageGate.budget_micros(), Some(3_600_000_000));
+        assert_eq!(Tier::Full.budget_micros(), None);
+        assert_eq!(Tier::Nightly.budget_micros(), None);
+    }
+}

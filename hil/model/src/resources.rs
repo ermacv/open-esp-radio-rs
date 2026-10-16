@@ -78,7 +78,8 @@ pub struct Resources {
 pub enum Unmet {
     /// No board left for the need; `missing` is what the board of this
     /// chip and role that lacks the fewest of the need's capabilities
-    /// lacks, empty when no board takes the role at all.
+    /// lacks. It is empty when no board takes the role at all, or when a
+    /// fitting board exists but other needs of the scenario hold it.
     Board {
         role: BoardRole,
         chip: ChipId,

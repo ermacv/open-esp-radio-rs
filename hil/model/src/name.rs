@@ -1,5 +1,6 @@
-//! Validated names: scenario and instance identifiers, and the dotted
-//! names of bounds, spans, counts, operations, chips and fixtures.
+//! Validated names: kebab-case scenario, instance, chip, fixture and
+//! composition names, and the dotted names of bounds, spans, counts,
+//! operations and capabilities.
 
 use core::fmt;
 use std::borrow::Cow;
@@ -210,6 +211,15 @@ mod tests {
         ] {
             assert!(InstanceName::parse(name).is_err(), "{name:?}");
         }
+    }
+
+    #[test]
+    fn names_end_at_their_length_limits() {
+        assert!(InstanceName::parse(&"a".repeat(64)).is_ok());
+        assert!(InstanceName::parse(&"a".repeat(65)).is_err());
+        let segment = "a".repeat(47);
+        assert!(BoundName::parse(&format!("{segment}.{}", "b".repeat(48))).is_ok());
+        assert!(BoundName::parse(&format!("{segment}.{}", "b".repeat(49))).is_err());
     }
 
     #[test]

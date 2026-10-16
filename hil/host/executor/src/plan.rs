@@ -676,11 +676,13 @@ mod tests {
 
     #[test]
     fn the_build_never_shortens_a_lease_margin() {
-        // 1.5 × (25 + 2_300) s = 3_487.5 s fits the 3_600 s cap; with the
-        // 50 s build it would not. The build happens before the lease.
+        // The scenario takes 2_350 s + the 2 s terminal bound. With the
+        // 25 s flash its lease is 1.5 × 2_377 s = 3_565.5 s, inside the
+        // 3_600 s cap; were the 50 s build inside the lease it would need
+        // 1.5 × 2_427 s = 3_640.5 s and the plan would refuse it.
         let (source, profile, offer, costs) = (
             Sha256([1; 32]),
-            profile(&[("toy.long", 2_298)]),
+            profile(&[("toy.long", 2_350)]),
             offer(),
             costs(),
         );
@@ -691,11 +693,12 @@ mod tests {
         )
         .unwrap();
         let segment = &plan.segments[0];
+        assert_eq!(segment.lease_estimate_micros, (25 + 2_352) * SECOND);
+        assert_eq!(segment.build_micros, 50 * SECOND);
         assert_eq!(
             segment.lease_limit_micros,
             segment.lease_estimate_micros * 3 / 2
         );
-        assert!(segment.lease_limit_micros <= 3_600 * SECOND);
     }
 
     #[test]

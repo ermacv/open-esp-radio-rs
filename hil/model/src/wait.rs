@@ -187,8 +187,9 @@ pub struct Resolved {
 /// Why a wait has no length.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WaitError {
-    /// Neither the image's recorded bounds nor the contract's declared
-    /// constants have the bound.
+    /// The selected bounds lack it: the set a run of the image's recipe
+    /// recorded, or else the contract's declared set. The sets are never
+    /// combined.
     NoBound(BoundName),
     /// The stand profile has no such span.
     NoSpan(SpanName),
@@ -204,7 +205,7 @@ impl From<Overflow> for WaitError {
 impl fmt::Display for WaitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoBound(name) => write!(f, "no bound `{name}` is recorded or declared"),
+            Self::NoBound(name) => write!(f, "the selected bounds have no `{name}`"),
             Self::NoSpan(name) => write!(f, "the stand profile has no span `{name}`"),
             Self::Overflow => Overflow.fmt(f),
         }
@@ -298,6 +299,16 @@ mod tests {
         );
         assert_eq!(ratio(3, 2).apply(1001), Ok(1502));
         assert_eq!(ratio(2, 1).apply(u64::MAX), Err(Overflow));
+    }
+
+    #[test]
+    fn a_factor_below_one_is_refused_when_read() {
+        assert_eq!(
+            serde_json::from_str::<Factor>("[3,2]").unwrap(),
+            ratio(3, 2)
+        );
+        assert!(serde_json::from_str::<Factor>("[1,2]").is_err());
+        assert!(serde_json::from_str::<Factor>("[1,0]").is_err());
     }
 
     #[test]

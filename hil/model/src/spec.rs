@@ -64,10 +64,29 @@ pub trait Spec {
 }
 
 /// One named, parameterised instance of a scenario.
-#[derive(Clone, Debug)]
 pub struct Instance<S: Spec> {
     pub name: InstanceName,
     pub params: S::Params,
+}
+
+// By hand: a derive would require the scenario's marker type itself to be
+// `Clone` and `Debug`.
+impl<S: Spec> Clone for Instance<S> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            params: self.params.clone(),
+        }
+    }
+}
+
+impl<S: Spec> Debug for Instance<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Instance")
+            .field("name", &self.name)
+            .field("params", &self.params)
+            .finish()
+    }
 }
 
 impl<S: Spec> Instance<S> {

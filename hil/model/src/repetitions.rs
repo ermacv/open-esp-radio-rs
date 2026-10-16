@@ -47,10 +47,12 @@ impl Confidence {
 /// The smallest `n` with `qⁿ ≤ 1 − c`: the maximum of `n` independent
 /// samples then lies at or above the `q` quantile with confidence `c`.
 pub fn quantile_samples(quantile: Probability, confidence: Confidence) -> u64 {
-    // Both logarithms are finite and negative for arguments in (0, 1), so
-    // the quotient is positive and finite.
-    let n = ((1.0 - confidence.get()).ln() / quantile.get().ln()).ceil();
-    n as u64
+    // ln(1 − c) through `ln_1p`, so a confidence too small for `1.0 − c`
+    // to differ from one still gives a negative logarithm; both logarithms
+    // are negative for arguments in (0, 1), and at least one sample is
+    // always needed, since q⁰ = 1 > 1 − c.
+    let n = ((-confidence.get()).ln_1p() / quantile.get().ln()).ceil();
+    (n as u64).max(1)
 }
 
 #[cfg(test)]
@@ -68,6 +70,15 @@ mod tests {
             quantile_samples(Probability::new(0.99).unwrap(), confidence),
             299
         );
+    }
+
+    #[test]
+    fn a_tiny_confidence_still_needs_one_sample() {
+        let tiny = Confidence::new(1e-17).unwrap();
+        assert_eq!(quantile_samples(Probability::new(0.999).unwrap(), tiny), 1);
+        let low = Confidence::new(0.5).unwrap();
+        // 0.5ⁿ ≤ 0.5 at n = 1.
+        assert_eq!(quantile_samples(Probability::new(0.5).unwrap(), low), 1);
     }
 
     #[test]

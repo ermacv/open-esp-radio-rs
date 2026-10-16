@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The HIL scenario model: a scenario's typed specification and pure verdict, derived waits and the stand profile, repetition statistics, resources, tier budgets and the time fit of a run's single trace axis"
+description = "The HIL scenario model: a scenario's typed specification and pure verdict, derived waits and the stand profile, repetition statistics, resources, target capabilities and tier budgets"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

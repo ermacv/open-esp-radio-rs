@@ -9,6 +9,8 @@ recompute verdicts; execution lives in
 | Module | Owns |
 | --- | --- |
 | `spec` | `Spec`: the scenario's stable `ScenarioId`, its purpose type, the `Subject` contract it exercises (with the contract's declared bounds), typed `Params`, `Criteria` and `Trace`, its `Resources`, `TargetCapabilities` and `Estimate`, and the pure `verdict(trace, criteria)`; `Instance`, a named parameterisation that replaces copied scenarios, and its identity: SHA-256 over the canonical JSON of scenario, instance, parameters and criteria |
+| `verdict` | `Verdict` (`Pass`, or `Fail` with its `Finding`s), made from a scenario's findings |
+| `finite` | The check that parameters and criteria hold no NaN or infinite number, which JSON writes as `null`, before an identity is computed |
 | `purpose` | The purpose as a marker type: `Conformance`, `Interop`, `Measurement` or `Investigation<Q: OpenQuestion>`, so the executor admits a scenario by its purpose at compile time; there is no protocol purpose, because protocol behaviour is proven on the host |
 | `name` | Validated names: kebab-case scenario, instance, chip, fixture and composition names; dotted bound, span, count, operation and capability names; `name!` checks a name at compile time, `parse` at run time |
 | `digest` | `Sha256` in its one canonical text form, and `canonical_json`, which sorts object keys itself |

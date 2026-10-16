@@ -16,8 +16,9 @@ use crate::{RecordError, Recorder};
 /// A protocol operation that may be lost on the air without a fault of
 /// the device under test.
 pub trait AdmitsLoss {
-    /// The prefix of the counts `<ATTEMPTS>` and `<LOST>`.
+    /// The name of the count of attempts.
     const ATTEMPTS: CountName;
+    /// The name of the count of lost attempts.
     const LOST: CountName;
     /// Attempts per operation, the first included.
     const LIMIT: NonZeroU32;

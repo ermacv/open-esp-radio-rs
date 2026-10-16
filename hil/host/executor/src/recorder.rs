@@ -38,7 +38,7 @@ impl fmt::Display for RecordError {
         match self {
             Self::Collision(name) => write!(
                 f,
-                "`{name}` is already recorded under another kind or reserved"
+                "`{name}` is already a count or a measurement, or is reserved"
             ),
             Self::Overflow(name) => write!(f, "count `{name}` overflowed"),
         }

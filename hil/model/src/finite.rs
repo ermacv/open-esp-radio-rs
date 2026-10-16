@@ -207,3 +207,22 @@ impl ser::Serializer for Finite {
         Ok(Self)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[test]
+    fn non_finite_numbers_are_found_anywhere() {
+        assert!(check(&1.5_f32).is_ok());
+        assert!(check(&f32::NAN).is_err());
+        let nested: BTreeMap<String, Vec<Option<(u8, f64)>>> =
+            BTreeMap::from([("a".to_owned(), vec![None, Some((1, f64::INFINITY))])]);
+        assert!(check(&nested).is_err());
+        let finite: BTreeMap<String, Vec<Option<(u8, f64)>>> =
+            BTreeMap::from([("a".to_owned(), vec![None, Some((1, 2.0))])]);
+        assert!(check(&finite).is_ok());
+    }
+}

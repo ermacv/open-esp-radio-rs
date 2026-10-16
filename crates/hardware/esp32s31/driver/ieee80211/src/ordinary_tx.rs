@@ -781,14 +781,26 @@ where
     pub fn start_single_attempt<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-        mut plan: OrdinaryTxPlan,
+        plan: OrdinaryTxPlan,
         attempt: SingleAttempt,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let active = self.start_single_active(hardware, plan, attempt)?;
+        Ok(self.settle(Step::Pending(active)))
+    }
+
+    /// [`Self::start_single_attempt`], returning the published attempt
+    /// instead of keeping it in the owner.
+    fn start_single_active<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        mut plan: OrdinaryTxPlan,
+        attempt: SingleAttempt,
+    ) -> Result<ActiveTx, OrdinaryTxError> {
         if attempt.backoff_slots > MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS {
             return Err(OrdinaryTxError::Tx(TxError::Invalid));
         }
         plan.exchange.publication_limit = 1;
-        self.start_transaction(
+        self.start_active(
             hardware,
             plan,
             OrdinaryRetryRatePolicy::Normal,
@@ -827,17 +839,11 @@ where
             });
         }
         core::mem::swap(&mut self.slot, &mut slot);
-        let result = self.start_single_attempt(hardware, plan, attempt);
+        let result = self.start_single_active(hardware, plan, attempt);
         // `slot` is the owner's idle slot again; hand the caller's back.
         core::mem::swap(&mut self.slot, &mut slot);
         match result {
-            Ok(_) => Ok(QueuedSingleAttempt {
-                slot,
-                active: self
-                    .active
-                    .take()
-                    .expect("a started single attempt is active"),
-            }),
+            Ok(active) => Ok(QueuedSingleAttempt { slot, active }),
             Err(error) => Err(QueuedSingleAttemptRefused { error, slot }),
         }
     }
@@ -880,33 +886,22 @@ where
         }
         let QueuedSingleAttempt { mut slot, active } = queued;
         core::mem::swap(&mut self.slot, &mut slot);
-        self.active = Some(active);
-        let result = self.service_shared_edge(hardware, wake, may_begin_timeout_abort);
+        let result = self.service_shared_edge(hardware, active, wake, may_begin_timeout_abort);
         core::mem::swap(&mut self.slot, &mut slot);
         match result {
-            Ok(WifiTxProgress::Pending) => {
+            Ok(Step::Pending(active)) => {
                 Ok(QueuedSingleAttemptProgress::Pending(QueuedSingleAttempt {
                     slot,
-                    active: self
-                        .active
-                        .take()
-                        .expect("a pending queued attempt stays active"),
+                    active,
                 }))
             }
-            Ok(WifiTxProgress::Complete) => Ok(QueuedSingleAttemptProgress::Complete {
-                outcome: self
-                    .last_outcome
-                    .take()
-                    .expect("a completed transaction records its outcome"),
-                slot,
-            }),
-            Err(error) => {
-                self.active = None;
-                Err(QueuedSingleAttemptFailed {
-                    error,
-                    quarantine: QuarantinedSingleAttempt { _slot: slot },
-                })
+            Ok(Step::Complete(outcome)) => {
+                Ok(QueuedSingleAttemptProgress::Complete { outcome, slot })
             }
+            Err(error) => Err(QueuedSingleAttemptFailed {
+                error,
+                quarantine: QuarantinedSingleAttempt { _slot: slot },
+            }),
         }
     }
 
@@ -914,12 +909,12 @@ where
     fn service_shared_edge<H: TxHardware>(
         &mut self,
         hardware: &mut H,
+        active: ActiveTx,
         wake: WifiTxWake,
         may_begin_timeout_abort: bool,
-    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+    ) -> Result<Step, OrdinaryTxError> {
         use oer_esp32s31_ieee80211_mac::irq::{EVENT_COLLISION, EVENT_TX_TIMEOUT};
 
-        let active = self.active.take().ok_or(OrdinaryTxError::Busy)?;
         if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
             return self.service_abort_settle(hardware, active);
         }
@@ -960,8 +955,7 @@ where
                 return self.reset_required(active, TxResetReason::ExecutorDeadline);
             }
         }
-        self.active = Some(active);
-        Ok(WifiTxProgress::Pending)
+        Ok(Step::Pending(active))
     }
 
     /// The control frame of a single-attempt PPDU another owner publishes
@@ -996,6 +990,19 @@ where
         retry_rate_policy: OrdinaryRetryRatePolicy,
         single_attempt: Option<SingleAttempt>,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let active = self.start_active(hardware, plan, retry_rate_policy, single_attempt)?;
+        Ok(self.settle(Step::Pending(active)))
+    }
+
+    /// Publish a transaction's first attempt and return it, without keeping
+    /// it in the owner.
+    fn start_active<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        plan: OrdinaryTxPlan,
+        retry_rate_policy: OrdinaryRetryRatePolicy,
+        single_attempt: Option<SingleAttempt>,
+    ) -> Result<ActiveTx, OrdinaryTxError> {
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
         }
@@ -1098,8 +1105,7 @@ where
         self.slot.as_mut().reset_work()?;
         self.publish_attempt(hardware, &mut active)?;
         self.last_outcome = None;
-        self.active = Some(active);
-        Ok(WifiTxProgress::Pending)
+        Ok(active)
     }
 
     /// Consume one IRQ/deadline edge and retain or release DMA ownership.
@@ -1114,6 +1120,16 @@ where
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let active = self.active.take().ok_or(OrdinaryTxError::Busy)?;
+        let step = self.service_step(hardware, active, wake)?;
+        Ok(self.settle(step))
+    }
+
+    fn service_step<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        active: ActiveTx,
+        wake: WifiTxWake,
+    ) -> Result<Step, OrdinaryTxError> {
         if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
             return self.service_abort_settle(hardware, active);
         }
@@ -1178,8 +1194,7 @@ where
             return self.finish_aborted_attempt(hardware, active, false);
         }
 
-        self.active = Some(active);
-        Ok(WifiTxProgress::Pending)
+        Ok(Step::Pending(active))
     }
 
     /// Polling adapter used only before the production IRQ runner is active.
@@ -1212,6 +1227,15 @@ where
         hardware: &mut H,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let active = self.active.take().ok_or(OrdinaryTxError::Busy)?;
+        let step = self.poll_step(hardware, active)?;
+        Ok(self.settle(step))
+    }
+
+    fn poll_step<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        active: ActiveTx,
+    ) -> Result<Step, OrdinaryTxError> {
         if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
             return self.service_abort_settle(hardware, active);
         }
@@ -1237,8 +1261,7 @@ where
         if self.timer.now() >= active.deadline {
             return self.reset_required(active, TxResetReason::ExecutorDeadline);
         }
-        self.active = Some(active);
-        Ok(WifiTxProgress::Pending)
+        Ok(Step::Pending(active))
     }
 
     /// Take the queue's completion; a BlockAckReq's completion carries the
@@ -1269,10 +1292,7 @@ where
             }))
     }
 
-    fn start_abort_settle(
-        &mut self,
-        mut active: ActiveTx,
-    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+    fn start_abort_settle(&mut self, mut active: ActiveTx) -> Result<Step, OrdinaryTxError> {
         // Start the interval after the hardware abort request has completed.
         let Some(deadline) = self.timer.now().checked_add(TX_ABORT_SETTLE) else {
             self.slot.as_mut().require_reset(active.cookie)?;
@@ -1280,20 +1300,18 @@ where
         };
         active.phase = OrdinaryTxPhase::AbortSettling;
         active.deadline = deadline;
-        self.active = Some(active);
-        Ok(WifiTxProgress::Pending)
+        Ok(Step::Pending(active))
     }
 
     fn service_abort_settle<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         active: ActiveTx,
-    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+    ) -> Result<Step, OrdinaryTxError> {
         // Late completion and repeated IRQs cannot bypass the hardware settle
         // interval. Abort detach, not completion acknowledgement, owns release.
         if self.timer.now() < active.deadline {
-            self.active = Some(active);
-            return Ok(WifiTxProgress::Pending);
+            return Ok(Step::Pending(active));
         }
         self.slot
             .as_mut()
@@ -1307,7 +1325,7 @@ where
         finished: FinishedTx,
         completion: TxCompletion,
         block_ack: Option<HtBlockAckObservation>,
-    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+    ) -> Result<Step, OrdinaryTxError> {
         let FinishedTx { mut active, status } = finished;
         let attempts = active.retry.publications();
         let final_rate = active.retry.current_rate()?;
@@ -1346,7 +1364,7 @@ where
                     protection: active.protection,
                     block_ack: if success { block_ack } else { None },
                 };
-                self.last_outcome = Some(if success {
+                let outcome = if success {
                     OrdinaryTxOutcome::Success(OrdinaryTxCompleted {
                         completion,
                         status,
@@ -1358,8 +1376,8 @@ where
                         status,
                         report,
                     })
-                });
-                Ok(WifiTxProgress::Complete)
+                };
+                Ok(Step::Complete(outcome))
             }
             OrdinaryRetryDecision::Retry { set_retry_bit } => {
                 use oer_ieee80211_lower_mac::TxStatus;
@@ -1379,8 +1397,7 @@ where
                     mark_retry(self.slot.as_mut().buffer_mut()?, active.frame_length)?;
                 }
                 self.publish_attempt(hardware, &mut active)?;
-                self.active = Some(active);
-                Ok(WifiTxProgress::Pending)
+                Ok(Step::Pending(active))
             }
         }
     }
@@ -1390,7 +1407,7 @@ where
         hardware: &mut H,
         mut active: ActiveTx,
         timeout: bool,
-    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+    ) -> Result<Step, OrdinaryTxError> {
         let attempts = active.retry.publications();
         let final_rate = active.retry.current_rate()?;
         if timeout {
@@ -1411,8 +1428,8 @@ where
                 protection: active.protection,
                 block_ack: None,
             };
-            self.last_outcome = Some(OrdinaryTxOutcome::HardwareTimeout(report));
-            return Ok(WifiTxProgress::Complete);
+            let outcome = OrdinaryTxOutcome::HardwareTimeout(report);
+            return Ok(Step::Complete(outcome));
         }
 
         let decision = if active.single_attempt.is_some() {
@@ -1425,8 +1442,7 @@ where
             OrdinaryCollisionDecision::Retry => {
                 active.retries.collisions = active.retries.collisions.saturating_add(1);
                 self.publish_attempt(hardware, &mut active)?;
-                self.active = Some(active);
-                Ok(WifiTxProgress::Pending)
+                Ok(Step::Pending(active))
             }
             OrdinaryCollisionDecision::Complete => {
                 let report = OrdinaryTxReport {
@@ -1443,8 +1459,8 @@ where
                     protection: active.protection,
                     block_ack: None,
                 };
-                self.last_outcome = Some(OrdinaryTxOutcome::CollisionLimit(report));
-                Ok(WifiTxProgress::Complete)
+                let outcome = OrdinaryTxOutcome::CollisionLimit(report);
+                Ok(Step::Complete(outcome))
             }
         }
     }
@@ -1654,14 +1670,35 @@ where
         capped_control_frame(&self.power, data, decision, ceiling)
     }
 
+    /// Keep a step's result in the owner for the classic, owner-held path.
+    fn settle(&mut self, step: Step) -> WifiTxProgress {
+        match step {
+            Step::Pending(active) => {
+                self.active = Some(active);
+                WifiTxProgress::Pending
+            }
+            Step::Complete(outcome) => {
+                self.last_outcome = Some(outcome);
+                WifiTxProgress::Complete
+            }
+        }
+    }
+
     fn reset_required(
         &mut self,
         active: ActiveTx,
         reason: TxResetReason,
-    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+    ) -> Result<Step, OrdinaryTxError> {
         self.slot.as_mut().require_reset(active.cookie)?;
         Err(OrdinaryTxError::RadioResetRequired(reason))
     }
+}
+
+/// What one step leaves: the attempt still published, or its outcome. The
+/// queued path receives exactly this value, so no state is re-read later.
+enum Step {
+    Pending(ActiveTx),
+    Complete(OrdinaryTxOutcome),
 }
 
 /// Return to the executor once, then complete.

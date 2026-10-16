@@ -315,6 +315,37 @@ fn audit(root: &Path, bytes: &[u8]) -> Result<(Vec<String>, String)> {
     if !sram.contains_range(bridge.address, bridge.address + bridge.size) {
         failures.push("cached command execution backing".into());
     }
+    // Key copies in records may outlive a drain timeout or a key command
+    // published after the stop; they
+    // must not outlive a reset. The staged runtime entry re-copies the
+    // `__runtime_critical_data_*` range from the image and zeroes the
+    // `__runtime_critical_bss_*` range at every reset; `.noinit` and
+    // RTC-retained memory would keep them.
+    let mut reset_ranges = Vec::new();
+    for (start, end) in [
+        (
+            "__runtime_critical_data_start",
+            "__runtime_critical_data_end",
+        ),
+        ("__runtime_critical_bss_start", "__runtime_critical_bss_end"),
+    ] {
+        reset_ranges.push((
+            elf.address(start).ok_or("missing reset range start")?,
+            elf.address(end).ok_or("missing reset range end")?,
+        ));
+    }
+    if !reinitialized_at_reset(
+        (bridge.address, bridge.address + bridge.size),
+        &reset_ranges,
+    ) {
+        failures.push("command records lie outside the ranges a reset reinitializes".into());
+    }
+    let bridge_section = elf
+        .sections()
+        .find(|section| section.allocated && section.contains(bridge.address))
+        .map(|section| section.name.to_owned())
+        .ok_or("command records lie in no allocated section")?;
+    report.push_str(&format!("bridge_backing_section={bridge_section}\n"));
     report.push_str(&format!("bridge_backing_bytes={}\n", bridge.size));
     for (symbol, label) in [
         ("S31_BRIDGE_HELD_BYTES", "bridge_held_bytes"),
@@ -411,4 +442,22 @@ fn linked_irq_graph_and_callback_data_reside_in_sram() -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Whether `range` lies inside one of the ranges the staged runtime entry
+/// re-copies or zeroes at every reset.
+fn reinitialized_at_reset(range: (u64, u64), reset_ranges: &[(u64, u64)]) -> bool {
+    reset_ranges
+        .iter()
+        .any(|&(start, end)| start <= range.0 && range.1 <= end)
+}
+
+#[test]
+fn records_outside_the_reset_ranges_are_rejected() {
+    let ranges = [(0x100, 0x200), (0x300, 0x400)];
+    assert!(reinitialized_at_reset((0x120, 0x180), &ranges));
+    assert!(reinitialized_at_reset((0x300, 0x400), &ranges));
+    // A `.noinit`-like or straddling placement fails the audit.
+    assert!(!reinitialized_at_reset((0x500, 0x540), &ranges));
+    assert!(!reinitialized_at_reset((0x1f0, 0x210), &ranges));
 }

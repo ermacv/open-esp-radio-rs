@@ -12,7 +12,10 @@ SECTIONS {
   .rwtext : ALIGN(4) { *(.rwtext .rwtext.*) } > SRAM
   .critical.rodata : ALIGN(4) { *(.critical.rodata .critical.rodata.*) } > SRAM
   .scope.backing : ALIGN(4) { *(.critical.data.open_radio_scope) } > SRAM
-  .critical.data : ALIGN(4) { *(.critical.data .critical.data.*) } > SRAM
+  /* The bounds the staged runtime entry re-copies from the image at every
+     reset (platform/espressif/linker/runtime/sections.x, same spelling). */
+  .critical.data : ALIGN(4) { __runtime_critical_data_start = .; *(.critical.data .critical.data.*) __runtime_critical_data_end = .; } > SRAM
+  .critical.bss (NOLOAD) : ALIGN(4) { __runtime_critical_bss_start = .; *(.critical.bss .critical.bss.*) __runtime_critical_bss_end = .; } > SRAM
   .dma (NOLOAD) : ALIGN(16) { *(.dma.bss .dma.bss.*) } > SRAM
   .scope.stack (NOLOAD) : ALIGN(16) { __scope_stack_bottom = .; . += 4096; __scope_stack_top = .; } > SRAM
   .text : ALIGN(4) { *(.text .text.*) } > CACHED

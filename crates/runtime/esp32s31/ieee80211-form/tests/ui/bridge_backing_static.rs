@@ -1,5 +1,6 @@
 #![no_std]
-use oer_esp32s31_ieee80211_form::scope::commands::{bridge::{Held, ExecutionStorage}, CommandAuthority};
+use oer_esp32s31_hal::owner::RadioRuntimeOwner;
+use oer_esp32s31_ieee80211_form::scope::commands::{bridge::{Bridged, ExecutionStorage}, CommandAuthority};
 use oer_ieee80211_lower_mac::{Ieee80211Capabilities, LowerMacCapabilities};
 use oer_radio_port::Root;
 pub struct Caps;
@@ -12,6 +13,6 @@ impl Ieee80211Capabilities for Caps {
 type Backing<'a> = &'a mut ExecutionStorage<4,9>;
 #[cfg(not(ui_reject))]
 type Backing<'a> = &'static mut ExecutionStorage<4,9>;
-pub fn bind<'id>(authority:CommandAuthority<'id,Root,0,0>, storage:Backing<'_>) {
-    let _ = Held::<'id,Caps,(),(),(),(),0,0,4,9>::bind(authority,storage); // ui-error: E0521
+pub fn bind<'id>(radio:RadioRuntimeOwner, authority:CommandAuthority<'id,Root,0,0>, storage:Backing<'_>) {
+    let _ = Bridged::<RadioRuntimeOwner,4,9>::bind::<Caps,(),(),(),(),0,0>(radio,authority,storage); // ui-error: E0521
 }

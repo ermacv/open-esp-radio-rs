@@ -18,7 +18,7 @@ use oer_radio_port::Retire;
 #[must_use = "move the driver once into Installed<B>"]
 pub struct Driver<
     'latch,
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner = ActiveEpoch<Moderated>,
     P: Sync + 'static = (),
     E: 'static = core::convert::Infallible,
@@ -28,10 +28,11 @@ pub struct Driver<
 }
 
 /// Explicit result of consuming teardown, after the driving loan has ended.
-/// Dropping it cannot release an abandoned owner or return a quarantined lease.
+/// `Released` holds owners only after a stop that read DMA quiescent, whatever
+/// the stop path; dropping it drops them. `Quarantined` never releases.
 #[must_use = "handle retirement or the reset-only quarantine"]
 pub enum State<
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner,
     P: Sync + 'static,
     E: 'static,
@@ -43,7 +44,7 @@ pub enum State<
 
 impl<
     'latch,
-    H: Send + 'static,
+    H: OwnsDma + Send + 'static,
     I: InterruptOwner,
     P: Sync + 'static,
     E: 'static,
@@ -79,9 +80,13 @@ impl<
     }
 
     /// Consume the driver after the lifecycle core ends its unique driving
-    /// loan. Successful physical quiescence returns retired owners and the
-    /// lease. Abandonment or a physical timeout returns explicit quarantine.
-    /// The common core's Unconfirmed path does not call this method or Drop.
+    /// loan. A stop that read DMA quiescent returns the owners and the lease,
+    /// whether the driver retired or `finish` itself closed and stopped an
+    /// unretired installation (a cancelled `drive`, a requested abandon, or no
+    /// drive at all). An unconfirmed stop or a drain timeout
+    /// returns explicit quarantine. The common core's abandon paths
+    /// (fail-stop, whole-run cancel) never call this method or Drop, whatever
+    /// the stop proved (#763).
     pub fn finish(self) -> State<H, I, P, E, S> {
         let mut driver = ManuallyDrop::new(self);
         #[allow(
@@ -93,7 +98,7 @@ impl<
         let scope = unsafe { ManuallyDrop::take(&mut driver.scope) };
         match scope.finish() {
             ScopeReturn::Released(released)
-                if matches!(&released.owners, DetachedOwners::Retired(_)) =>
+                if matches!(&released.owners, DetachedOwners::Stopped(_)) =>
             {
                 State::Released(released)
             }
@@ -102,20 +107,33 @@ impl<
     }
 }
 
-impl<H: Send + 'static, I: InterruptOwner, P: Sync + 'static, E: 'static, S: WakeScheduler<P>> Drop
-    for Driver<'_, H, I, P, E, S>
+impl<
+    H: OwnsDma + Send + 'static,
+    I: InterruptOwner,
+    P: Sync + 'static,
+    E: 'static,
+    S: WakeScheduler<P>,
+> Drop for Driver<'_, H, I, P, E, S>
 {
     fn drop(&mut self) {
         // Safety net for an owned driver discarded outside core quarantine.
-        // The core's Unconfirmed branch retains Driver without invoking this
-        // destructor; its backend has already masked/closed the backing.
+        // The core's abandon paths (fail-stop, whole-run cancel) retain Driver
+        // without invoking this destructor, whatever the stop proved (#763).
         // A real destructor cannot await and uses the same synchronous domain.
         let quiescence = self.scope.lease.storage().abandon(self.scope.bound);
-        let _retained = Quarantined::new(self.scope.complete_after(quiescence));
-        // ManuallyDrop is the explicit quarantine owner, not a destructor
-        // side effect of an otherwise releasable driver state.
-        // The common core does not grant backing reuse after either abandon
-        // outcome. Return a reset-only receipt, never the retained SRAM lease.
-        self.scope.latch.returned = Some(ScopeReturn::Poisoned(ScopePoisoned { _private: () }));
+        // The DMA fact decides here as on every path (#766 6226284334): a
+        // quiescent stop releases the lease and owners to the latch; anything
+        // else stays quarantined and the latch receives a reset-only receipt.
+        self.scope.latch.returned = Some(match self.scope.complete_after(quiescence) {
+            ScopeReturn::Released(released)
+                if matches!(&released.owners, DetachedOwners::Stopped(_)) =>
+            {
+                ScopeReturn::Released(released)
+            }
+            returned => {
+                let _retained = Quarantined::new(returned);
+                ScopeReturn::Poisoned(ScopePoisoned { _private: () })
+            }
+        });
     }
 }

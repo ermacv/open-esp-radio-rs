@@ -31,6 +31,7 @@ targets = ["host", "esp32s31"]
 cases = [
     "crates/memory/tests/ui/custody_requires_returned_name.rs",
     "crates/memory/tests/ui/custody_return_once.rs",
+    "crates/memory/tests/ui/custody_finish_requires_stop.rs",
 ]
 
 [[suite]]
@@ -419,7 +420,7 @@ cases = [
 
 [[suite]]
 name = "s31-driver-scope"
-packages = ["oer-esp32s31-ieee80211-form", "oer-esp32s31-ieee80211-mac"]
+packages = ["oer-esp32s31-hal", "oer-esp32s31-ieee80211-form", "oer-esp32s31-ieee80211-mac", "oer-radio-port"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
@@ -434,7 +435,7 @@ cases = [
 
 [[suite]]
 name = "s31-form-commands"
-packages = ["oer-ieee80211-mac", "oer-memory", "oer-esp32s31-ieee80211-form", "oer-esp32s31-ieee80211", "oer-esp32s31-ieee80211-mac", "oer-ieee80211-lower-mac", "oer-radio-port"]
+packages = ["oer-ieee80211-mac", "oer-memory", "oer-esp32s31-hal", "oer-esp32s31-ieee80211-form", "oer-esp32s31-ieee80211", "oer-esp32s31-ieee80211-mac", "oer-ieee80211-lower-mac", "oer-radio-port"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
@@ -458,6 +459,11 @@ cases = [
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_applied_disable.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_forged_applied.rs",
     "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_projection_owner.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_finish_requires_stop.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_finish_foreign_dma.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/stopped_proof_excludes_dma.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/owns_dma_sealed.rs",
+    "crates/runtime/esp32s31/ieee80211-form/tests/ui/bridge_step_through_composite.rs",
 
 
 ]

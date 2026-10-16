@@ -107,13 +107,15 @@ mod image {
     #[unsafe(no_mangle)]
     static S31_COMMAND_STORAGE_BYTES: u32 = core::mem::size_of::<Commands<'static>>() as u32;
 
-    type BridgeHeld<'id> = bridge::Held<'id, Caps, u32, u32, usize, [usize; 3], 2, 2, 4, 15>;
+    type BridgeHeld<'id> =
+        bridge::Held<'id, Caps, u32, u32, usize, [usize; 3], 2, 2, 4, 15, RadioRuntimeOwner>;
     #[allow(unsafe_code, reason = "export target ABI sizes for the bridge model")]
     #[unsafe(no_mangle)]
     static S31_BRIDGE_HELD_BYTES: u32 = core::mem::size_of::<BridgeHeld<'static>>() as u32;
     #[allow(unsafe_code, reason = "export target ABI sizes for the bridge model")]
     #[unsafe(no_mangle)]
-    static S31_BRIDGE_EXECUTOR_BYTES: u32 = core::mem::size_of::<bridge::Executor<4, 15>>() as u32;
+    static S31_BRIDGE_EXECUTOR_BYTES: u32 =
+        core::mem::size_of::<bridge::Executor<RadioRuntimeOwner, 4, 15>>() as u32;
     #[allow(
         unsafe_code,
         reason = "composition-owned command records require permanent SRAM"
@@ -147,8 +149,10 @@ mod image {
         })
         .await;
     }
-    fn stop(radio: &mut RadioRuntimeOwner, _: &mut IrqControl<'_>) {
+    fn stop(radio: &mut RadioRuntimeOwner, _: &mut IrqControl<'_>) -> StopOutcome {
         core::hint::black_box(radio);
+        // The placement audit stops no DMA and claims no quiescence.
+        StopOutcome::Unconfirmed
     }
     fn step(
         radio: &mut RadioRuntimeOwner,

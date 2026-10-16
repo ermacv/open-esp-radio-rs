@@ -76,8 +76,16 @@ fn make_route() -> (
     &'static ScopeSlot,
     Platform,
 ) {
+    make_route_on(Arc::new(Routing::default()))
+}
+fn make_route_on(
+    platform: Platform,
+) -> (
+    ScopeRoute<Platform, Infallible>,
+    &'static ScopeSlot,
+    Platform,
+) {
     let slot = Box::leak(Box::new(ScopeSlot::new()));
-    let platform = Arc::new(Routing::default());
     platform.sample_elapsed_us.store(1, Ordering::Relaxed);
     (
         ScopeRoute::new(
@@ -126,7 +134,7 @@ impl Block {
         self.resume.wait();
     }
 }
-struct Hardware {
+pub(crate) struct Hardware {
     work: work::DmaQueue,
     steps: Count,
     drops: Count,
@@ -136,7 +144,25 @@ struct Hardware {
     accesses_after_pause: Count,
     block: Option<Arc<Block>>,
     irq_during_step: Option<&'static ScopeSlot>,
+    /// Whether stop reads its DMA as quiescent.
+    dma_quiescent: bool,
+    /// The model DMA owner a bridge executor installed with it reaches.
+    dma: BridgeDma,
     platform: Platform,
+}
+/// The model DMA owner the bridge tests bind their executors for.
+pub(crate) type BridgeDma = commands::bridge::tests::Hardware;
+pub(crate) type BridgeExecutor = commands::bridge::Executor<BridgeDma, 4, 15>;
+/// The fixture hardware with a bridge executor, as S31 installs it.
+pub(crate) type Bridge = commands::bridge::Bridged<Hardware, 4, 15>;
+/// Test-only: the fixture hardware owns no executor of its own; with one it
+/// is installed through [`Bridge`].
+impl sealed::OwnsDma for Hardware {
+    type Dma = BridgeDma;
+    fn dma(&mut self) -> &mut BridgeDma {
+        &mut self.dma
+    }
+    fn erase_pending_keys(&mut self) {}
 }
 impl Drop for Hardware {
     fn drop(&mut self) {
@@ -154,6 +180,8 @@ fn hardware(platform: &Platform) -> Hardware {
         accesses_after_pause: Count::default(),
         block: None,
         irq_during_step: None,
+        dma_quiescent: true,
+        dma: BridgeDma::default(),
         platform: platform.clone(),
     }
 }
@@ -189,7 +217,7 @@ fn step(
         ))
     }
 }
-fn stop(h: &mut Hardware, _: &mut IrqControl<Interrupts>) {
+fn stop(h: &mut Hardware, _: &mut IrqControl<Interrupts>) -> StopOutcome {
     assert!(h.platform.masked.load(Ordering::SeqCst));
     assert_eq!(
         h.stops.get(),
@@ -198,6 +226,13 @@ fn stop(h: &mut Hardware, _: &mut IrqControl<Interrupts>) {
     );
     h.stops.increment();
     h.work.drain();
+    if h.dma_quiescent {
+        #[allow(unsafe_code, reason = "the model's DMA queue was just drained")]
+        // SAFETY: the model has no hardware DMA; its queue was drained above.
+        StopOutcome::Quiescent(unsafe { DmaQuiescent::confirmed() })
+    } else {
+        StopOutcome::Unconfirmed
+    }
 }
 #[derive(Default)]
 struct Interrupts {
@@ -295,6 +330,154 @@ fn released(
     }
 }
 
+/// Fixture hardware for [`Bridge::bind`], on its own platform.
+pub(crate) fn fixture_hardware() -> Hardware {
+    hardware(&Arc::new(Routing::default()))
+}
+
+/// Stop one scope (retired, or fail-stopped through abandon) with a DMA
+/// fact of `quiescent`, and lend its stop proof, if any, to `with`. Stores in
+/// other modules use it to finish their owners after a real stop.
+pub(crate) fn with_stopped_scope<R>(
+    abandon: bool,
+    quiescent: bool,
+    with: impl FnOnce(Option<&DriverStopped<'_, BridgeDma>>) -> R,
+) -> R {
+    let mut h = fixture_hardware();
+    h.dma_quiescent = quiescent;
+    let platform = h.platform.clone();
+    stop_scope(
+        h,
+        platform,
+        DriverCallbacks::new(step, stop),
+        abandon,
+        |owners| match owners {
+            DetachedOwners::Stopped(owners) => with(Some(&owners.stopped())),
+            DetachedOwners::Unconfirmed(_) => with(None),
+        },
+    )
+}
+
+/// [`with_stopped_scope`] with `bridge` installed as the driver's hardware:
+/// a quiescent stop lends its executor together with the proof
+/// ([`StoppedOwners::parts`]); an unconfirmed one quarantines it after the
+/// form erased its pending keys.
+pub(crate) fn with_stopped_scope_owning<R>(
+    abandon: bool,
+    quiescent: bool,
+    mut bridge: Bridge,
+    with: impl FnOnce(Option<(&mut BridgeExecutor, &DriverStopped<'_, BridgeDma>)>) -> R,
+) -> R {
+    fn bridged_step(
+        b: &mut Bridge,
+        irq: &mut IrqControl<Interrupts>,
+        events: DriverEvents,
+        signals: DriverStatus,
+    ) -> DriverStep {
+        step(b.hardware(), irq, events, signals)
+    }
+    fn bridged_stop(b: &mut Bridge, irq: &mut IrqControl<Interrupts>) -> StopOutcome {
+        stop(b.hardware(), irq)
+    }
+    bridge.hardware().dma_quiescent = quiescent;
+    let platform = bridge.hardware().platform.clone();
+    let callbacks = DriverCallbacks::new(bridged_step, bridged_stop);
+    stop_scope(
+        bridge,
+        platform,
+        callbacks,
+        abandon,
+        |owners| match owners {
+            DetachedOwners::Stopped(mut owners) => {
+                let (executor, stopped) = owners.parts();
+                with(Some((executor, &stopped)))
+            }
+            DetachedOwners::Unconfirmed(_) => with(None),
+        },
+    )
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the harness binds its unique slot, permanent lease and exclusive executor"
+)]
+fn stop_scope<H: OwnsDma + Send + 'static, R>(
+    h: H,
+    platform: Platform,
+    callbacks: DriverCallbacks<H, Interrupts>,
+    abandon: bool,
+    with: impl FnOnce(DetachedOwners<ReturnedOwners<H, (), Platform, Infallible, Schedule>>) -> R,
+) -> R {
+    let (route, slot, _) = make_route_on(platform);
+    let lease = ScopeStorage::<H, Interrupts, Platform, Infallible, Schedule>::pin_static(
+        Box::leak(Box::new(ScopeStorage::new())),
+    );
+    let mut latch = ScopeReturnLatch::new();
+    // SAFETY: as new_scope: one route, one permanent backing, one serialized
+    // dispatch; the callbacks only forward to the fixture's.
+    let scope = unsafe {
+        DriverScope::new(
+            lease,
+            h,
+            Interrupts::default(),
+            callbacks,
+            route,
+            DrainBound::from_maxima::<100, 20, 30>(),
+            &mut latch,
+        )
+    };
+    let mut future = Box::pin(scope.run((), async move |(), access| {
+        if abandon {
+            let _abandoned = access.abandon();
+        } else {
+            access.retire(()).await;
+        }
+    }));
+    if poll(future.as_mut()).is_pending() {
+        dispatch(slot);
+        assert!(poll(future.as_mut()).is_ready());
+    }
+    drop(future);
+    match latch.into_return() {
+        Some(ScopeReturn::Released(released)) => with(released.owners),
+        _ => panic!("expected Released"),
+    }
+}
+
+#[test]
+fn a_lost_owned_driver_releases_after_a_quiescent_stop_and_poisons_otherwise() {
+    // #766 6226284334: the proof covers a lost owner alike. Dropping an owned
+    // Driver outside core quarantine abandons it; the DMA fact decides.
+    for quiescent in [true, false] {
+        let (route, _slot, platform) = make_route();
+        let mut h = hardware(&platform);
+        h.dma_quiescent = quiescent;
+        let drops = h.drops.clone();
+        let mut latch = Latch::new();
+        let driver = driver::Driver::new(new_scope(
+            lease(),
+            h,
+            Interrupts::default(),
+            route,
+            &mut latch,
+        ));
+        drop(driver);
+        match latch.into_return() {
+            Some(ScopeReturn::Released(released)) => {
+                assert!(quiescent, "only a quiescent stop releases");
+                assert!(matches!(released.owners, DetachedOwners::Stopped(_)));
+                drop(released);
+                assert_eq!(drops.get(), 1, "released owners drop normally");
+            }
+            Some(ScopeReturn::Poisoned(_)) => {
+                assert!(!quiescent, "an unconfirmed stop stays quarantined");
+                assert_eq!(drops.get(), 0);
+            }
+            None => panic!("a lost driver always reports its outcome"),
+        }
+    }
+}
+
 #[test]
 fn completion_keeps_result_until_separate_retirement_and_stops_once() {
     let (route, slot, platform) = make_route();
@@ -328,14 +511,14 @@ fn completion_keeps_result_until_separate_retirement_and_stops_once() {
     assert!(platform.masked.load(Ordering::SeqCst));
     assert!(slot.entry.load(Ordering::Acquire).is_null());
     let returned = released(latch.into_return());
-    assert!(matches!(returned.owners, DetachedOwners::Retired(_)));
+    assert!(matches!(returned.owners, DetachedOwners::Stopped(_)));
     assert_eq!(drops.get(), 0);
     drop(returned);
     assert_eq!(drops.get(), 1);
 }
 
 #[test]
-fn cancellation_before_and_during_poll_returns_lease_and_quarantines_owners() {
+fn cancellation_before_and_during_poll_returns_lease_and_owners_after_a_quiescent_stop() {
     for started in [false, true] {
         let (route, slot, platform) = make_route();
         let h = hardware(&platform);
@@ -357,17 +540,22 @@ fn cancellation_before_and_during_poll_returns_lease_and_quarantines_owners() {
         assert!(!slot.mac_interrupt().had_status);
         assert!(slot.power_interrupt().observation.is_empty());
         let returned = released(latch.into_return());
-        assert!(matches!(returned.owners, DetachedOwners::Abandoned(_)));
+        assert!(
+            matches!(returned.owners, DetachedOwners::Stopped(_)),
+            "a confirmed stop returns cancelled owners"
+        );
+        assert_eq!(drops.get(), 0);
         drop(returned);
-        assert_eq!(drops.get(), 0, "cancelled owners are not silently recycled");
+        assert_eq!(drops.get(), 1);
     }
 }
 
 #[test]
 fn fail_stop_is_synchronous_and_drop_does_not_stop_twice() {
-    for body_waits in [false, true] {
+    for (body_waits, quiescent) in [(false, true), (true, true), (false, false), (true, false)] {
         let (route, slot, platform) = make_route();
-        let h = hardware(&platform);
+        let mut h = hardware(&platform);
+        h.dma_quiescent = quiescent;
         let stops = h.stops.clone();
         let mut latch = Latch::new();
         let scope = new_scope(lease(), h, Interrupts::default(), route, &mut latch);
@@ -385,10 +573,14 @@ fn fail_stop_is_synchronous_and_drop_does_not_stop_twice() {
         dispatch(slot);
         drop(future);
         assert_eq!(stops.get(), 1);
-        assert!(matches!(
-            released(latch.into_return()).owners,
-            DetachedOwners::Abandoned(_)
-        ));
+        // The DMA fact decides: a confirmed fail-stop returns its owners, an
+        // unconfirmed one keeps them quarantined until reset.
+        let owners = released(latch.into_return()).owners;
+        if quiescent {
+            assert!(matches!(owners, DetachedOwners::Stopped(_)));
+        } else {
+            assert!(matches!(owners, DetachedOwners::Unconfirmed(_)));
+        }
     }
 }
 
@@ -626,7 +818,7 @@ fn unconfirmed_can_free_driver_container_without_drop_or_reclaiming_backing() {
         block.entered.wait();
         assert!(matches!(
             scope.lease.storage().abandon(scope.bound),
-            Quiescence::TimedOut
+            Closed::TimedOut
         ));
         assert!(platform.masked.load(Ordering::Acquire));
         assert!(!slot.open.load(Ordering::Acquire));
@@ -845,9 +1037,10 @@ fn a_released_lease_can_be_installed_again_with_clean_facts() {
     assert_eq!(poll(future.as_mut()), Poll::Ready(Ok(())));
     drop(future);
     let first = released(latch.into_return());
-    let DetachedOwners::Retired(owners) = first.owners else {
+    let DetachedOwners::Stopped(owners) = first.owners else {
         panic!("normal return");
     };
+    let owners = owners.into_owners();
     let h = hardware(&platform);
     let facts = h.facts.clone();
     drop(owners.hardware);

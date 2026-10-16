@@ -529,3 +529,22 @@ fn every_command_variant_maps_bijectively_at_pool_boundaries() {
     command_index_bijection::<256, 0>();
     command_index_bijection::<256, 256>();
 }
+
+#[test]
+fn quarantine_erases_key_material_and_keeps_the_permission() {
+    use oer_memory::Quarantine;
+    ready(branded::<CommandPools<2, 1>, _>(async |mint| {
+        let r = mint.into_pools();
+        let [install] = r.installs;
+        let mut command: PhaseCommand<'_, Caps, (), (), (), payload::Mpdu> =
+            PhaseCommand::InstallPairwise {
+                permission: install,
+                key: Ccmp128Key::new(&zeroize::Zeroizing::new([7; 16])),
+            };
+        command.quarantine();
+        let PhaseCommand::InstallPairwise { key, .. } = command else {
+            panic!("quarantine keeps the command in place");
+        };
+        assert_eq!(key.as_bytes(), &[0; 16]);
+    }));
+}

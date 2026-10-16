@@ -18,7 +18,7 @@ impl ProjectExecution for Payload<'_> {
 // The positive twin also instantiates the actual producer with a payload
 // that cannot be 'static. A for<'a> GAT bound here incorrectly rejects it.
 pub fn split<'id,'tag,Caps:Ieee80211Capabilities>(
-    held:&mut Held<'id,Caps,(),(),(),Payload<'tag>,0,0,4,9>,
+    held:&mut Held<'id,Caps,(),(),(),Payload<'tag>,0,0,4,9,()>,
     issuer:GateIssuer<'id,GatePath>,
     enable:Slot<'id,EnableKind,Child<Root,8>>,
     disable:Slot<'id,DisableKind,Child<Root,9>>,

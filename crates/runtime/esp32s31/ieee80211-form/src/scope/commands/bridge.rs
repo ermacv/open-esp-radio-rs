@@ -6,9 +6,18 @@
 //! operation finished. A real DMA terminal requires the driver's completion
 //! proof, not merely acceptance by a hardware queue.
 //!
-//! Cancellation of a reply wait leaves every owner in Held. After the scope
-//! has masked and drained actors, finish may withdraw the remaining owners.
-//! Unconfirmed shutdown must move Held into `oer_radio_port::Quarantined`.
+//! Cancellation of a reply wait leaves every owner in Held. When the driver's
+//! stop proved DMA quiescent (on any of the form's own stop paths; the core's
+//! fail-stop and whole-run cancel still quarantine, #763), `Held::finish`
+//! takes Held (ending every producer endpoint), this binding's executor
+//! (lent by `StoppedOwners::parts` from the stopped `Bridged` hardware) and
+//! that `DriverStopped` proof: it withdraws every pending record with its key
+//! erased, takes every replied record back and returns every remaining owner.
+//! Without the proof Held stays quarantined: dropping it leaks every owner,
+//! never dropping one. After every stop whose drain completed, the form
+//! itself withdraws the pending records of the executor inside `Bridged` and
+//! zeroes their keys before any owner can go into quarantine. A key command
+//! published after that stop keeps its record copy until reset.
 //! Forgetting Held cannot free the permanent records; names have no pointer
 //! back to it. Composition wakers may schedule, never synchronously detach.
 //!
@@ -18,8 +27,12 @@
 //! and withdrawal both erase it in place before publishing their typed reply.
 
 use super::*;
+use crate::scope::{DriverStopped, OwnsDma, ReturnedOwners, StoppedOwners, sealed};
+use core::marker::PhantomData;
 use oer_ieee80211_lower_mac::{ExecutionPayload, ReceiveFilter};
-use oer_memory::{CustodyDomain, IndexedCustody, RetainedName, StableDmaRegion};
+use oer_memory::{
+    CustodyDomain, Drained, IndexedCustody, Quarantine, RetainedName, StableDmaRegion,
+};
 use zeroize::Zeroize;
 
 /// Fixture descriptor budget: header and two independently retained bodies.
@@ -145,6 +158,19 @@ impl Record {
         self.completion = Completion::Withdrawn;
     }
 }
+/// The permanent record store is static and never destroyed, so this runs
+/// only if a binding ever drops one. Pending record keys are erased by
+/// `Executor::erase_pending_keys` (on `Held::finish`, and by the form after
+/// every stop whose drain completed) and by the executor's drop; execution
+/// erases them before replying.
+#[allow(unsafe_code, reason = "record quarantine only zeroes its key copy")]
+// SAFETY: it zeroes the key bytes in place; operation and completion stay,
+// and nothing is released, moved or awaited.
+unsafe impl Quarantine for Record {
+    fn quarantine(&mut self) {
+        self.key.zeroize();
+    }
+}
 
 // These names cannot be constructed, obtained, or routed by a bridge caller.
 // The sole binding consumes the Mint's CommandAuthority and &'static mut
@@ -167,6 +193,7 @@ type RecordName<const N: usize> = RetainedName<OwnerName<N>, N>;
 // Names contain only an index, with no lifetime, pointer or owner destructor.
 unsafe impl<const N: usize> CustodyDomain<N> for Owners {
     type Name = Entry<(), N>;
+    type Stopped = Stopped;
 }
 #[allow(
     unsafe_code,
@@ -180,6 +207,17 @@ unsafe impl<const N: usize> CustodyDomain<N> for Owners {
 // static storage. Names cannot access the owner store, even after forget.
 unsafe impl<const N: usize> CustodyDomain<N> for Records {
     type Name = OwnerName<N>;
+    type Stopped = Stopped;
+}
+
+/// The custody stores' stop proof, issued only inside [`Held::finish`].
+pub struct Stopped {
+    _private: (),
+}
+/// Held refused an executor of another binding; Held returns unchanged.
+#[must_use = "a foreign executor returns Held unchanged"]
+pub struct ForeignExecutor<H> {
+    pub held: H,
 }
 
 type OwnersOf<T, const N: usize> = IndexedCustody<T, Owners, N>;
@@ -243,6 +281,21 @@ impl<const S: usize, const P: usize> Default for ExecutionStorage<S, P> {
         Self::new()
     }
 }
+impl<const N: usize> CallerLane<N> {
+    /// Take back every replied record, at most N, dropping each one.
+    fn take_replied_records(&mut self) -> usize {
+        let mut taken = 0;
+        for _ in 0..N {
+            let Ok(name) = self.replied.try_receive() else {
+                break;
+            };
+            let (_owner, record) = self.records.take(name);
+            drop(record);
+            taken += 1;
+        }
+        taken
+    }
+}
 struct CallerLane<const N: usize> {
     records: &'static RecordsOf<N>,
     send: AffineIndexedSpscSender<'static, RecordName<N>, N>,
@@ -259,8 +312,8 @@ struct ExecutorLane<const N: usize> {
 }
 impl<const N: usize> ExecutorLane<N> {
     fn withdraw_pending(&mut self) {
-        // At most N names; shutdown must first end producer access. Even a
-        // misused model caller cannot make this finite operation spin forever.
+        // At most N names, so this finite operation cannot spin even while a
+        // producer still publishes; it runs with exclusive executor access.
         for _ in 0..N {
             let Ok(mut name) = self.receive.try_receive() else {
                 break;
@@ -289,38 +342,47 @@ enum Stage {
 /// The separate executor owns only permanent cells and names, never Held.
 /// Each step completes at most one model operation. It has no awaited local
 /// owner; dropping a reply wait leaves finish/abandon all accepted commands.
-pub struct Executor<const S: usize, const P: usize> {
+///
+/// `D` is the type of the DMA owner its records reach (#766 6231653302,
+/// 6232304479), fixed at [`Bridged::bind`]. Outside the form it steps only
+/// through [`Bridged::step`], on the DMA owner of the hardware beside it.
+pub struct Executor<D, const S: usize, const P: usize> {
     setup: ExecutorLane<S>,
     phase: ExecutorLane<P>,
     stage: Stage,
+    _dma: PhantomData<fn(&mut D)>,
 }
-impl<const S: usize, const P: usize> Executor<S, P> {
-    /// Return queued model commands without applying them. End producer
-    /// access first, and join any worker that owns this executor. A completed
-    /// reply remains Applied; a queued command becomes Withdrawn. This is
-    /// model accounting after drain, not an assertion that hardware stopped.
-    pub fn withdraw_pending(mut self) {
+impl<D, const S: usize, const P: usize> Executor<D, S, P> {
+    /// Withdraw every pending record and erase its key copy, keeping the
+    /// executor. Call it only when no step can be inside this executor: the
+    /// form does, after a completed drain and stop. After a drain timeout no
+    /// stop runs; those copies stay in SRAM until reset.
+    pub(crate) fn erase_pending_keys(&mut self) {
         self.setup.withdraw_pending();
         self.phase.withdraw_pending();
     }
     /// Register before checking work, so direct publication cannot lose a
     /// wake between the empty observation and parking the separate executor.
-    pub fn poll_step(
-        &mut self,
-        cx: &mut Context<'_>,
-        hardware: &mut impl ModelHardware,
-    ) -> Poll<Operation> {
+    pub(crate) fn poll_step(&mut self, cx: &mut Context<'_>, dma: &mut D) -> Poll<Operation>
+    where
+        D: ModelHardware,
+    {
         self.setup.request_wake.register(cx.waker());
         self.phase.request_wake.register(cx.waker());
-        match self.step(hardware) {
+        match self.step(dma) {
             Some(operation) => Poll::Ready(operation),
             None => Poll::Pending,
         }
     }
-    pub fn step(&mut self, hardware: &mut impl ModelHardware) -> Option<Operation> {
+    /// Run at most one operation on the DMA owner `dma`. Outside the form it
+    /// is reachable only through [`Bridged::step`].
+    pub(crate) fn step(&mut self, dma: &mut D) -> Option<Operation>
+    where
+        D: ModelHardware,
+    {
         let operation = match self.stage {
-            Stage::Setup => self.setup.step(hardware),
-            Stage::Phase => self.phase.step(hardware),
+            Stage::Setup => self.setup.step(dma),
+            Stage::Phase => self.phase.step(dma),
         }?;
         match operation {
             Operation::Enable => self.stage = Stage::Phase,
@@ -330,9 +392,99 @@ impl<const S: usize, const P: usize> Executor<S, P> {
         Some(operation)
     }
 }
+/// Dropping the executor withdraws every pending record and erases its key
+/// copy; an executed record erased its key before its reply. Quarantine
+/// never runs this destructor: after every stop whose drain completed the form
+/// erases the pending keys of the executor inside [`Bridged`] itself.
+impl<D, const S: usize, const P: usize> Drop for Executor<D, S, P> {
+    fn drop(&mut self) {
+        self.setup.withdraw_pending();
+        self.phase.withdraw_pending();
+    }
+}
+
+/// Driver hardware together with its bridge executor: the only way outside
+/// the form to bind a Held and to step its executor (#766 6232304479).
+///
+/// The executor is bound for `HW`'s DMA owner type and steps only on that
+/// owner, borrowed from `HW` beside it. The form finds the executor here to
+/// erase pending keys after every stop whose drain completed, and
+/// [`StoppedOwners::parts`] lends it beside a stop proof, never `HW`.
+pub struct Bridged<HW: OwnsDma, const S: usize, const P: usize> {
+    hardware: HW,
+    executor: Executor<HW::Dma, S, P>,
+}
+impl<HW: OwnsDma, const S: usize, const P: usize> Bridged<HW, S, P> {
+    /// Bind the command stores for `hardware`'s DMA owner type, returning
+    /// the caller-side Held and the composite to install as the driver's
+    /// hardware.
+    #[allow(
+        clippy::type_complexity,
+        reason = "Held names every owner type it retains"
+    )]
+    pub fn bind<'id, Caps: Ieee80211Capabilities, SC, AC, C, M, const T: usize, const K: usize>(
+        hardware: HW,
+        authority: CommandAuthority<'id, Root, T, K>,
+        storage: &'static mut ExecutionStorage<S, P>,
+    ) -> (Held<'id, Caps, SC, AC, C, M, T, K, S, P, HW::Dma>, Self) {
+        let (held, executor) = Held::bind(authority, storage);
+        (held, Self { hardware, executor })
+    }
+    /// The driver's hardware, for its own MMIO; the executor stays here.
+    pub fn hardware(&mut self) -> &mut HW {
+        &mut self.hardware
+    }
+    /// The executor, for [`Held::finish`]; it cannot step without `HW`.
+    pub fn executor(&mut self) -> &mut Executor<HW::Dma, S, P> {
+        &mut self.executor
+    }
+    /// Run at most one bridge operation on this hardware's DMA owner.
+    pub fn step(&mut self) -> Option<Operation>
+    where
+        HW::Dma: ModelHardware,
+    {
+        self.executor.step(sealed::OwnsDma::dma(&mut self.hardware))
+    }
+    /// [`Self::step`], registering the waker first.
+    pub fn poll_step(&mut self, cx: &mut Context<'_>) -> Poll<Operation>
+    where
+        HW::Dma: ModelHardware,
+    {
+        self.executor
+            .poll_step(cx, sealed::OwnsDma::dma(&mut self.hardware))
+    }
+}
+impl<HW: OwnsDma, const S: usize, const P: usize> sealed::OwnsDma for Bridged<HW, S, P> {
+    type Dma = HW::Dma;
+    fn dma(&mut self) -> &mut HW::Dma {
+        sealed::OwnsDma::dma(&mut self.hardware)
+    }
+    fn erase_pending_keys(&mut self) {
+        self.executor.erase_pending_keys();
+        sealed::OwnsDma::erase_pending_keys(&mut self.hardware);
+    }
+}
+impl<HW: OwnsDma, const S: usize, const P: usize, I, PL, E, SC>
+    StoppedOwners<ReturnedOwners<Bridged<HW, S, P>, I, PL, E, SC>>
+{
+    /// Lend the composite's executor and the stop proof together, for
+    /// finishing its Held. Only the executor is lent, never the hardware or
+    /// its DMA owner, so no step can restart DMA while the proof lives
+    /// (#766 6231653302).
+    pub fn parts(&mut self) -> (&mut Executor<HW::Dma, S, P>, DriverStopped<'_, HW::Dma>) {
+        (
+            &mut self.owners.hardware.executor,
+            DriverStopped {
+                _scope: PhantomData,
+                _dma: PhantomData,
+            },
+        )
+    }
+}
 
 /// Caller-owned branded waiting places. No Context: Send or Context: 'static
-/// bound is imposed. The permanent executor is returned independently.
+/// bound is imposed. [`Bridged::bind`] returns it beside the composite that
+/// owns the executor.
 pub struct Held<
     'id,
     Caps: Ieee80211Capabilities,
@@ -344,12 +496,33 @@ pub struct Held<
     const K: usize,
     const S: usize,
     const P: usize,
+    D,
 > {
     setup: OwnersOf<SetupCommand<'id, Caps, SC, AC>, S>,
     phase: OwnersOf<PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
     setup_lane: CallerLane<S>,
     phase_lane: CallerLane<P>,
     _authority: CommandAuthority<'id, Root, T, K>,
+    /// The DMA owner type its records reach, fixed at bind.
+    _dma: PhantomData<fn(&mut D)>,
+}
+/// Every command owner a finished Held still retained, in place order.
+pub struct HeldOwners<
+    'id,
+    Caps: Ieee80211Capabilities,
+    SC,
+    AC,
+    C,
+    M,
+    const S: usize,
+    const P: usize,
+> {
+    pub setup: Drained<SetupCommand<'id, Caps, SC, AC>, S>,
+    pub phase: Drained<PhaseCommand<'id, Caps, SC, AC, C, M>, P>,
+    /// Permanent records finish took back out of the static storage after
+    /// the executor's withdrawal: every replied record nobody had received,
+    /// applied or withdrawn. No key copy of any of them remains there.
+    pub records_taken_back: usize,
 }
 /// Borrowed producer and reply consumer for one direct-publication binding.
 pub type Endpoints<
@@ -379,12 +552,15 @@ impl<
     const K: usize,
     const S: usize,
     const P: usize,
-> Held<'id, Caps, SC, AC, C, M, T, K, S, P>
+    D,
+> Held<'id, Caps, SC, AC, C, M, T, K, S, P, D>
 {
-    pub fn bind(
+    /// Bind the command stores for the DMA owner type `D`. Outside the form
+    /// it is reachable only through [`Bridged::bind`].
+    pub(crate) fn bind(
         authority: CommandAuthority<'id, Root, T, K>,
         storage: &'static mut ExecutionStorage<S, P>,
-    ) -> (Self, Executor<S, P>) {
+    ) -> (Self, Executor<D, S, P>) {
         const {
             assert!(S == CommandPools::<T, K>::SETUP_STORAGE && S == SetupPlaces::END);
             assert!(P == CommandPools::<T, K>::PHASE_STORAGE && P == PhasePlaces::<T, K>::END);
@@ -398,13 +574,55 @@ impl<
                 setup_lane,
                 phase_lane,
                 _authority: authority,
+                _dma: PhantomData,
             },
             Executor {
                 setup,
                 phase,
                 stage: Stage::Setup,
+                _dma: PhantomData,
             },
         )
+    }
+    /// The ordinary end, after the driver's stop proved DMA quiescent on any
+    /// of the form's own stop paths (the core's fail-stop and whole-run cancel
+    /// still quarantine, #763). Consuming Held ends every producer endpoint, so no command
+    /// can be published afterwards; its executor, which may live inside the
+    /// stopped hardware ([`crate::scope::StoppedOwners::parts`]), then withdraws
+    /// every pending record with its key erased, finish takes every replied
+    /// record (applied or withdrawn) back out of the static storage, and every
+    /// command owner Held still retains returns to its pool. Without that proof Held is
+    /// quarantined: dropping it keeps every owner.
+    ///
+    /// # Errors
+    ///
+    /// Held unchanged, when the executor belongs to another binding (its
+    /// permanent record stores differ).
+    #[allow(clippy::result_large_err, reason = "a refusal returns Held whole")]
+    pub fn finish(
+        self,
+        executor: &mut Executor<D, S, P>,
+        _dma: &crate::scope::DriverStopped<'_, D>,
+    ) -> Result<HeldOwners<'id, Caps, SC, AC, C, M, S, P>, ForeignExecutor<Self>> {
+        if !(core::ptr::eq(self.setup_lane.records, executor.setup.records)
+            && core::ptr::eq(self.phase_lane.records, executor.phase.records))
+        {
+            return Err(ForeignExecutor { held: self });
+        }
+        // Held is consumed, so no endpoint can publish again: this withdraws
+        // every record that was ever sent, erasing its key.
+        executor.erase_pending_keys();
+        let mut held = self;
+        // Take every replied record (applied or withdrawn) out of the static
+        // storage, so no record or key copy outlives this installation.
+        let records_taken_back =
+            held.setup_lane.take_replied_records() + held.phase_lane.take_replied_records();
+        let stopped = Stopped { _private: () };
+        Ok(HeldOwners {
+            setup: held.setup.finish(&stopped),
+            phase: held.phase.finish(&stopped),
+            records_taken_back,
+        })
     }
     pub fn split(
         &mut self,
@@ -434,7 +652,7 @@ impl<
         )
     }
 }
-fn direct<'a, T, const N: usize>(
+fn direct<'a, T: Quarantine, const N: usize>(
     owners: &'a OwnersOf<T, N>,
     lane: &'a mut CallerLane<N>,
     project: fn(&mut T) -> Record,
@@ -455,14 +673,14 @@ fn direct<'a, T, const N: usize>(
         },
     )
 }
-pub(super) struct DirectSender<'a, T, const N: usize> {
+pub(super) struct DirectSender<'a, T: Quarantine, const N: usize> {
     owners: &'a OwnersOf<T, N>,
     records: &'static RecordsOf<N>,
     send: &'a mut AffineIndexedSpscSender<'static, RecordName<N>, N>,
     wake: &'static AtomicWaker,
     project: fn(&mut T) -> Record,
 }
-impl<T, const N: usize> DirectSender<'_, T, N> {
+impl<T: Quarantine, const N: usize> DirectSender<'_, T, N> {
     pub(super) fn send(&mut self, entry: Entry<T, N>) {
         let mut name = self.owners.insert(
             Entry {
@@ -477,7 +695,7 @@ impl<T, const N: usize> DirectSender<'_, T, N> {
         self.wake.wake();
     }
 }
-struct DirectReceiver<'a, T, const N: usize> {
+struct DirectReceiver<'a, T: Quarantine, const N: usize> {
     owners: &'a OwnersOf<T, N>,
     records: &'static RecordsOf<N>,
     receive: &'a mut AffineIndexedSpscReceiver<'static, RecordName<N>, N>,
@@ -522,7 +740,7 @@ impl<T> Reply<T> {
 type PhaseApplied<'id, Caps, SC, AC, C, M> = Applied<PhaseCommand<'id, Caps, SC, AC, C, M>>;
 pub type DisableReply<'id, Caps, SC, AC, C, M> =
     Result<Disabled<'id>, (Enable<'id>, PhaseApplied<'id, Caps, SC, AC, C, M>)>;
-impl<T, const N: usize> DirectReceiver<'_, T, N> {
+impl<T: Quarantine, const N: usize> DirectReceiver<'_, T, N> {
     fn poll(&mut self, cx: &mut Context<'_>) -> Poll<Reply<T>> {
         self.wake.register(cx.waker());
         let Ok(name) = self.receive.try_receive() else {
@@ -639,4 +857,4 @@ fn project_phase<Caps: Ieee80211Capabilities, SC, AC, C, M: ProjectExecution>(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

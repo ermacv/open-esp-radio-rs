@@ -24,16 +24,12 @@ enum Task {
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
     /// Run the fast gate and the local Claude review on exactly the
-    /// committed tree, push this branch, open its pull request when it has
-    /// none, and let it merge itself once CI passes. Refused on main.
+    /// committed tree, push this branch and open its pull request as a draft
+    /// when it has none; a person marks it ready and merges it. Refused on
+    /// main.
     Push {
-        /// Open the pull request as a draft and leave merging to a person:
-        /// auto-merge is not enabled. The local review runs as on any push.
-        #[arg(long)]
-        draft: bool,
         /// Push without the local review, recording REASON on the pull
-        /// request; the review in CI blocks nothing, so the push merges
-        /// unreviewed.
+        /// request; the review in CI blocks nothing.
         #[arg(long, value_name = "REASON")]
         skip_review: Option<String>,
     },
@@ -260,9 +256,7 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
     let ctx = ctx.clone();
     match command {
         Task::Doc => oer_xtask::doc::run(&ctx),
-        Task::Push { draft, skip_review } => {
-            oer_xtask::push::run(&ctx, draft, skip_review.as_deref())
-        }
+        Task::Push { skip_review } => oer_xtask::push::run(&ctx, skip_review.as_deref()),
         Task::Review => oer_xtask::review::run(&ctx),
         Task::Lock { check: false } => checks::metadata::update_locks(&ctx),
         Task::Lock { check: true } => checks::metadata::check_locks(

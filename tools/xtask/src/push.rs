@@ -5,29 +5,25 @@
 //!    an untracked Rust source or Cargo manifest or lock that a build would
 //!    read, refuses the push, since the gate would check what is not pushed.
 //! 2. The branch is not `main`: `main` changes only through pull requests,
-//!    which CI checks and merges.
+//!    which CI checks and a person merges.
 //! 3. The branch contains the current `origin/main`: the push fetches it
 //!    before the gate, and again after the gate and the review right before
 //!    `git push` (step 6), and refuses a branch that lacks any of its
 //!    commits, naming them and the rebase that brings them in
-//!    ([`current_main`], [`checked`]), so auto-merge never merges a branch
-//!    built against a stale `main`. A failed fetch refuses the push too. A
-//!    draft is checked the same way.
+//!    ([`current_main`], [`checked`]), so a pull request is never opened or
+//!    updated against a stale `main`. A failed fetch refuses the push too.
 //! 4. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
 //!    commits change against `origin/main`, their merge base.
 //! 5. The local Claude review ([`crate::review`]) of the same diff has no
-//!    blocking finding, a draft's included ([`reviewed`]): it is the
-//!    only review that blocks; the one in CI reviews the pull request once
-//!    and only files its findings as issues. Its wording findings do not
-//!    block: once the pull request exists, they are filed as `review: …`
-//!    issues of the branch before auto-merge is enabled, and a failed filing
-//!    fails the push. `--skip-review REASON` is the only way to push
-//!    without it and records the reason on the pull request, so nothing
-//!    reviewed the push before it merges.
-//! 6. Push the branch, open its pull request when it has none, and enable
-//!    auto-merge: GitHub rebases it onto `main` once CI passes. `--draft`
-//!    changes only this step: the pull request is a draft, auto-merge is
-//!    not enabled and a person merges it.
+//!    blocking finding ([`reviewed`]): it is the only review that blocks;
+//!    the one in CI reviews the pull request once and only files its
+//!    findings as issues. Its wording findings do not block: once the pull
+//!    request exists, they are filed as `review: …` issues of the branch,
+//!    and a failed filing fails the push. `--skip-review REASON` is the only
+//!    way to push without it and records the reason on the pull request.
+//! 6. Push the branch and open its pull request as a draft when it has none
+//!    ([`create_pull_request`]). The push enables no auto-merge: a person
+//!    marks the pull request ready and merges it.
 //!
 //! The push never waits for CI and never rebases: the developer rebases a
 //! branch that `main` outran and pushes again. Since the gate and the
@@ -209,8 +205,7 @@ fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
 }
 
 /// The local review's verdict on a push that `review` reviews, or `None`
-/// for one pushed with `--skip-review`; a blocking finding refuses it. A
-/// draft is reviewed like any push: `--draft` changes only merging.
+/// for one pushed with `--skip-review`; a blocking finding refuses it.
 fn reviewed(
     skip_review: Option<&str>,
     review: impl FnOnce() -> Result<(review::Verdict, PathBuf)>,
@@ -239,8 +234,23 @@ fn reviewed(
     Ok(Some(verdict))
 }
 
+/// The `gh` arguments that open `branch`'s pull request: always a draft,
+/// and nothing here or after it enables auto-merge.
+fn create_pull_request(branch: &str) -> [&str; 8] {
+    [
+        "pr",
+        "create",
+        "--draft",
+        "--fill-first",
+        "--base",
+        MAIN,
+        "--head",
+        branch,
+    ]
+}
+
 /// Gate, push, open the pull request; see the module documentation.
-pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()> {
+pub fn run(ctx: &Checkout, skip_review: Option<&str>) -> Result<()> {
     // Porcelain lines start with their status columns: never trim them.
     let tracked: Vec<String> =
         git::lines(&ctx.root, ["status", "--porcelain", "--untracked-files=no"])?
@@ -329,21 +339,8 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
     let opened = existing.is_none();
     let url = match existing {
         Some(url) => url,
-        None => {
-            let mut create = vec![
-                "pr",
-                "create",
-                "--fill-first",
-                "--base",
-                MAIN,
-                "--head",
-                &branch,
-            ];
-            if draft {
-                create.push("--draft");
-            }
-            gh(ctx, &create).map_err(|error| format!("push: gh pr create failed: {error}"))?
-        }
+        None => gh(ctx, &create_pull_request(&branch))
+            .map_err(|error| format!("push: gh pr create failed: {error}"))?,
     };
     if let Some(verdict) = &reviewed {
         // The pull request's number ends its URL.
@@ -351,8 +348,8 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
         let filed =
             review::file_wording(ctx, verdict, number, &branch, &head).map_err(|error| {
                 format!(
-                    "push: filing the review's wording findings failed; {branch} is pushed but \
-                 auto-merge is not enabled, push again: {error}"
+                    "push: filing the review's wording findings failed; {branch} is pushed, \
+                 push again: {error}"
                 )
             })?;
         for line in filed {
@@ -366,16 +363,10 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
         })?;
         println!("push: local review skipped; the reason is recorded on {url}");
     }
-    if draft {
-        if opened {
-            println!("push: opened draft pull request {url}");
-        } else {
-            println!("push: updated pull request {url}; auto-merge left as it was");
-        }
+    if opened {
+        println!("push: opened draft pull request {url}; a person marks it ready and merges it");
     } else {
-        gh(ctx, &["pr", "merge", &branch, "--auto", "--rebase"])
-            .map_err(|error| format!("push: enabling auto-merge of {url} failed: {error}"))?;
-        println!("push: {url} merges into {MAIN} once CI passes");
+        println!("push: updated pull request {url}");
     }
     crate::ci_status::print(ctx, "push");
     Ok(())
@@ -428,11 +419,11 @@ mod tests {
         }
     }
 
-    /// `reviewed` takes no draft flag, so a draft push is reviewed as any
-    /// push: the review runs, a blocking finding refuses it and a wording
-    /// finding lets it through; only `--skip-review` skips the review.
+    /// Every push is reviewed: the review runs, a blocking finding refuses
+    /// it and a wording finding lets it through; only `--skip-review` skips
+    /// the review.
     #[test]
-    fn a_draft_push_is_reviewed_and_a_blocking_finding_refuses_it() {
+    fn every_push_is_reviewed_and_a_blocking_finding_refuses_it() {
         let mut ran = false;
         let error = reviewed(None, || {
             ran = true;
@@ -452,6 +443,17 @@ mod tests {
         })
         .unwrap();
         assert!(skipped.is_none());
+    }
+
+    /// A push opens its pull request as a draft and asks for no
+    /// auto-merge.
+    #[test]
+    fn a_push_opens_a_draft_and_enables_no_auto_merge() {
+        let create = create_pull_request("fix/a");
+        assert_eq!(&create[..2], ["pr", "create"]);
+        assert!(create.contains(&"--draft"), "{create:?}");
+        assert!(!create.contains(&"--auto"), "{create:?}");
+        assert_eq!(&create[create.len() - 2..], ["--head", "fix/a"]);
     }
 
     #[test]

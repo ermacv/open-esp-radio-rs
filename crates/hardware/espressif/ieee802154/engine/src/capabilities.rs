@@ -19,12 +19,11 @@ use crate::types::Ieee802154MultipanIndex;
 /// Source matching without an interface configures the frame-pending table
 /// of interface zero, as ESP-IDF's single-interface API does. An engine
 /// built with multi-PAN adds [`RadioCapabilities::MULTI_PAN`]
-/// ([`MULTIPAN_CAPABILITIES`]). CSMA-CA and transmit retries were the former
-/// role's, above the engine's single attempt.
+/// ([`MULTIPAN_CAPABILITIES`]). The engine transmits each frame once:
+/// CSMA-CA backoffs and transmit retries belong above the port (#563
+/// decision 8), so neither is listed.
 pub const RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::NONE
     .union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
-    .union(RadioCapabilities::CSMA_CA)
-    .union(RadioCapabilities::TRANSMIT_RETRIES)
     .union(RadioCapabilities::SECURITY_OFFLOAD)
     .union(RadioCapabilities::ENERGY_SCAN)
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)

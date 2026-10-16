@@ -148,7 +148,7 @@ pub enum LifecycleError {
 /// A caller-chosen correlation identity of one port's submissions.
 ///
 /// Each port keeps its own identity type (a Wi-Fi `TxId`, an
-/// IEEE 802.15.4 `RequestId`, a Bluetooth LE `EventId`), so the identity of
+/// IEEE 802.15.4 `RequestId`), so the identity of
 /// one port cannot complete another's work; all of them are 32-bit values
 /// with the same [`BACKEND_RESERVED`] range, which callers never choose and
 /// a backend may use for work it submits on its own.

@@ -2,7 +2,6 @@
 
 use oer_hil_protocol::system::StackWatermark;
 
-#[cfg_attr(not(feature = "bluetooth-radio"), allow(dead_code))]
 pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
     {
         let capacity = crate::psram_task_stack::irq_stack_bytes() as u32;

@@ -32,10 +32,6 @@ pub struct StackPolicy {
     /// The runtime's primary task stack.
     #[serde(default)]
     pub cpu0_task_stack: Option<TaskStack>,
-    /// The runtime's secondary task stack, in images that start the second
-    /// core.
-    #[serde(default)]
-    pub cpu1_task_stack: Option<TaskStack>,
     #[serde(default)]
     pub interrupt_stacks: Option<InterruptStacks>,
     /// The bootstrap image's only stack.
@@ -47,7 +43,6 @@ pub struct StackPolicy {
 pub struct Stacks<'a> {
     pub coverage_policy: &'a Path,
     pub cpu0_task_stack: &'a TaskStack,
-    pub cpu1_task_stack: Option<&'a TaskStack>,
     pub interrupt_stacks: Option<&'a InterruptStacks>,
     pub bootstrap_stack: Option<&'a TaskStack>,
 }
@@ -71,11 +66,6 @@ pub struct TaskStack {
     /// Bytes the deepest call chain must leave unused; the runtime's stack
     /// painting holds every exercised workload to the same reserve.
     pub minimum_free_bytes: u32,
-    /// Whether an image may link no storage for this stack (a single-core
-    /// image's second task stack). An image that links the storage must
-    /// contain the root.
-    #[serde(default)]
-    pub optional: bool,
 }
 
 /// Where a stack's capacity comes from.
@@ -127,15 +117,12 @@ pub struct InterruptStacks {
 }
 
 /// A policy that reuses a base policy (`extends`, relative to this file)
-/// and, on a two-hart chip, adds the second core's task stack only its
-/// images start.
+/// unchanged.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Extension {
     schema: u32,
     extends: PathBuf,
-    #[serde(default)]
-    cpu1_task_stack: Option<TaskStack>,
 }
 
 impl StackPolicy {
@@ -160,7 +147,7 @@ impl StackPolicy {
                 )
                 .into());
             }
-            let mut base = Self::parse(&base_path, &base_source)?;
+            let base = Self::parse(&base_path, &base_source)?;
             if extension.schema != base.schema {
                 return Err(format!(
                     "{} has schema {} but its base has schema {}",
@@ -169,16 +156,6 @@ impl StackPolicy {
                     base.schema
                 )
                 .into());
-            }
-            if let Some(cpu1) = extension.cpu1_task_stack {
-                if base.cpu1_task_stack.is_some() {
-                    return Err(format!(
-                        "{} sets `cpu1_task_stack`, which its base already sets",
-                        path.display()
-                    )
-                    .into());
-                }
-                base.cpu1_task_stack = Some(cpu1);
             }
             base
         } else {
@@ -214,9 +191,6 @@ impl StackPolicy {
             self.interrupt_stacks.is_some(),
             self.bootstrap_stack.is_some(),
         ];
-        if self.cpu1_task_stack.is_some() && !named[1] {
-            return Err("`cpu1_task_stack` needs `cpu0_task_stack`".into());
-        }
         if !named.iter().any(|named| *named) {
             return Ok(());
         }
@@ -228,19 +202,8 @@ impl StackPolicy {
             return Err("the interrupt stacks' reserve must be positive".into());
         }
         stacks.cpu0_task_stack.validate("cpu0_task_stack")?;
-        if stacks.cpu0_task_stack.optional {
-            return Err("`cpu0_task_stack` runs every runtime and cannot be optional".into());
-        }
-        if let Some(cpu1) = stacks.cpu1_task_stack {
-            cpu1.validate("cpu1_task_stack")?;
-        }
         if let Some(bootstrap) = stacks.bootstrap_stack {
             bootstrap.validate("bootstrap_stack")?;
-            if bootstrap.optional {
-                return Err(
-                    "`bootstrap_stack` is the bootstrap's only stack and cannot be optional".into(),
-                );
-            }
         }
         Ok(())
     }
@@ -252,7 +215,6 @@ impl StackPolicy {
             (Some(coverage_policy), Some(cpu0)) => Ok(Stacks {
                 coverage_policy,
                 cpu0_task_stack: cpu0,
-                cpu1_task_stack: self.cpu1_task_stack.as_ref(),
                 interrupt_stacks: self.interrupt_stacks.as_ref(),
                 bootstrap_stack: self.bootstrap_stack.as_ref(),
             }),
@@ -269,11 +231,6 @@ impl StackPolicy {
         self.cpu0_task_stack
             .iter()
             .map(|stack| ("CPU0 task stack", stack))
-            .chain(
-                self.cpu1_task_stack
-                    .iter()
-                    .map(|stack| ("CPU1 task stack", stack)),
-            )
             .collect()
     }
 
@@ -308,12 +265,6 @@ impl StackPolicy {
             variables.push((
                 "OPEN_RADIO_IRQ_STACK_MINIMUM_FREE_BYTES",
                 interrupts.minimum_free_bytes.to_string(),
-            ));
-        }
-        if let Some(cpu1) = &self.cpu1_task_stack {
-            variables.push((
-                "OPEN_RADIO_CPU1_STACK_MINIMUM_FREE_BYTES",
-                cpu1.minimum_free_bytes.to_string(),
             ));
         }
         variables

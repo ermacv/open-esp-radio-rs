@@ -138,6 +138,17 @@ pub mod wifi_status {
     pub const CONNECTIONLESS: u16 = 0x40;
 }
 
+/// The external-coexistence status bits `ic_set_extern_coex` sets and
+/// `ic_stop_extern_coex` clears (`coex_schm_status_bit_set(3, 1 | 2)`), on
+/// [`CoexStatusType::ExternalCoex`].
+pub const EXTERNAL_COEX_STATUS: u16 = 0x01 | 0x02;
+
+/// The IEEE 802.15.4 status bit of the pinned libcoexist
+/// `esp_coex_ieee802154_status_enable` and `_disable`
+/// (`coex_schm_status_bit_set/clear(4, 1)`), on
+/// [`CoexStatusType::Ieee802154`].
+pub const IEEE802154_COEX_STATUS: u16 = 0x01;
+
 /// The five status words of `coex_schm_env`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CoexStatusWords {

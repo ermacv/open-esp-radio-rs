@@ -18,11 +18,11 @@ use bt_hci::{
 };
 
 /// Arm one received-MIC corruption.
-pub(crate) const ARM_MIC_CORRUPTION: Opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x0001);
+pub const ARM_MIC_CORRUPTION: Opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x0001);
 
 /// Command Complete of [`ARM_MIC_CORRUPTION`] with its status and the
 /// Connection_Handle octets the Host sent.
-pub(crate) fn command_complete(status: Status, handle: [u8; 2]) -> [u8; 8] {
+pub fn command_complete(status: Status, handle: [u8; 2]) -> [u8; 8] {
     let opcode = ARM_MIC_CORRUPTION.to_raw().to_le_bytes();
     [
         0x0e,
@@ -39,7 +39,7 @@ pub(crate) fn command_complete(status: Status, handle: [u8; 2]) -> [u8; 8] {
 /// Copy `pdu` into `corrupted` with its last MIC octet inverted when it is an
 /// encrypted data PDU, which carries a MIC: a data LLID and a non-empty
 /// payload. Otherwise nothing is corrupted and `None` is returned.
-pub(crate) fn corrupt_data_mic<'a>(pdu: &[u8], corrupted: &'a mut [u8]) -> Option<&'a [u8]> {
+pub fn corrupt_data_mic<'a>(pdu: &[u8], corrupted: &'a mut [u8]) -> Option<&'a [u8]> {
     let (&header, rest) = pdu.split_first()?;
     let (&length, _) = rest.split_first()?;
     let data = matches!(header & 0x03, 0x01 | 0x02);

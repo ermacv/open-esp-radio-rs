@@ -11,7 +11,7 @@
 //! it sends (an endpoint's response changes its key without changing the
 //! request's) and of every property it has.
 
-use oer_hil_protocol::{Key, Message, base, bluetooth, phy, system};
+use oer_hil_protocol::{Key, Message, base, system};
 
 /// The most keys one image reports.
 pub const IMAGE_KEYS: usize = 80;
@@ -59,19 +59,6 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         add(system::PanicInjected::KEY, true);
         return sorted(keys);
     }
-    if enabled("bluetooth-radio") {
-        if enabled("bluetooth-secure-gatt") {
-            add(bluetooth::SecureGatt::KEY, true);
-        } else if enabled("bluetooth-gatt") {
-            add(bluetooth::Gatt::KEY, true);
-        } else {
-            add(bluetooth::Dtm::KEY, true);
-            add(bluetooth::Hci::KEY, true);
-            add(phy::RxHotSram::KEY, enabled("phy-rx-hot-sram"));
-        }
-        add(bluetooth::Trace::KEY, enabled("bluetooth-trace"));
-        return sorted(keys);
-    }
     sorted(keys)
 }
 
@@ -82,16 +69,7 @@ fn sorted(mut keys: ImageKeys) -> ImageKeys {
 
 /// Every Cargo feature [`image_keys`] reads, so the host can check that the
 /// runtime manifest declares each of them.
-pub const READ_FEATURES: &[&str] = &[
-    "system-watchdog",
-    "system-panic-reset",
-    "usb-jtag-off",
-    "bluetooth-radio",
-    "bluetooth-secure-gatt",
-    "bluetooth-gatt",
-    "bluetooth-trace",
-    "phy-rx-hot-sram",
-];
+pub const READ_FEATURES: &[&str] = &["system-watchdog", "system-panic-reset", "usb-jtag-off"];
 
 #[cfg(test)]
 mod tests {
@@ -115,17 +93,6 @@ mod tests {
         assert!(!has::<system::DisableUsb>(&watchdog));
         let usb_off = with(&["system-watchdog", "usb-jtag-off"]);
         assert!(has::<system::DisableUsb>(&usb_off) && has::<system::WatchdogTest>(&usb_off));
-        let dtm = with(&["bluetooth-radio"]);
-        assert!(has::<bluetooth::Dtm>(&dtm) && has::<bluetooth::Hci>(&dtm));
-        assert!(!has::<network::Udp>(&dtm));
-        assert!(has::<bluetooth::Gatt>(&with(&[
-            "bluetooth-radio",
-            "bluetooth-gatt"
-        ])));
-        assert!(has::<bluetooth::SecureGatt>(&with(&[
-            "bluetooth-radio",
-            "bluetooth-secure-gatt"
-        ])));
     }
 
     #[test]
@@ -133,7 +100,7 @@ mod tests {
         for features in [
             &["system-watchdog"][..],
             &["system-panic-reset"],
-            &["bluetooth-radio"],
+            &["boot-smoke"],
         ] {
             let keys = with(features);
             assert!(BASE.iter().all(|key| keys.contains(key)), "{features:?}");

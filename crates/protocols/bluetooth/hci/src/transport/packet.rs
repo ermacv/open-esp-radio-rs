@@ -1,34 +1,19 @@
-//! Shared HCI packet slots and complete Controller packet validation.
+//! Complete Controller packet validation.
 
-use super::ControllerToHostQueueError;
+use super::ControllerToHostPacketError;
 use bt_hci::{ControllerToHostPacket, FromHciBytesError, PacketKind};
 
-#[derive(Clone, Copy)]
-pub(super) struct PacketSlot<const PACKET_CAPACITY: usize> {
-    pub(super) kind: PacketKind,
-    pub(super) length: usize,
-    pub(super) bytes: [u8; PACKET_CAPACITY],
-}
-
-impl<const PACKET_CAPACITY: usize> PacketSlot<PACKET_CAPACITY> {
-    pub(super) const EMPTY: Self = Self {
-        kind: PacketKind::Event,
-        length: 0,
-        bytes: [0; PACKET_CAPACITY],
-    };
-}
-
-pub(super) fn decode_complete_packet(
+fn decode_complete_packet(
     kind: PacketKind,
     bytes: &[u8],
-) -> Result<ControllerToHostPacket<'_>, ControllerToHostQueueError> {
+) -> Result<ControllerToHostPacket<'_>, ControllerToHostPacketError> {
     validate_declared_length(kind, bytes)?;
     let (packet, remaining) = ControllerToHostPacket::from_hci_bytes_with_kind(kind, bytes)
-        .map_err(ControllerToHostQueueError::InvalidPacket)?;
+        .map_err(ControllerToHostPacketError::InvalidPacket)?;
     if remaining.is_empty() {
         Ok(packet)
     } else {
-        Err(ControllerToHostQueueError::TrailingBytes)
+        Err(ControllerToHostPacketError::TrailingBytes)
     }
 }
 
@@ -36,12 +21,12 @@ pub(super) fn decode_complete_packet(
 fn validate_declared_length(
     kind: PacketKind,
     bytes: &[u8],
-) -> Result<(), ControllerToHostQueueError> {
+) -> Result<(), ControllerToHostPacketError> {
     let declared = match kind {
-        PacketKind::Cmd => return Err(ControllerToHostQueueError::InvalidDirection),
+        PacketKind::Cmd => return Err(ControllerToHostPacketError::InvalidDirection),
         PacketKind::Event => {
             let Some(length) = bytes.get(1) else {
-                return Err(ControllerToHostQueueError::InvalidPacket(
+                return Err(ControllerToHostPacketError::InvalidPacket(
                     FromHciBytesError::InvalidSize,
                 ));
             };
@@ -49,7 +34,7 @@ fn validate_declared_length(
         }
         PacketKind::AclData => {
             let Some(length) = bytes.get(2..4) else {
-                return Err(ControllerToHostQueueError::InvalidPacket(
+                return Err(ControllerToHostPacketError::InvalidPacket(
                     FromHciBytesError::InvalidSize,
                 ));
             };
@@ -57,7 +42,7 @@ fn validate_declared_length(
         }
         PacketKind::SyncData => {
             let Some(length) = bytes.get(2) else {
-                return Err(ControllerToHostQueueError::InvalidPacket(
+                return Err(ControllerToHostPacketError::InvalidPacket(
                     FromHciBytesError::InvalidSize,
                 ));
             };
@@ -65,7 +50,7 @@ fn validate_declared_length(
         }
         PacketKind::IsoData => {
             let Some(length) = bytes.get(2..4) else {
-                return Err(ControllerToHostQueueError::InvalidPacket(
+                return Err(ControllerToHostPacketError::InvalidPacket(
                     FromHciBytesError::InvalidSize,
                 ));
             };
@@ -75,11 +60,11 @@ fn validate_declared_length(
     };
 
     if bytes.len() < declared {
-        Err(ControllerToHostQueueError::InvalidPacket(
+        Err(ControllerToHostPacketError::InvalidPacket(
             FromHciBytesError::InvalidSize,
         ))
     } else if bytes.len() > declared {
-        Err(ControllerToHostQueueError::TrailingBytes)
+        Err(ControllerToHostPacketError::TrailingBytes)
     } else {
         Ok(())
     }
@@ -88,6 +73,6 @@ fn validate_declared_length(
 pub(super) fn validate_complete_packet(
     kind: PacketKind,
     bytes: &[u8],
-) -> Result<(), ControllerToHostQueueError> {
+) -> Result<(), ControllerToHostPacketError> {
     decode_complete_packet(kind, bytes).map(|_| ())
 }

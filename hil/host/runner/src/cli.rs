@@ -265,14 +265,6 @@ mod tests;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum FixtureCommand {
-    /// Execute a bounded DTM command check and restore the Linux adapter.
-    BluetoothCheck {
-        #[arg(long, default_value = "hci0")]
-        adapter: oer_hil_family_bluetooth::fixture::bluetooth::model::Adapter,
-        /// v1 is an explicit diagnostic; production RF scenarios always use v2.
-        #[arg(long, value_enum, default_value = "v2")]
-        dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion,
-    },
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.
     Check {
         scenario: String,

@@ -96,7 +96,7 @@ impl LeControllerBootstrap {
 
     /// Consume one classified bootstrap command.
     ///
-    /// The Controller core decides when this runs: Reset waits until its radio
+    /// The Controller decides when this runs: Reset waits until its radio
     /// work has quiesced, and the random address is refused while advertising
     /// or scanning is enabled. `has_random_source` reports LE Rand in the
     /// supported-commands bitmap.

@@ -100,10 +100,10 @@ fn removed_commands_and_flags_are_rejected() {
         &["cargo-hil", "run", "a", "--network", "owned-xarxa"][..],
         &["cargo-hil", "run", "a", "--ap-scheduler", "rr"],
         &["cargo-hil", "run-plan", "plan.json"],
-        &["cargo-hil", "image", "flash", "bluetooth-gatt"],
-        &["cargo-hil", "image", "replay", "run", "bluetooth-gatt"],
-        &["cargo-hil", "image", "mono", "bluetooth-gatt"],
-        &["cargo-hil", "image", "verify-rebuild", "bluetooth-gatt"],
+        &["cargo-hil", "image", "flash", "system-watchdog"],
+        &["cargo-hil", "image", "replay", "run", "system-watchdog"],
+        &["cargo-hil", "image", "mono", "system-watchdog"],
+        &["cargo-hil", "image", "verify-rebuild", "system-watchdog"],
         &["cargo-hil", "device", "status"],
         &["cargo-hil", "report", "rebuild"],
         &["cargo-hil", "archive", "verify", "a.tar.gz"],
@@ -122,25 +122,9 @@ fn run_all_does_not_accept_one_ambiguous_firmware_origin() {
 }
 
 #[test]
-fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
-    let cli = Cli::try_parse_from([
-        "cargo-hil",
-        "fixture",
-        "bluetooth-check",
-        "--adapter",
-        "hci2",
-    ])
-    .unwrap();
-    assert!(matches!(
-        cli.command,
-        CliCommand::Fixture {
-            command: FixtureCommand::BluetoothCheck {
-                adapter: oer_hil_family_bluetooth::fixture::bluetooth::model::Adapter(2),
-                dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
-            }
-        }
-    ));
+fn fixture_commands_parse_a_scenario_check() {
     assert!(Cli::try_parse_from(["cargo-hil", "fixture", "install-host"]).is_err());
+    assert!(Cli::try_parse_from(["cargo-hil", "fixture", "bluetooth-check"]).is_err());
     let cli =
         Cli::try_parse_from(["cargo-hil", "fixture", "check", "station-udp-tx-he20"]).unwrap();
     assert!(matches!(
@@ -148,34 +132,6 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         CliCommand::Fixture { command: FixtureCommand::Check { scenario, chip: None } }
             if scenario == "station-udp-tx-he20"
     ));
-}
-
-#[test]
-fn bluetooth_dtm_v1_requires_explicit_selection() {
-    let args = ["cargo-hil", "fixture", "bluetooth-check"];
-    assert!(matches!(
-        Cli::try_parse_from(args).unwrap().command,
-        CliCommand::Fixture {
-            command: FixtureCommand::BluetoothCheck {
-                dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
-                ..
-            }
-        }
-    ));
-    assert!(matches!(
-        Cli::try_parse_from(args.into_iter().chain(["--dtm-version", "v1"]))
-            .unwrap()
-            .command,
-        CliCommand::Fixture {
-            command: FixtureCommand::BluetoothCheck {
-                dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion::V1,
-                ..
-            }
-        }
-    ));
-    for version in ["auto", "v0", "v3"] {
-        assert!(Cli::try_parse_from(args.into_iter().chain(["--dtm-version", version])).is_err());
-    }
 }
 
 #[test]

@@ -5,15 +5,7 @@ use std::path::{Path, PathBuf};
 
 use oer_hil_protocol::{FRAMING_VERSION, Key, Kind, MESSAGES_LOCK, MessageInfo, registry};
 
-const MODULES: [&str; 7] = [
-    "base",
-    "system",
-    "network",
-    "bluetooth",
-    "ieee802154",
-    "phy",
-    "telemetry",
-];
+const MODULES: [&str; 4] = ["base", "system", "network", "telemetry"];
 
 #[test]
 fn no_two_messages_share_a_key_or_a_path() {

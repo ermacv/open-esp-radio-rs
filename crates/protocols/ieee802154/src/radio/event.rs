@@ -1,69 +1,7 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
-use oer_radio_port::LifecycleEvent;
-
-use super::{Ieee802154Instant, RequestId, channel::Channel, interface::Interface};
+use super::{Ieee802154Instant, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
-
-/// Backend-to-Host observation.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum RadioEvent<'frame> {
-    /// One frame was received while the state machine owns receive mode.
-    Received(ReceivedFrame<'frame>),
-    /// Terminal transmit completion.
-    TransmitDone {
-        /// Correlation identifier from the accepted request.
-        id: RequestId,
-        /// Portable completion category.
-        status: TxStatus,
-        /// Optional received acknowledgement MAC bytes and metadata.
-        acknowledgement: Option<ReceivedFrame<'frame>>,
-        /// The auxiliary security header fields the radio wrote into the
-        /// frame, `None` when it wrote none.
-        security: Option<AppliedSecurity>,
-    },
-    /// Terminal energy scan completion.
-    EnergyScanDone {
-        /// Correlation identifier from the accepted request.
-        id: RequestId,
-        /// Measured channel energy in dBm, reduced over the scan as the
-        /// backend's detector does (the ESP32-S31 averages its samples).
-        energy_dbm: i8,
-    },
-    /// Terminal energy scan failure: the backend aborted the measurement.
-    EnergyScanFailed {
-        /// Correlation identifier from the accepted request.
-        id: RequestId,
-    },
-    /// Terminal standalone CCA completion.
-    ClearChannelAssessmentDone {
-        /// Correlation identifier from the accepted request.
-        id: RequestId,
-        /// Whether the assessment found the channel idle.
-        idle: bool,
-    },
-    /// Terminal standalone CCA failure: the backend aborted the assessment.
-    ClearChannelAssessmentFailed {
-        /// Correlation identifier from the accepted request.
-        id: RequestId,
-    },
-    /// A scheduled receive window ended; the radio sleeps.
-    ScheduledReceiveDone {
-        /// Correlation identifier from the accepted request.
-        id: RequestId,
-    },
-    /// Fail-closed backend fault. A valid fault disables the state machine;
-    /// the failure is recoverable, and `Enable` serves again.
-    Fault {
-        /// Active operation identifier, or `None` outside an operation.
-        id: Option<RequestId>,
-        /// Portable fault category.
-        fault: RadioFault,
-    },
-    /// The terminal event of the radio role's own enable or disable; the
-    /// owner shape's backend does not hand it out.
-    Lifecycle(LifecycleEvent),
-}
 
 /// How a backend validated the received frame check sequence.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -191,23 +129,4 @@ pub enum TxStatus {
     SecurityFailure,
     /// An acknowledgement arrived but was not a valid ACK for the frame.
     InvalidAcknowledgement,
-}
-
-/// Portable fail-closed controller fault category.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum RadioFault {
-    /// Hardware or its clock/reset owner became unavailable.
-    HardwareUnavailable,
-    /// An interrupt/event sequence violated backend invariants.
-    InvalidEventSequence,
-    /// Backend-owned packet storage was exhausted.
-    StorageExhausted,
-    /// Backend state can no longer be reconciled safely.
-    StateLost,
-    /// A terminal does not account for the operation admitted by the port.
-    /// Delivery stops and owners remain quarantined; this says nothing
-    /// about whether the hardware can subsequently be stopped.
-    AccountingViolation,
-    /// The disable sink returned a terminal instead of accepting it.
-    TerminalRejected,
 }

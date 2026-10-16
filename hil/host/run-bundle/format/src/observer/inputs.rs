@@ -162,7 +162,7 @@ pub fn check_registry_schema(registry: &Value) -> Result<()> {
 
 /// The `<family>/<kind>` identity of a schema-5 scenario document.
 pub fn workload(document: &Value) -> Option<String> {
-    ["bluetooth", "system"].into_iter().find_map(|family| {
+    ["system"].into_iter().find_map(|family| {
         let kind = document.get(family)?.get("kind")?;
         Some(format!("{family}/{}", kind.as_str()?))
     })
@@ -287,13 +287,13 @@ mod tests {
     fn registry_schema_and_workloads_come_from_the_family_map() {
         let registry = json!({
             "schema": 4,
-            "timing": {"system/watchdog": true, "bluetooth/dtm": true},
-            "dependencies": {"common": ["core"], "system": ["system"], "bluetooth": ["ble"]},
+            "timing": {"system/watchdog": true, "other/probe": true},
+            "dependencies": {"common": ["core"], "system": ["system"], "other": ["ble"]},
         });
         check_registry_schema(&registry).unwrap();
         assert_eq!(
             workloads(&registry).unwrap(),
-            ["bluetooth/dtm", "system/watchdog"]
+            ["other/probe", "system/watchdog"]
         );
         let watchdog = dependencies(&registry, "system/watchdog").unwrap();
         assert!(
@@ -303,8 +303,9 @@ mod tests {
         let mut legacy = registry;
         legacy["schema"] = json!(3);
         assert!(check_registry_schema(&legacy).is_err());
+        // A table of no runner family names no workload.
         let document = json!({"bluetooth": {"kind": "dtm"}});
-        assert_eq!(workload(&document).as_deref(), Some("bluetooth/dtm"));
+        assert_eq!(workload(&document), None);
         let document = json!({"system": {"kind": "boot-smoke"}});
         assert_eq!(workload(&document).as_deref(), Some("system/boot-smoke"));
     }

@@ -1,6 +1,6 @@
 ---
 name: block-bluetooth
-description: A session for one task in the Bluetooth LE block — HCI, Link Layer, the LE Controller core, the LeRadioBackend, the HCI transport and service loop, the ESP32-S31 Bluetooth driver, memory, role, runtime and composition, the Trouble GATT adapter, Bluetooth HIL scenarios. Starts with the block guide loaded.
+description: A session for one task in the Bluetooth LE block — HCI codecs, the Link Layer, the LE Controller's pure pieces, the LE radio values, the ESP32-S31 Bluetooth driver and memory, and rebuilding the Bluetooth orchestration. Starts with the block guide loaded.
 skills:
   - block-bluetooth
 ---

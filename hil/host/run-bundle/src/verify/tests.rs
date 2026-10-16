@@ -31,7 +31,7 @@ fn fixture() -> (PathBuf, PathBuf) {
     ));
     let run = root.join("target/hil/runs/run-1");
     let artifact_path = PathBuf::from("scenarios/icmp/repetition-001/evidence.log");
-    let application_path = PathBuf::from("firmware/bluetooth-gatt/application.bin");
+    let application_path = PathBuf::from("firmware/system-watchdog/application.bin");
     fs::create_dir_all(run.join(artifact_path.parent().unwrap())).unwrap();
     fs::create_dir_all(run.join(application_path.parent().unwrap())).unwrap();
     fs::write(run.join(&artifact_path), b"serial evidence").unwrap();
@@ -68,7 +68,7 @@ fn fixture() -> (PathBuf, PathBuf) {
                 "serial_device": "/dev/ttyACM0"
             },
             "firmware": [{
-                "image": "bluetooth-gatt",
+                "image": "system-watchdog",
                 "application_path": application_path,
                 "application_size_bytes": 19,
                 "application_sha256": application_sha256,
@@ -82,7 +82,7 @@ fn fixture() -> (PathBuf, PathBuf) {
     .unwrap();
     let scenarios = vec![ScenarioResult::from_repetitions(
         String::from("icmp"),
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         1,
         vec![RepetitionResult {
             schema: RUN_SCHEMA,
@@ -138,10 +138,10 @@ fn write_compressed(path: &Path, bytes: &[u8]) {
 }
 
 fn add_build_provenance(run: &Path) {
-    let runtime_elf_path = PathBuf::from("firmware/bluetooth-gatt/runtime.elf");
-    let runtime_bin_path = PathBuf::from("firmware/bluetooth-gatt/runtime.bin");
-    let bootstrap_elf_path = PathBuf::from("firmware/bluetooth-gatt/bootstrap.elf");
-    let effective_lock_path = PathBuf::from("firmware/bluetooth-gatt/effective-Cargo.lock");
+    let runtime_elf_path = PathBuf::from("firmware/system-watchdog/runtime.elf");
+    let runtime_bin_path = PathBuf::from("firmware/system-watchdog/runtime.bin");
+    let bootstrap_elf_path = PathBuf::from("firmware/system-watchdog/bootstrap.elf");
+    let effective_lock_path = PathBuf::from("firmware/system-watchdog/effective-Cargo.lock");
     write_compressed(&run.join(&runtime_elf_path), b"runtime elf");
     fs::write(run.join(&runtime_bin_path), b"runtime bin").unwrap();
     fs::write(run.join(&bootstrap_elf_path), b"bootstrap elf").unwrap();
@@ -185,7 +185,7 @@ fn add_build_provenance(run: &Path) {
         },
     ];
     let build_id = crate::build::build_id(&subjects);
-    let provenance_path = PathBuf::from("firmware/bluetooth-gatt/build-provenance.json");
+    let provenance_path = PathBuf::from("firmware/system-watchdog/build-provenance.json");
     artifact.build_id = Some(build_id.clone());
     artifact.build_provenance_path = Some(provenance_path.clone());
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
@@ -197,10 +197,10 @@ fn add_build_provenance(run: &Path) {
             build_type: String::from("open-esp-radio-hil-firmware/v1"),
             parameters: oer_hil_run_bundle_format::build::BuildParameters {
                 network: None,
-                image: ImageClass::BluetoothGatt,
-                runtime_profile: ImageClass::BluetoothGatt.runtime_profile().to_owned(),
+                image: ImageClass::SystemWatchdog,
+                runtime_profile: ImageClass::SystemWatchdog.runtime_profile().to_owned(),
                 target: String::from("riscv32imafc-unknown-none-elf"),
-                runtime_features: ImageClass::BluetoothGatt.runtime_features().to_owned(),
+                runtime_features: ImageClass::SystemWatchdog.runtime_features().to_owned(),
                 layout_seed: None,
                 features: oer_hil_schema::image::FeatureDelta::default(),
             },
@@ -385,7 +385,7 @@ fn system_provenance_requires_a_matching_scenario_snapshot() {
 }
 
 #[test]
-fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
+fn a_non_network_plan_accepts_system_provenance_with_a_peer_requirement() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
     let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
@@ -411,7 +411,7 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
             disposition: oer_hil_run_bundle_format::run::PlanDisposition::Selected,
             reason: None,
             requirements: Some(oer_hil_scenario_catalog::requirements::Requirements {
-                bluetooth_adapter: true,
+                peer: true,
                 ..Default::default()
             }),
         }],
@@ -429,27 +429,27 @@ fn selects_only_verified_archived_firmware_for_replay() {
         &root,
         "chip-a",
         "run-1",
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &TestRecipe,
     )
     .expect("select archived firmware");
     assert_eq!(
         firmware.application_path,
-        run.join("firmware/bluetooth-gatt/application.bin")
+        run.join("firmware/system-watchdog/application.bin")
     );
     assert_eq!(firmware.application_sha256.len(), 64);
     let error = archived_firmware(
         &root,
         "chip-a",
         "run-1",
-        ImageClass::BluetoothSecureGatt,
+        ImageClass::SystemPanicReset,
         &TestRecipe,
     )
     .expect_err("reject absent image class");
     assert!(
         error
             .to_string()
-            .contains("no archived `bluetooth-secure-gatt` firmware")
+            .contains("no archived `system-panic-reset` firmware")
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -488,7 +488,7 @@ fn rejects_tampered_archived_runtime_elf() {
     let (root, run) = fixture();
     add_build_provenance(&run);
     write_compressed(
-        &run.join("firmware/bluetooth-gatt/runtime.elf"),
+        &run.join("firmware/system-watchdog/runtime.elf"),
         b"runtime elF",
     );
     let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap_err();

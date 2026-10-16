@@ -238,7 +238,7 @@ fn altered_removed_added_or_unsealed_material_fails_closed() {
                 write(&seal_path, &seal);
             }
             "wrong-subject" => {
-                seal["manifest"]["firmware"][0]["image"] = json!("bluetooth-gatt");
+                seal["manifest"]["firmware"][0]["image"] = json!("system-watchdog");
                 write(&seal_path, &seal);
             }
             "wrong-bytes" => {

@@ -30,8 +30,8 @@ never decide it. Reference: [README](README.md).
 
 ## Commands (in the background)
 
-- `cargo qualification status --manifest qualification/targets/esp32s31/bluetooth-le.toml --capability <id>`
-- `cargo qualification validate --manifest qualification/targets/esp32s31/bluetooth-le.toml`
+- `cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --capability <id>`
+- `cargo qualification validate --manifest qualification/targets/<chip>/<program>.toml`
 - `cargo xtask check capabilities` and `cargo xtask check docs` after catalog changes.
 
 Workflow: the `qualification-entry` skill.

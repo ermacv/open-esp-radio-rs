@@ -30,12 +30,10 @@ oer-hil-image-class = { path = "../image-class" }
 oer-stand-board = { path = "../../../stand/board" }
 oer-hil-flash = { path = "../flash" }
 oer-hil-workload = { path = "../workload" }
-oer-hil-family-bluetooth = { path = "../family/bluetooth" }
 oer-hil-family-ieee80211-fixture = { path = "../family/ieee80211-fixture" }
 oer-hil-family-system = { path = "../family/system" }
 oer-command-tree = { path = "../../../tools/command-tree", features = ["clap"] }
 oer-process = { path = "../../../tools/process" }
-oer-stand-fixture-install = { path = "../../../stand/fixture-install" }
 clap = { version = "4.5", features = ["derive"] }
 sha2 = "0.10"
 tempfile = "3"

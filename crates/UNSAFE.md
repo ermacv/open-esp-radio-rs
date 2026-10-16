@@ -68,8 +68,6 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-radio-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
 | `espressif-executor-embassy` | `adapters/embassy/espressif/executor/` |
 | `espressif-interrupt-table-esp-hal` | `adapters/esp-hal/espressif/interrupt-table/` |
-| `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
-| `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |
 | `esp32c5-pac` | `hardware/esp32c5/pac/` |
 | `interrupt-table` | `runtime/interrupt-table/` |
 

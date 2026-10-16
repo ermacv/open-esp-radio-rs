@@ -50,10 +50,7 @@ domain = "whole-radio"
 title = "Evidence and implementation ownership"
 source-document = "crates/hardware/esp32s31/driver/FEATURES.md"
 overview = "[HAL](../hal/src/owner.rs) defines semantic access and transitions. The\n[PAC ownership contract](../pac/README.md) and\n[reviewed register model](../../../../registers/esp32s31/model/device.toml) define\nwhich hardware words those transitions may access. DMA, IRQ and Embassy\nadapters provide implementation evidence for the capabilities above rather\nthan independent capability inventories.\n\n[Qualification](../../../../qualification/README.md) is the readiness authority.\nIts existing protocol manifests retain their current proof states; this map\ncreates no PHY, coex or whole-radio qualification target and makes no new HIL\nclaim. Complete concurrency and restart readiness require composed ownership\nand hardware evidence, not the union of individually implemented primitives."
-packages = [
-    "oer-esp32s31-hal",
-    "oer-esp32s31-pac",
-]
+packages = ["oer-esp32s31-hal", "oer-esp32s31-pac"]
 documents = [
     "registers/esp32s31/model/device.toml",
     "qualification/README.md",
@@ -176,14 +173,6 @@ status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[PHY target runners](../phy/FEATURES.md) execute the bounded registration/calibration graph. Registration is not per-event RF readiness or proof of PLL lock."
 packages = ["oer-esp32s31-phy"]
-
-[[items]]
-id = "whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation"
-section = "whole-radio-active-operation-power-saving-and-shutdown"
-title = "Protocol active operation"
-status = "partial"
-level = "composed-product"
-scope-and-limitations = "The linked protocol inventories define the supported subsets. Wi-Fi operation does not establish a reliable Bluetooth ACL link or a public IEEE 802.15.4 RF-ready service."
 
 [[items]]
 id = "whole-radio-active-operation-power-saving-and-shutdown-shared-phy-tracking"
@@ -338,36 +327,22 @@ id = "whole-radio-coverage-index-bluetooth"
 section = "whole-radio-coverage-index"
 title = "Bluetooth"
 kind = "source-reference"
-details = "Inventory: [LE and Classic](bluetooth/FEATURES.md)\n\nCurrent qualification authority: [bluetooth-le.toml](../../../../qualification/targets/esp32s31/bluetooth-le.toml); no Classic qualification claim"
+details = "Inventory: [LE and Classic](bluetooth/FEATURES.md)\n\nCurrent qualification authority: none since #770; no Classic qualification claim"
 packages = ["oer-esp32s31-bluetooth"]
-documents = ["qualification/targets/esp32s31/bluetooth-le.toml"]
 
 [[references]]
 id = "whole-radio-coverage-index-ieee-802-15-4"
 section = "whole-radio-coverage-index"
 title = "IEEE 802.15.4"
 kind = "source-reference"
-details = "Inventory: [Radio/MAC](ieee802154/FEATURES.md)\n\nCurrent qualification authority: [ieee802154.toml](../../../../qualification/targets/esp32s31/ieee802154.toml)"
+details = "Inventory: [Radio/MAC](ieee802154/FEATURES.md)\n\nCurrent qualification authority: none since #770"
 packages = ["oer-espressif-ieee802154-engine"]
-documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[items]]
 id = "whole-radio-idle-bluetooth-phy-maintenance"
 section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Idle Bluetooth PHY maintenance"
 source-fact = "bluetooth-idle-phy-maintenance"
-
-[[items]]
-id = "whole-radio-bluetooth-same-storage-powered-restart"
-section = "whole-radio-active-operation-power-saving-and-shutdown"
-title = "Bluetooth cold restart with original storage"
-source-fact = "bluetooth-same-storage-powered-restart"
-
-[[items]]
-id = "whole-radio-idle-bluetooth-powered-release"
-section = "whole-radio-active-operation-power-saving-and-shutdown"
-title = "Idle Bluetooth physical release"
-source-fact = "bluetooth-idle-powered-release"
 
 [[items]]
 id = "whole-radio-bluetooth-periodic-phy-maintenance"

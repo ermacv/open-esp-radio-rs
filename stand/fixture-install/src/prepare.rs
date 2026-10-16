@@ -9,13 +9,11 @@ use sha2::{Digest as _, Sha256};
 
 use super::{
     Artifact, ArtifactRole, ArtifactState, BUNDLE_SCHEMA, Bundle, InstallPlan, Provider,
-    SourceIdentity,
-    model::{PlannedArtifact, validate_adapters},
+    SourceIdentity, model::PlannedArtifact,
 };
 use crate::Result;
 
-pub fn build_plan(root: &Path, provider: Provider, adapters: &[String]) -> Result<InstallPlan> {
-    let adapters = validate_adapters(provider, adapters)?;
+pub fn build_plan(root: &Path, provider: Provider) -> Result<InstallPlan> {
     let artifacts = provider
         .artifact_specs()
         .iter()
@@ -38,9 +36,6 @@ pub fn build_plan(root: &Path, provider: Provider, adapters: &[String]) -> Resul
             "cargo stand fixture build-hostapd".to_owned(),
             "cargo build --locked -p oer-stand-fixture-install -p oer-hil-fixture --bin open-radio-net-launcher --bin open-radio-probe-launcher --bin open-radio-probe --bin open-radio-fixture-install".to_owned(),
         ],
-        Provider::LinuxBluetooth => vec![
-            "cargo build --locked -p oer-stand-fixture-install -p oer-hil-fixture --bin open-radio-bluetooth-launcher --bin open-radio-bluetooth --bin open-radio-fixture-install".to_owned(),
-        ],
     };
     Ok(InstallPlan {
         schema: 1,
@@ -56,18 +51,11 @@ pub fn build_plan(root: &Path, provider: Provider, adapters: &[String]) -> Resul
             "finite helper capabilities".to_owned(),
         ],
         automatic_hardware_checks: false,
-        allowed_bluetooth_adapters: adapters,
     })
 }
 
-pub fn prepare(
-    root: &Path,
-    provider: Provider,
-    operator: &str,
-    adapters: &[String],
-) -> Result<PathBuf> {
+pub fn prepare(root: &Path, provider: Provider, operator: &str) -> Result<PathBuf> {
     validate_operator(operator)?;
-    let adapters = validate_adapters(provider, adapters)?;
     let output = root.join("target/hil/fixture-install");
     fs::create_dir_all(&output)?;
     let _lock = oer_process::lock::FileLock::acquire(
@@ -119,7 +107,6 @@ pub fn prepare(
         operator: operator.to_owned(),
         source,
         runtime_contract: provider.runtime_contract().to_owned(),
-        allowed_bluetooth_adapters: adapters,
         artifacts,
     };
     bundle.generation = bundle_identity(&bundle)?;
@@ -159,10 +146,6 @@ fn validate_prepared_contract(
                 provider.runtime_contract(),
             )
         }
-        Provider::LinuxBluetooth => require_capabilities(
-            &directory.join("open-radio-bluetooth"),
-            provider.runtime_contract(),
-        ),
     }
 }
 

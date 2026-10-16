@@ -1,11 +1,3 @@
 {
-  "?bluetooth": {
-    "$kind": {
-      "secure-gatt": {
-        "irq_sampling": "every-snapshot",
-        "shutdown": "bond-load-failure"
-      }
-    }
-  },
   "repetitions": 1
 }

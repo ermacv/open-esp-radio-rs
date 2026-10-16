@@ -97,10 +97,10 @@ its single no-execute data region would span stage two's PSRAM code.
 
 Every image uses one placement: PSRAM for code, ordinary data and a 192-KiB
 CPU0 task stack; SRAM for interrupt entries, hot code, critical state, DMA
-storage and two 32-KiB interrupt stacks. HIL also selects a 16-KiB CPU1 task
-stack through the `multicore` runtime feature; its CPU startup policy and
-second-core application entry remain in HIL. These board sizes are not
-universal chip capabilities.
+storage and two 32-KiB interrupt stacks. No image runs a task on CPU1: the
+former `multicore` runtime feature and its CPU1 PSRAM task stack were removed
+(#770, tag `legacy-radio-2026-10-16`). These board sizes are not universal
+chip capabilities.
 
 Because code runs from PSRAM, the adopted mapping keeps the PSRAM function
 clock, and through it MPLL, referenced in ESP-HAL's clock tree for the life of

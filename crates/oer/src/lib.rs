@@ -26,9 +26,6 @@ pub mod ieee80211 {
 pub mod bluetooth {
     pub use hci;
 
-    /// The bounded in-process HCI transport between Host and Controller.
-    pub use hci_transport;
-
     pub mod le {
         pub use le_ll as ll;
     }
@@ -50,27 +47,6 @@ pub mod chips {
             /// IEEE 802.15.4 MAC engine.
             #[cfg(feature = "esp32s31-ieee802154")]
             pub use chip_ieee802154 as ieee802154;
-        }
-    }
-}
-
-#[cfg(feature = "embassy-ieee802154")]
-pub mod systems {
-    pub mod esp32s31 {
-        pub mod embassy {
-            /// The shared radio every protocol composition joins, brought
-            /// up with its periodic tasks by one `start` call.
-            pub use radio_system as radio;
-
-            /// The IEEE 802.15.4 client of the shared radio and, with
-            /// `openthread`, its OpenThread radio.
-            #[cfg(feature = "embassy-ieee802154")]
-            pub mod ieee802154 {
-                pub use ieee802154_composition::*;
-
-                #[cfg(feature = "openthread")]
-                pub use ieee802154_openthread as openthread;
-            }
         }
     }
 }

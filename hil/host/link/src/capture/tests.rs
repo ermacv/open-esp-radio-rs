@@ -462,7 +462,7 @@ fn a_boot_whose_hello_the_link_lost_begins_with_its_capability_answer() {
     let target = answer_hello(input, writes, 9, 1);
     let capabilities = capture.request_image_keys(Duration::from_secs(1)).unwrap();
     target.join().unwrap();
-    assert!(capabilities.has::<oer_hil_protocol::bluetooth::Gatt>());
+    assert!(capabilities.has::<oer_hil_protocol::system::WatchdogTest>());
     let health = capture.protocol.state.lock().unwrap().health.clone();
     assert_eq!(health.boot_id, Some(9));
     assert_eq!(

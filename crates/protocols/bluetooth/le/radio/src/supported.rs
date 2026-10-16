@@ -152,15 +152,6 @@ impl<K: LeCapabilities, T> Supported<K, T> {
     pub const fn get(&self) -> &T {
         &self.value
     }
-
-    /// `value`, a storage move of a checked value that keeps what its check
-    /// read ([`crate::Restore`]).
-    pub(crate) const fn restored(value: T) -> Self {
-        Self {
-            value,
-            caps: PhantomData,
-        }
-    }
 }
 
 /// Why a value cannot be built as [`Supported`].

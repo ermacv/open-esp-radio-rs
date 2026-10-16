@@ -11,10 +11,7 @@ use oer_hil_workload::family::{AnyFamily, FixtureProvider, Kind, Registry};
 pub(crate) struct Families;
 
 impl Registry for Families {
-    const FAMILIES: &'static [Kind] = &[
-        oer_hil_family_bluetooth::FAMILY,
-        oer_hil_family_system::FAMILY,
-    ];
+    const FAMILIES: &'static [Kind] = &[oer_hil_family_system::FAMILY];
     const FIXTURES: &'static [&'static dyn FixtureProvider] =
         &[&oer_hil_family_ieee80211_fixture::provider::PROVIDER];
 }

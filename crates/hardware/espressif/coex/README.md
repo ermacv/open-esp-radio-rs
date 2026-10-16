@@ -12,9 +12,11 @@ shared state, and a chip crate such as
 `CoexTimerHardware::pti` reads the arbiter's table when a request is
 programmed, and a priority change goes through the arbiter's lease. The
 ESP32-S31 arbiter lends only timers 0 through 4: timer 5 carries its PHY
-grant-protect request, so event 48 has no policy timer. The
-[radio runtime](../../../runtime/esp32s31/radio/README.md) composes the
-core and the schedule under the arbiter lease. This crate does not implement
+grant-protect request, so event 48 has no policy timer. No runtime composes
+the core and the schedule now: the former ESP32-S31 radio runtime did, under
+the arbiter lease, and its policy is recorded below
+([Participants, status and order](#participants-status-and-order); tag
+`legacy-radio-2026-10-16`). This crate does not implement
 RF grant notification. See the ESP32-S31
 [source capabilities](../../esp32s31/driver/coex/FEATURES.md) for those
 boundaries.
@@ -52,9 +54,9 @@ tells the runtime owner how long to arm the phase timer and whom to notify.
 `CoexScheduleExecutor` turns each step into a phase-timer command with a
 generation; an expiry of an older generation lost a race with a later phase
 change and steps nothing. The radio runtime runs the timer and signals each
-notified radio. Wi-Fi and Bluetooth LE publish their status through the
-radio guard (`RadioGuard::set_coex_status_bits`); Wi-Fi reacts to its phases,
-while Bluetooth LE does not yet wait for its own.
+notified radio. A radio publishes its status through the schedule's
+`set_status_bits` and `clear_status_bits`; in the former runtime Wi-Fi
+reacted to its phases, while Bluetooth LE did not wait for its own.
 
 On the ESP32-S31, `oer_esp32s31_coex::CoexArbiterPorts` lends one arbiter
 lease's timer bank, event priorities and clock to `CoexCore` as its timer and
@@ -110,6 +112,39 @@ cycle is not connected modem sleep.
 IEEE 802.15.4 is not an inferred third numeric `CoexClient`. Its MAC PTI fields
 and reviewed vendor wrappers have a distinct interface. `CoexPtiTable`
 resolves its four coexistence levels (high, middle, low, idle) from table
-events 41 through 44, and the ESP32-S31
-[IEEE 802.15.4 system](../../../composition/esp32s31/embassy/ieee802154/README.md)
-publishes them per operation scene.
+events 41 through 44, which a radio publishes per operation scene.
+
+## Participants, status and order
+
+The former ESP32-S31 radio runtime (tag `legacy-radio-2026-10-16`) ran this
+policy under the arbiter lease, as the pinned libcoexist does:
+
+- **Participants (`coex_enable`/`coex_disable`).** The first participant
+  selects the policy timers' clock (`coex_pre_init`) and enables requests
+  (`CoexCore::enable`); every later one starts coexistence and wakes the
+  radios' start waits. Before the last participant leaves, every programmed
+  request is withdrawn (`CoexCore::disable`); with one participant left,
+  coexistence stops. A withdrawal that fails keeps the participant in.
+- **Active for a radio (`coex_status_get`).** Coexistence is active for a
+  radio when at least two participants take part and another radio publishes
+  schedule status (`CoexStatusWords`).
+- **Status around an enable.** IEEE 802.15.4 enters coexistence and then
+  publishes `schedule::IEEE802154_COEX_STATUS` ([`src/schedule.rs`](src/schedule.rs)) (`esp_coex_ieee802154_status_enable`);
+  leaving clears it first and publishes it again when the disable fails.
+  External coexistence enables the participant and publishes
+  `schedule::EXTERNAL_COEX_STATUS` (`esp_coex_external_set`); stopping clears it,
+  withdraws the requests, then clears the priorities, disables the block and
+  releases its module clock (`esp_coex_external_stop`).
+- **What Wi-Fi reads.** Its power management reads, on every beacon and
+  slice, `coex_status_get(WIFI)`, the schedule's current and flexible period
+  (`coex_schm_curr_period_get`, `_flexible_period_get`), its interval
+  (`coex_schm_interval_get`), the share of phase 0
+  (`coex_schm_get_phase_by_idx(0)`) and the priorities of
+  `pti::wifi_events` ([`src/pti.rs`](src/pti.rs)) `BEACON`, `SLICE` and `CONNECTION` (`coex_pti_get(0, 1, 46)`).
+- **Order of IEEE 802.15.4 join and leave.** Joining prepares the shared PHY
+  (`esp_phy_enable`), takes the BTBB reference and enters the PHY client
+  set (`esp_btbb_enable`); leaving releases the PHY client and the BTBB
+  reference, then closes RF when no client remains. Wi-Fi's modem sleep
+  leaves the client set and closes RF when it was last; its wake wakes RF
+  and re-enters the set (`wifi_rf_phy_enable`). The PHY transitions are the
+  PHY crate's ([first and last PHY client](../../esp32s31/phy/README.md#first-and-last-phy-client)).

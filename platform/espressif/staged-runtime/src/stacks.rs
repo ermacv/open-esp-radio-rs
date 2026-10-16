@@ -34,13 +34,6 @@ const HARTS: usize = if cfg!(feature = "two-harts") { 2 } else { 1 };
 
 static IRQ_PAINTED: [AtomicBool; HARTS] = [const { AtomicBool::new(false) }; HARTS];
 
-#[cfg(feature = "multicore")]
-use esp_hal::system::Stack;
-
-/// CPU1's PSRAM task stack of a `multicore` image.
-#[cfg(feature = "multicore")]
-pub const CPU1_TASK_STACK_BYTES: usize = 16 * 1024;
-
 /// Offset in the interrupt entry's trap frame of the stack pointer the
 /// interrupt preempted: the task stack for an outermost entry, the
 /// interrupted handler's SRAM stack for a nested one.
@@ -67,12 +60,6 @@ const IRQ_STACK_GUARD_BYTES: usize =
 /// Debug trigger of the interrupt-stack guard. ESP-HAL owns trigger 0 (task
 /// stack guard) and trigger 1 (trap-section guard).
 const IRQ_STACK_GUARD_TRIGGER: usize = 2;
-
-#[cfg(feature = "multicore")]
-#[used]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".psram.task_stack.cpu1")]
-static mut __open_radio_cpu1_task_stack: Stack<{ CPU1_TASK_STACK_BYTES }> = Stack::new();
 
 unsafe extern "C" {
     static _runtime_psram_mtvt_source: [u32; 48];
@@ -280,28 +267,6 @@ pub fn current_hart_interrupt_stack_free_bytes() -> usize {
         unsafe { asm!("csrsi mstatus, 8", options(nostack)) };
     }
     free
-}
-
-#[cfg(feature = "multicore")]
-pub fn cpu1_task_stack_bottom() -> u32 {
-    ptr::addr_of!(__open_radio_cpu1_task_stack) as usize as u32
-}
-
-#[cfg(feature = "multicore")]
-unsafe extern "C" {
-    fn _runtime_enter_cpu1_psram() -> !;
-}
-
-/// Abandon the ESP-HAL SRAM bootstrap stack and enter CPU1 thread mode on its
-/// PSRAM task stack. This function never returns to the abandoned call chain.
-///
-/// # Safety
-///
-/// Must be called exactly once by CPU1 with global interrupts disabled, after
-/// ESP-HAL has initialized that hart and consumed the bootstrap closure.
-#[cfg(feature = "multicore")]
-pub unsafe fn enter_cpu1_task_context() -> ! {
-    unsafe { _runtime_enter_cpu1_psram() }
 }
 
 core::arch::global_asm!(
@@ -578,25 +543,6 @@ _runtime_psram_mtvt_source:
     .word _runtime_psram_irq_entry_47
     .size _runtime_psram_mtvt_source, . - _runtime_psram_mtvt_source
 
-    .option pop
-"#
-);
-
-// Single-core applications do not require a secondary application entry.
-#[cfg(feature = "multicore")]
-core::arch::global_asm!(
-    r#"
-    .section .trap.psram_task_stack, "ax", @progbits
-    .option push
-    .option norelax
-    .option norvc
-    .balign 4
-    .global _runtime_enter_cpu1_psram
-    .type _runtime_enter_cpu1_psram, @function
-_runtime_enter_cpu1_psram:
-    la sp, __runtime_cpu1_task_stack_top
-    tail runtime_cpu1_psram_main
-    .size _runtime_enter_cpu1_psram, . - _runtime_enter_cpu1_psram
     .option pop
 "#
 );

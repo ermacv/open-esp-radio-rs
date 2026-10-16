@@ -1,6 +1,6 @@
-//! Backend observations.
+//! What a radio event observed: the values a backend reports.
 
-use crate::{ConnectionId, EventId, LeInstant};
+use crate::LeInstant;
 
 /// One PDU received during an event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,33 +50,4 @@ pub enum TestReport {
     },
     /// One packet arrived and failed its check.
     Failed,
-}
-
-/// One observation from the backend.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RadioOutcome<'pdu> {
-    /// A PDU received during the event; any number precede its end.
-    Received {
-        /// The event.
-        id: EventId,
-        /// The PDU.
-        pdu: ReceivedPdu<'pdu>,
-    },
-    /// The event ended.
-    EventEnded {
-        /// The event.
-        id: EventId,
-        /// How it ended.
-        result: EventResult,
-    },
-    /// The peer acknowledged the connection's queued PDU, right before the
-    /// end of the event that carried it.
-    TransmitAcknowledged(ConnectionId),
-    /// A Direct Test Mode receiver event's result, before its end.
-    TestReport {
-        /// The event.
-        id: EventId,
-        /// The result.
-        report: TestReport,
-    },
 }

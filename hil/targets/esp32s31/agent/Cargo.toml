@@ -8,13 +8,6 @@ publish.workspace = true
 build = "build.rs"
 
 [features]
-# The image keeps the RTC event trace (`agent/src/trace.rs`): it records,
-# freezes on a panic or hang, and serves the trace commands. Every Bluetooth
-# image has it.
-trace-journal = []
-# Experimental direct RX-gain transaction SRAM placement for an otherwise
-# identical diagnostic image.
-phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram"]
 # The HIL report of a panic instead of the product's record-and-reset; every
 # image but `system-panic-reset` has it.
 panic-hook = ["oer-espressif-staged-runtime/panic-hook"]
@@ -22,12 +15,10 @@ boot-smoke = ["panic-hook"]
 system-watchdog = [
     "panic-hook",
     "dep:oer-hil-protocol",
-    "dep:embassy-futures",
     "dep:embassy-sync",
     "dep:log",
     "dep:oer-hil-agent",
     "dep:oer-hil-image-keys",
-    "dep:heapless",
     "dep:critical-section",
 ]
 # The system image that, on request, switches its USB Serial/JTAG off its
@@ -37,90 +28,26 @@ usb-jtag-off = ["system-watchdog"]
 # and the next boot reports the record.
 system-panic-reset = [
     "dep:oer-hil-protocol",
-    "dep:embassy-futures",
     "dep:embassy-sync",
     "dep:log",
     "dep:oer-hil-agent",
     "dep:oer-hil-image-keys",
-    "dep:heapless",
     "dep:critical-section",
 ]
-# Bluetooth LE over the production composition and its HCI Controller. The
-# Direct Test Mode image serves the `bluetooth-dtm-*` scenarios; the GATT
-# images run the Trouble Host and the GATT application.
-bluetooth-radio = [
-    "panic-hook",
-    "trace-journal",
-    "oer-hil-protocol?/bluetooth",
-    "dep:oer-bluetooth-controller",
-    "dep:oer-bluetooth-hci",
-    "dep:oer-radio-port",
-    "dep:oer-esp32s31-bluetooth-system",
-    "dep:oer-esp32s31-hal",
-    "dep:oer-esp32s31-phy",
-    "dep:oer-esp32s31-radio-esp-hal",
-    "dep:oer-esp32s31-radio-system",
-    "dep:embassy-futures",
-    "dep:embassy-sync",
-    "dep:embedded-io",
-    "dep:embedded-io-async",
-    "dep:log",
-    "dep:oer-hil-protocol",
-    "dep:oer-hil-agent",
-    "dep:oer-hil-image-keys",
-    "dep:heapless",
-    "dep:critical-section",
-]
-bluetooth-hil = ["bluetooth-radio"]
-# Record the Bluetooth LE Controller, radio role and runtime trace points
-# (`oer-bluetooth-trace`); the `diagnostic-bluetooth-gatt-trace` image.
-bluetooth-trace = ["oer-esp32s31-bluetooth-system?/trace"]
-bluetooth-gatt = ["bluetooth-radio", "dep:oer-bluetooth-gatt-trouble", "dep:trouble-host"]
-# The secure GATT image restarts the Controller epoch around one retained bond
-# store and serves the `bluetooth-secure-gatt` scenario.
-bluetooth-secure-gatt = [
-    "bluetooth-radio",
-    "dep:oer-bluetooth-gatt-trouble",
-    "oer-bluetooth-gatt-trouble/secure",
-    "dep:trouble-host",
-    "dep:oer-hil-agent",
-    "dep:oer-hil-image-keys",
-    "oer-hil-agent/secure-gatt",
-]
-
 [dependencies]
 oer-memory = { path = "../../../../crates/memory" }
 embassy-executor.workspace = true
-embassy-futures = { workspace = true, optional = true }
 embassy-sync = { workspace = true, optional = true }
 embassy-time.workspace = true
-embedded-io-async = { workspace = true, optional = true }
 esp-hal = { workspace = true, features = ["esp32s31", "static-interrupts", "rt", "unstable"] }
 log = { workspace = true, optional = true }
-heapless = { workspace = true, optional = true }
 critical-section = { version = "1.2.0", optional = true }
-oer-esp32s31-radio-system = { workspace = true, optional = true }
-oer-esp32s31-hal = { workspace = true, optional = true }
-oer-esp32s31-phy = { workspace = true, optional = true }
-embedded-io = { version = "0.7.1", optional = true }
-oer-bluetooth-gatt-trouble = { path = "../../../../crates/adapters/trouble/bluetooth/gatt", optional = true }
-oer-bluetooth-controller = { path = "../../../../crates/protocols/bluetooth/le/controller", optional = true }
-oer-bluetooth-hci = { path = "../../../../crates/protocols/bluetooth/hci", optional = true }
-trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
-oer-esp32s31-bluetooth-system = { workspace = true, optional = true }
-oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
-oer-radio-port = { workspace = true, optional = true }
 oer-esp32s31-soc-esp-hal.workspace = true
-# Recording is on in every image; only freeze triggers record unless a
-# domain feature adds its trace points.
-oer-trace = { path = "../../../../crates/trace", features = ["record"] }
-oer-time-embassy = { path = "../../../../crates/adapters/embassy/time" }
 oer-espressif-executor-embassy.workspace = true
 oer-espressif-interrupt-table-esp-hal.workspace = true
 oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
 oer-hil-agent = { path = "../../../agent", optional = true, default-features = false }
 oer-hil-image-keys = { workspace = true, optional = true }
-oer-hil-trace.workspace = true
 oer-espressif-staged-runtime = { path = "../../../../platform/espressif/staged-runtime", features = ["esp32s31", "two-harts"] }
 oer-esp32s31-platform-board = { path = "../../../../platform/esp32s31/board", features = ["stage-two"] }
 oer-esp32s31-platform-layout = { path = "../../../../platform/esp32s31/layout" }

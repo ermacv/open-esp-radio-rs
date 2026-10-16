@@ -36,7 +36,7 @@ fn a_run_shares_its_fixture_software_with_other_runs_but_not_an_installation() {
     use oer_stand_claims::Claim;
     let lab = crate::config::LabConfig::for_test();
     let required = oer_hil_scenario_catalog::requirements::Requirements {
-        bluetooth_adapter: true,
+        laptop_client: true,
         ..Default::default()
     };
     let claims = claims_of(
@@ -47,7 +47,7 @@ fn a_run_shares_its_fixture_software_with_other_runs_but_not_an_installation() {
         },
     );
     let software =
-        oer_stand_fixture_install::resource(oer_stand_fixture_install::Provider::LinuxBluetooth);
+        oer_stand_fixture_install::resource(oer_stand_fixture_install::Provider::LinuxNet);
     assert!(claims.contains(&Claim::shared(&software)), "{claims:?}");
     assert!(!claims.contains(&Claim::exclusive(&software)));
 }

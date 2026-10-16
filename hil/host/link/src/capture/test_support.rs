@@ -232,7 +232,7 @@ pub fn capability_keys() -> Vec<Key> {
     let capabilities = oer_hil_image_class::agent_chips()
         .find_map(|chip| {
             oer_hil_image_class::image_keys_on(
-                oer_hil_schema::image::ImageClass::BluetoothGatt,
+                oer_hil_schema::image::ImageClass::SystemWatchdog,
                 chip,
             )
         })

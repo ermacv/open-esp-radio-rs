@@ -138,7 +138,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     fs::write(run.join("application.bin"), b"the observed firmware").unwrap();
     let mut manifest: Value = read_json(&run.join("manifest.json")).unwrap();
     let artifact = &mut manifest["firmware"][0];
-    artifact["image"] = json!("bluetooth-gatt");
+    artifact["image"] = json!("system-watchdog");
     artifact["application_path"] = json!("application.bin");
     artifact["application_size_bytes"] =
         json!(fs::metadata(run.join("application.bin")).unwrap().len());
@@ -151,7 +151,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     fs::create_dir_all(run.join("scenarios/ble-att")).unwrap();
     write(
         &run.join("scenarios/ble-att/scenario.json"),
-        &json!({"id":"ble-att", "image":"bluetooth-gatt"}),
+        &json!({"id":"ble-att", "image":"system-watchdog"}),
     );
     write(
         &run.join("lab-provenance.json"),
@@ -220,7 +220,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     // An edited and resealed procedure is a new observation, even with the same run name.
     write(
         &run.join("scenarios/ble-att/scenario.json"),
-        &json!({"id":"ble-att", "image":"bluetooth-gatt", "changed":true}),
+        &json!({"id":"ble-att", "image":"system-watchdog", "changed":true}),
     );
     super::super::tests::seal(&run);
     let changed = serde_json::to_value(

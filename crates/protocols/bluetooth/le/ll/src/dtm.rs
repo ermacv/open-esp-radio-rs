@@ -1,17 +1,19 @@
-//! Direct Test Mode session over the portable radio event contract.
+//! Direct Test Mode test planning and counting.
 //!
 //! [`DtmSession`] plans one test event at a time. A transmitter test places
 //! its packets on the `I(L)` grid of Core 6.0 Vol 6 Part F section 4.1.6 and
 //! skips grid points that are no longer admissible; a receiver test listens
 //! in back-to-back windows and counts every packet with a valid CRC. Ending a
-//! test first lets the event in progress leave the schedule.
+//! test first lets the event in progress leave the schedule. The caller
+//! correlates the planned event with what the radio reports and hands the
+//! session the event's [`TestReport`] and [`EventResult`].
 
 use core::num::NonZeroU64;
 
 use oer_bluetooth_radio::{
-    EventId, EventResult, LeInstant, LeRadio, LeWindow, NonZeroRadioDuration, OutsideEpoch,
-    RadioDuration, RadioOutcome, RadioTiming, TestChannel, TestPayloadType, TestPhy, TestReceive,
-    TestReport, TestTransmit, TxPower,
+    EventResult, LeInstant, LeRadio, LeWindow, NonZeroRadioDuration, OutsideEpoch, RadioDuration,
+    RadioTiming, TestChannel, TestPayloadType, TestPhy, TestReceive, TestReport, TestTransmit,
+    TxPower,
 };
 
 mod payload;
@@ -86,8 +88,8 @@ pub enum DtmStop {
         /// Received packets.
         received: u16,
     },
-    /// Cancel this event and wait for it to end.
-    Draining(EventId),
+    /// Cancel the event in progress and wait for it to end.
+    Draining,
 }
 
 /// Counters of the current test.
@@ -122,8 +124,7 @@ enum Phase {
 pub struct DtmSession {
     phase: Phase,
     tx_power: TxPower,
-    next_id: u32,
-    outstanding: Option<EventId>,
+    in_progress: bool,
     last: Option<LeWindow>,
     recurring: bool,
     counters: DtmCounters,
@@ -157,14 +158,12 @@ pub struct DtmEpochExhausted {
 }
 
 impl DtmSession {
-    /// A session whose events use `tx_power`. Event identities start at
-    /// `first_id` and must not collide with the caller's other events.
-    pub const fn new(tx_power: TxPower, first_id: u32) -> Self {
+    /// A session whose events use `tx_power`.
+    pub const fn new(tx_power: TxPower) -> Self {
         Self {
             phase: Phase::Idle,
             tx_power,
-            next_id: first_id,
-            outstanding: None,
+            in_progress: false,
             last: None,
             recurring: false,
             counters: DtmCounters {
@@ -184,9 +183,9 @@ impl DtmSession {
         !matches!(self.phase, Phase::Idle)
     }
 
-    /// The event in progress, when one is.
-    pub const fn outstanding(&self) -> Option<EventId> {
-        self.outstanding
+    /// Whether a planned event has not ended yet.
+    pub const fn in_progress(&self) -> bool {
+        self.in_progress
     }
 
     /// Counters of the current or last test.
@@ -217,12 +216,12 @@ impl DtmSession {
             Phase::Idle => return DtmStop::Stopped { received: 0 },
             Phase::Running(test) | Phase::Ending(test) => test,
         };
-        match self.outstanding {
-            Some(id) => {
+        match self.in_progress {
+            true => {
                 self.phase = Phase::Ending(test);
-                DtmStop::Draining(id)
+                DtmStop::Draining
             }
-            None => {
+            false => {
                 self.phase = Phase::Idle;
                 DtmStop::Stopped {
                     received: received(test, self.counters),
@@ -245,7 +244,7 @@ impl DtmSession {
         let Phase::Running(test) = self.phase else {
             return Ok(None);
         };
-        if self.outstanding.is_some() {
+        if self.in_progress {
             return Ok(None);
         }
         let at = |calculation| DtmEpochExhausted { calculation };
@@ -295,8 +294,7 @@ impl DtmSession {
         timing
             .reservation(window)
             .map_err(|OutsideEpoch| at(C::Reservation))?;
-        // All geometry is validated before payload, history or identity state changes.
-        let id = EventId::new(self.next_id);
+        // All geometry is validated before payload or history state changes.
         let request = match test {
             DtmTest::Transmit {
                 channel,
@@ -307,7 +305,6 @@ impl DtmSession {
                 let bytes = &mut payload[..usize::from(length)];
                 pattern.fill(bytes);
                 DtmEvent::Transmit(TestTransmit {
-                    id,
                     channel,
                     phy,
                     window,
@@ -320,7 +317,6 @@ impl DtmSession {
             DtmTest::Receive { channel, phy } => {
                 let recurring = core::mem::replace(&mut self.recurring, true);
                 DtmEvent::Receive(TestReceive {
-                    id,
                     channel,
                     phy,
                     window,
@@ -330,45 +326,48 @@ impl DtmSession {
             }
         };
         self.last = Some(window);
-        self.outstanding = Some(id);
+        self.in_progress = true;
         Ok(Some(request))
     }
 
     /// The backend refused the planned request; plan again later.
     pub fn refused(&mut self) {
-        self.outstanding = None;
+        self.in_progress = false;
     }
 
-    /// Account one outcome. Outcomes of other events are ignored.
-    pub fn observe(&mut self, outcome: RadioOutcome<'_>) {
-        match outcome {
-            RadioOutcome::TestReport { id, report } if Some(id) == self.outstanding => match report
-            {
-                TestReport::Nothing => self.counters.empty += 1,
-                TestReport::Received { .. } => self.counters.received += 1,
-                TestReport::Failed => self.counters.failed += 1,
-            },
-            RadioOutcome::EventEnded { id, result } if Some(id) == self.outstanding => {
-                match result {
-                    EventResult::Executed { .. } => self.counters.executed += 1,
-                    EventResult::NotExecuted => self.counters.not_executed += 1,
-                    EventResult::Aborted => self.counters.aborted += 1,
-                    EventResult::Indeterminate => self.counters.indeterminate += 1,
-                }
-                self.outstanding = None;
-                self.next_id = self.next_id.wrapping_add(1);
-                if let Phase::Ending(_) = self.phase {
-                    self.phase = Phase::Idle;
-                }
-            }
-            _ => {}
+    /// Count the receiver report of the event in progress.
+    pub fn report(&mut self, report: TestReport) {
+        if !self.in_progress {
+            return;
+        }
+        match report {
+            TestReport::Nothing => self.counters.empty += 1,
+            TestReport::Received { .. } => self.counters.received += 1,
+            TestReport::Failed => self.counters.failed += 1,
+        }
+    }
+
+    /// Count how the event in progress ended; the session may plan the next.
+    pub fn ended(&mut self, result: EventResult) {
+        if !self.in_progress {
+            return;
+        }
+        match result {
+            EventResult::Executed { .. } => self.counters.executed += 1,
+            EventResult::NotExecuted => self.counters.not_executed += 1,
+            EventResult::Aborted => self.counters.aborted += 1,
+            EventResult::Indeterminate => self.counters.indeterminate += 1,
+        }
+        self.in_progress = false;
+        if let Phase::Ending(_) = self.phase {
+            self.phase = Phase::Idle;
         }
     }
 
     /// The receiver count once an ending test has drained.
     pub fn drained(&self) -> Option<u16> {
-        match (self.phase, self.outstanding) {
-            (Phase::Idle, None) => Some(self.counters.received.min(u32::from(u16::MAX)) as u16),
+        match (self.phase, self.in_progress) {
+            (Phase::Idle, false) => Some(self.counters.received.min(u32::from(u16::MAX)) as u16),
             _ => None,
         }
     }

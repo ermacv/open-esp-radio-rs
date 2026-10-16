@@ -57,9 +57,6 @@ pub fn providers(
     required: oer_hil_scenario_catalog::requirements::Requirements,
 ) -> Vec<Provider> {
     let mut providers = Vec::new();
-    if required.bluetooth_adapter {
-        providers.push(Provider::LinuxBluetooth);
-    }
     if required.local_radio()
         || (required.station_network
             && matches!(

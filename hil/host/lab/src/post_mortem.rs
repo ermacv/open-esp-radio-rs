@@ -175,7 +175,6 @@ pub fn inspect(
         let symbols = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::new(elf).ok());
         let name = |address: u32| symbol(symbols.as_ref(), address);
         let failure = classify(&boot, &checkpoints, &name);
-        drain_trace(&capture, &output.join("post-mortem"));
         Finding {
             boot,
             checkpoints,
@@ -184,130 +183,6 @@ pub fn inspect(
     });
     let _ = capture.finish_with(Ok(()));
     finding
-}
-
-/// Save the target's event trace in `directory` as `trace.json` (raw) and
-/// `trace.txt` (decoded, oldest first): the previous boot's when the target
-/// holds it, else the current boot's. A held trace is then restarted, so the
-/// new boot records. A target without a trace, or one that does not answer,
-/// leaves nothing.
-fn drain_trace(capture: &SerialCapture, directory: &Path) {
-    use oer_hil_protocol::telemetry::{ControlTrace, TraceControl, TraceState};
-    let Ok(TraceState(status)) = capture.request(
-        0,
-        ControlTrace(TraceControl::Status),
-        Duration::from_secs(5),
-    ) else {
-        return;
-    };
-    if !status.installed || status.stored_entries == 0 && status.stored_snapshots == 0 {
-        return;
-    }
-    let entries = capture.trace_entries(status.entries).unwrap_or_default();
-    let slots = (0..status.snapshot_slots)
-        .filter_map(|slot| capture.trace_snapshot(slot).ok().flatten())
-        .collect::<Vec<_>>();
-    let snapshots = slots
-        .iter()
-        .map(|(header, words)| {
-            serde_json::json!({"slot": header.slot, "point": header.point,
-            "tag": header.tag, "t_us": header.t_us, "len": header.len,
-            "truncated": header.truncated, "words": words})
-        })
-        .collect::<Vec<_>>();
-    let _ = std::fs::create_dir_all(directory);
-    let _ = oer_durable::atomic_json(
-        &directory.join("trace.json"),
-        &serde_json::json!({"schema": 1, "status": status, "entries": entries,
-                            "snapshots": snapshots}),
-    );
-    let mut text = decode_trace(&status, &entries);
-    for (header, words) in &slots {
-        text.push_str(&describe_snapshot(header, words));
-    }
-    let _ = std::fs::write(directory.join("trace.txt"), text);
-    if status.holding_previous {
-        let _ = capture.request(
-            0,
-            ControlTrace(TraceControl::Start { mask: u64::MAX }),
-            Duration::from_secs(5),
-        );
-    }
-}
-
-/// The trace's entries, oldest first, one per line: time, event and words.
-fn decode_trace(
-    status: &oer_hil_protocol::telemetry::TraceStatus,
-    entries: &[oer_hil_protocol::telemetry::TraceEntry],
-) -> String {
-    let mut records = entries
-        .iter()
-        .map(|entry| oer_trace::Record {
-            tag: entry.tag,
-            kind: entry.kind,
-            t_us: entry.t_us,
-            words: entry.words,
-        })
-        .collect::<Vec<_>>();
-    oer_trace::oldest_first(&mut records);
-    let mut text = format!(
-        "# {} entries{}; {}\n",
-        records.len(),
-        status
-            .trigger
-            .map(|(kind, tag)| format!(", frozen by {} at tag {tag}", event_name(kind)))
-            .unwrap_or_default(),
-        if status.holding_previous {
-            "left by the previous boot"
-        } else {
-            "of the current boot"
-        }
-    );
-    for record in &records {
-        text.push_str(&format!(
-            "{:>12} us  tag {:>5}  {}\n",
-            record.t_us,
-            record.tag,
-            oer_trace::Described {
-                record,
-                sets: oer_hil_trace::EVENT_SETS,
-            }
-        ));
-    }
-    text
-}
-
-/// One snapshot slot, one line: its point, the tag it was taken at, and the
-/// decoded state when a domain knows the point, else its word count.
-fn describe_snapshot(
-    header: &oer_hil_protocol::telemetry::TraceSnapshotPage,
-    words: &[u32],
-) -> String {
-    let decoded = (!header.truncated)
-        .then(|| oer_hil_trace::describe_snapshot(header.point, words))
-        .flatten();
-    format!(
-        "{:>12} us  tag {:>5}  snapshot {}: {}\n",
-        header.t_us,
-        header.tag,
-        event_name(header.point),
-        decoded.unwrap_or_else(|| format!(
-            "{} words{}",
-            words.len(),
-            if header.truncated { ", truncated" } else { "" }
-        ))
-    )
-}
-
-/// A trace kind's name: the platform's own, else its domain and event id.
-fn event_name(kind: u16) -> String {
-    match oer_trace::Kind::from_raw(kind) {
-        Some(kind) => oer_hil_trace::platform_name(kind).map_or_else(
-            || format!("{:?}.{}", kind.domain, kind.event).to_lowercase(),
-            str::to_owned,
-        ),
-        None => format!("unknown-kind-{kind:#06x}"),
-    }
 }
 
 /// The failure `boot` establishes, naming code addresses with `name`.
@@ -517,60 +392,6 @@ exit 1
         assert!(!quiet.join(JTAG_POST_MORTEM_FILE).exists());
     }
 
-    fn slot(
-        point: u16,
-        words: &[u32],
-        truncated: bool,
-    ) -> oer_hil_protocol::telemetry::TraceSnapshotPage {
-        oer_hil_protocol::telemetry::TraceSnapshotPage {
-            slot: 0,
-            point,
-            tag: 7,
-            t_us: 1_000,
-            len: words.len() as u16,
-            truncated,
-            offset: 0,
-            words: Default::default(),
-        }
-    }
-
-    #[test]
-    fn a_phy_snapshot_is_decoded_and_another_point_shows_its_size() {
-        use oer_phy_trace::{
-            BusRead, Client, Clients, Fault, FaultStage, PhySnapshot, Poison, PoisonedBy, Slot,
-            TemperatureReferences,
-        };
-        let snapshot = PhySnapshot {
-            poison: Poison {
-                by: PoisonedBy::Tracking,
-                fault: Fault {
-                    stage: FaultStage::Hardware,
-                    detail: 0xbeef,
-                },
-            },
-            slot: Slot::Pending,
-            clients: Clients::NONE.with(Client::Wifi),
-            temperatures: TemperatureReferences {
-                rfpll: 24,
-                calibration: 23,
-                transmit: 25,
-                power: 22,
-                observed: 26,
-            },
-            bus: BusRead::DomainOff,
-            platform_clocks: [1, 1, 1, 0, 0, 0, 0, 0],
-        };
-        let words = snapshot.encode();
-        let point = PhySnapshot::POINT.raw();
-        let line = describe_snapshot(&slot(point, &words, false), &words);
-        assert!(line.contains(&snapshot.to_string()), "{line}");
-        // A truncated or foreign slot is shown by size, never misdecoded.
-        let truncated = describe_snapshot(&slot(point, &words, true), &words);
-        assert!(truncated.contains("14 words, truncated"), "{truncated}");
-        let other = describe_snapshot(&slot(0x0181, &[1, 2, 3], false), &[1, 2, 3]);
-        assert!(other.ends_with("3 words\n"), "{other}");
-    }
-
     fn boot(reset_reason: ResetReason, fault: Option<Fault>) -> BootEvidence {
         BootEvidence {
             reset_reason,
@@ -675,74 +496,6 @@ exit 1
             failure.message.contains("its timers depend on core 0"),
             "{}",
             failure.message
-        );
-    }
-
-    #[test]
-    fn a_trace_is_decoded_oldest_first_with_platform_names() {
-        let hang = <oer_hil_trace::Hang as oer_trace::Event>::KIND.raw();
-        let station = oer_trace::Kind::new(oer_trace::Domain::Bluetooth, 200).raw();
-        let entry = |tag, kind, t_us| oer_hil_protocol::telemetry::TraceEntry {
-            tag,
-            kind,
-            t_us,
-            // The platform's events carry no words.
-            words: if kind == hang { [0, 0] } else { [1, 2] },
-        };
-        let status = oer_hil_protocol::telemetry::TraceStatus {
-            installed: true,
-            entries: 4,
-            snapshot_slots: 0,
-            snapshot_words: 0,
-            running: false,
-            frozen: false,
-            mask: u64::MAX,
-            trigger: Some((hang, 3)),
-            holding_previous: true,
-            stored_entries: 2,
-            stored_snapshots: 0,
-        };
-        // Storage order is not time order: the ring wrapped.
-        let text = decode_trace(&status, &[entry(3, hang, 200), entry(2, station, 100)]);
-        let lines = text.lines().collect::<Vec<_>>();
-        assert!(lines[0].contains("frozen by platform.hang"), "{text}");
-        assert!(lines[0].contains("previous boot"), "{text}");
-        assert!(
-            lines[1].contains("bluetooth.200 [0x00000001, 0x00000002]"),
-            "{text}"
-        );
-        assert!(lines[2].contains("platform.hang"), "{text}");
-        // A station event is described by the station's event set.
-        let exit = oer_trace::Record {
-            tag: 1,
-            kind: <oer_ieee80211_trace::ControlExit as oer_trace::Event>::KIND.raw(),
-            t_us: 0,
-            words: [0, 0],
-        };
-        let described = oer_trace::Described {
-            record: &exit,
-            sets: oer_hil_trace::EVENT_SETS,
-        }
-        .to_string();
-        assert!(!described.starts_with("ieee80211."), "{described}");
-        // So is an IEEE 802.15.4 driver event, by the driver's event set.
-        let change = oer_ieee802154_trace::StateChange {
-            from: oer_ieee802154_trace::MacState::Rx,
-            to: oer_ieee802154_trace::MacState::Tx,
-        };
-        let record = oer_trace::Record {
-            tag: 1,
-            kind: <oer_ieee802154_trace::StateChange as oer_trace::Event>::KIND.raw(),
-            t_us: 0,
-            words: oer_trace::Event::encode(&change),
-        };
-        assert_eq!(
-            oer_trace::Described {
-                record: &record,
-                sets: oer_hil_trace::EVENT_SETS,
-            }
-            .to_string(),
-            change.to_string()
         );
     }
 

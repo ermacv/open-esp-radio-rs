@@ -106,7 +106,7 @@ fn built_firmware_is_archived_before_the_exact_run_local_path_is_flashed() {
     let flashed = RefCell::new(None::<PathBuf>);
 
     let failure = archive_and_flash_built(
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         artifacts,
         &mut session,
         |artifacts| {
@@ -128,12 +128,12 @@ fn built_firmware_is_archived_before_the_exact_run_local_path_is_flashed() {
     let flashed = flashed.into_inner().expect("flash call");
     assert_ne!(flashed, build_path);
     assert!(
-        flashed.ends_with("bluetooth-gatt/application.bin"),
+        flashed.ends_with("system-watchdog/application.bin"),
         "{}",
         flashed.display()
     );
     assert_eq!(
-        fs::read(run_directory.join("firmware/bluetooth-gatt/application.bin")).unwrap(),
+        fs::read(run_directory.join("firmware/system-watchdog/application.bin")).unwrap(),
         b"exact application"
     );
 }
@@ -144,7 +144,7 @@ fn flash_failure_is_typed_after_archival() {
     let artifacts = build_inputs(root.path());
     let mut session = session(root.path());
     let failure =
-        archive_and_flash_built(ImageClass::BluetoothGatt, artifacts, &mut session, |_| {
+        archive_and_flash_built(ImageClass::SystemWatchdog, artifacts, &mut session, |_| {
             Err("injected flash failure".into())
         })
         .unwrap()
@@ -154,7 +154,7 @@ fn flash_failure_is_typed_after_archival() {
     assert!(
         session
             .directory()
-            .join("firmware/bluetooth-gatt/application.bin")
+            .join("firmware/system-watchdog/application.bin")
             .is_file()
     );
 }
@@ -177,12 +177,9 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
     let artifacts = build_inputs(root.path());
     let mut source = session(root.path());
     let source_id = source.id().to_owned();
-    archive_and_flash_built(
-        ImageClass::BluetoothGatt,
-        artifacts,
-        &mut source,
-        |_| Ok(()),
-    )
+    archive_and_flash_built(ImageClass::SystemWatchdog, artifacts, &mut source, |_| {
+        Ok(())
+    })
     .unwrap();
     source
         .finish(Vec::new(), oer_hil_analysis::report::views)
@@ -192,7 +189,7 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
         root.path(),
         "chip-a",
         &source_id,
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();
@@ -209,7 +206,7 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
     assert!(failure.is_none());
     assert_eq!(
         flashed.into_inner().expect("flash call"),
-        replay_directory.join("firmware/bluetooth-gatt/application.bin")
+        replay_directory.join("firmware/system-watchdog/application.bin")
     );
 }
 
@@ -219,12 +216,9 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
     let artifacts = build_inputs(root.path());
     let mut source = session(root.path());
     let source_id = source.id().to_owned();
-    archive_and_flash_built(
-        ImageClass::BluetoothGatt,
-        artifacts,
-        &mut source,
-        |_| Ok(()),
-    )
+    archive_and_flash_built(ImageClass::SystemWatchdog, artifacts, &mut source, |_| {
+        Ok(())
+    })
     .unwrap();
     source
         .finish(Vec::new(), oer_hil_analysis::report::views)
@@ -234,7 +228,7 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
         root.path(),
         "chip-a",
         &source_id,
-        ImageClass::BluetoothGatt,
+        ImageClass::SystemWatchdog,
         &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();
@@ -276,7 +270,7 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
         fs::read(
             replay
                 .directory()
-                .join("firmware/bluetooth-gatt/application.bin")
+                .join("firmware/system-watchdog/application.bin")
         )
         .unwrap(),
         b"corrupt application"

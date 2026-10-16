@@ -19,3 +19,16 @@ fn the_esp32s31_provider_levels_resolve_every_request() {
     assert_eq!(levels.resolve(channel(), -128).selected_provider_index(), 0);
     assert_eq!(levels.resolve(channel(), 127).effective_dbm(), 21);
 }
+
+#[test]
+fn the_esp32s31_capability_table_starts_every_channel_at_the_highest_level() {
+    let caps = oer_espressif_ieee802154_engine::capabilities::capabilities(
+        ESP32S31_TX_POWER_LEVELS.portable(),
+        false,
+    );
+    let power = caps
+        .transmit_power
+        .expect("the ESP32-S31 power is configurable");
+    assert_eq!(power.reset_dbm, 21);
+    assert_eq!(power.levels.levels_dbm().len(), 16);
+}

@@ -66,7 +66,7 @@ fn run(runs: &Path, id: &str, place: In, throughput: &[u64], counter: u64) -> Ru
         RunState::Completed,
         vec![ScenarioResult::from_repetitions(
             "udp-rx".into(),
-            ImageClass::DiagnosticBluetoothGattTrace,
+            ImageClass::DiagnosticUsbJtagOff,
             throughput.len() as u8,
             repetitions,
         )],

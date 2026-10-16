@@ -35,10 +35,12 @@ pub use model::{
     COEX_TIMER_COUNT, CoexClient, CoexClientRequest, CoexError, CoexEventDurations, CoexTimerIndex,
     NoRequestKind, timer_index,
 };
-pub use pti::{COEX_EVENT_COUNT, CoexEventId, CoexPti, CoexPtiTable, Ieee802154CoexLevel};
+pub use pti::{
+    COEX_EVENT_COUNT, CoexEventId, CoexPti, CoexPtiTable, Ieee802154CoexLevel, wifi_events,
+};
 pub use schedule::{
     CoexPhase, CoexPhaseStep, CoexSchedule, CoexScheduleIdle, CoexScheme, CoexSchemeId,
-    CoexStatusType, CoexStatusWords, wifi_status,
+    CoexStatusType, CoexStatusWords, EXTERNAL_COEX_STATUS, IEEE802154_COEX_STATUS, wifi_status,
 };
 pub use timer::{CoexTimerHardware, program_timer};
 

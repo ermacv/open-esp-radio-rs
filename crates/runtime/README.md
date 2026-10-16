@@ -1,7 +1,6 @@
 # Radio execution
 
-`esp32s31/bluetooth` (`oer-esp32s31-bluetooth-runtime`) and `espressif/ieee802154`
-(`oer-espressif-ieee802154-runtime`) contain
+`esp32s31/bluetooth` (`oer-esp32s31-bluetooth-runtime`) contains
 concrete radio execution as executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
 chip-independent Wi-Fi execution primitives (the station service, the
 lower-MAC owner glue, monitor handoffs), which no chip runtime uses yet, and `bluetooth`
@@ -34,7 +33,6 @@ protocol state machines they drive never wait.
 | Module | Responsibility |
 | --- | --- |
 | `ieee80211/src/{monitor,connected_tasks,station_network,stack_boundary}` | Portable capture/injection handoffs, task shutdown, association-scoped network ownership and explicit polling boundary |
-| `espressif/ieee802154/src/` | The IEEE 802.15.4 radio role and its MAC owners under one blocking mutex shared with the MAC interrupt (an interim until #668), served as the owner-shape backend `Ieee802154RuntimeBackend`: the operation permit and the interfaces' receive wishes in its held part, the joined driver running CSMA-CA backoffs and retry delays, and a radio fault poisoning the port |
 | `bluetooth/src/` | The Controller service loop, which owns the port session: it enables the port, publishes queued packets, takes one command when the core is ready and Host ACL data while the connection has room for it, submits radio requests one at a time, feeds outcomes back and retries refused requests after a short delay. It stops serving on its owner's stop request, a closed or failed transport, an unreadable clock or an exhausted radio epoch (`ServeExit::EpochExhausted`), and then disables the port and feeds every outcome to the core until `Disabled` (`Served`) |
 | `esp32s31/bluetooth/src/` | The Bluetooth LE radio role and its hardware under one async lock: receive-chain publication at install, request admission against a fresh controller-time sample, the scheduler driver that reports finished events and carries list transactions through their hardware waits and stops and resumes it around a test event, a `Disable` that stops the scheduler and ends every admitted event with what the hardware recorded (`Aborted` when a started item left no status), an uninstall of a disabled port only, a bounded queue of owned outcomes whose overflow reports the loss, the source-127 modem-timer task driver and the radio port of the Controller service loop, which states LE 1M roles and hardware Link Layer acknowledgement |
 
@@ -47,8 +45,7 @@ BLE and IEEE 802.15.4 disable sinks return `ControlFlow`: a refused terminal
 comes back by value and stops delivery immediately. Both runtimes publish
 `TerminalRejected` and finish their hardware stop normally; uninstall returns
 `Uninstalled::TerminalsQuarantined`, which keeps only the undelivered
-terminals, their queue and pending permits quarantined (IEEE 802.15.4 also
-returns its `MacStoppedParts`). Neither path drains later terminals into a
+terminals, their queue and pending permits quarantined. Neither path drains later terminals into a
 consumer that has refused one.
 
 The portable Wi-Fi station service uses `MsduQueue` for application commands
@@ -57,8 +54,7 @@ waiting for readiness borrows its endpoint exclusively without removing a
 value. The service handles a ready port event before taking a command, so a
 simultaneous port fault leaves that command owned by its queue.
 
-Owned timers follow the owner graph: the shared `RadioSystem` carries the
-timer of every PHY wait it leases, and each runtime carries the clock of its
+Owned timers follow the owner graph: each runtime carries the clock of its
 own deadlines. The platform executor/time ABI remains in
 [adapters](../adapters/embassy/README.md).
 

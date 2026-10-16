@@ -6,9 +6,8 @@
 //! HCI packet bodies travel with a separate typed packet kind, so no UART/H4
 //! framing exists inside the process. [`HostToControllerFrame`] and
 //! [`HciCommandPacket`] are the borrowed Host packets a Controller consumes;
-//! [`ControllerToHostQueue`] is a synchronous bounded FIFO of validated
-//! Controller packets. The asynchronous in-process Host/Controller transport
-//! and the bounded storage of one HCI epoch are `oer-bluetooth-hci-transport`.
+//! [`validate_controller_to_host_packet`] checks that a Controller packet body
+//! is one complete packet.
 //!
 //! The codecs decode the supported commands into owned semantic values and
 //! build complete responses and events:
@@ -25,8 +24,7 @@
 //!   Completed Packets and fragmented Controller ACL packets.
 //!
 //! The crate owns no command ordering, role state, Link Layer, radio, MMIO,
-//! interrupt, executor or allocator, and never waits; the Controller core
-//! does.
+//! interrupt, executor or allocator, and never waits.
 
 #[cfg(test)]
 extern crate std;
@@ -120,9 +118,6 @@ pub use controller::le::scanning::{
 pub use controller::response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,
 };
-pub use transport::{
-    ControllerToHostQueue, ControllerToHostQueueError, INITIAL_CONTROLLER_TO_HOST_PACKET_CAPACITY,
-    validate_controller_to_host_packet,
-};
+pub use transport::{ControllerToHostPacketError, validate_controller_to_host_packet};
 
 pub use wire::{HciCommandPacket, HostToControllerFrame};

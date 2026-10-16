@@ -18,7 +18,9 @@ writes S31 registers:
   timer sequence against an isolated validation radio for the compiled
   vendor comparison.
 
-The [radio runtime](../../../../runtime/esp32s31/radio/README.md) composes the
-core and the schedule under the arbiter lease. This crate does not implement
+No runtime composes the core and the schedule under the arbiter lease now;
+the policy the former radio runtime ran is recorded in the
+[Espressif coexistence policy](../../../espressif/coex/README.md#participants-status-and-order).
+This crate does not implement
 RF grant notification. See [source capabilities](FEATURES.md) for those
 boundaries.

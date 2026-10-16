@@ -9,8 +9,7 @@ source. Image keys, current-state admission and
 product qualification are separate contracts.
 
 - [Wire contract](wire.md): framing, version checks, discovery and boot identity.
-- [Bluetooth](bluetooth.md): GATT and secure GATT lifecycle, Direct Test Mode and raw HCI.
-- [Platform diagnostics](diagnostics.md): watchdog, event trace, program-counter profile and stack measurements.
+- [Platform diagnostics](diagnostics.md): watchdog, program-counter profile and stack measurements.
 
 Source types define the accepted wire layout; these references explain its
 meaning and limits. Host scenario execution belongs to the
@@ -21,7 +20,7 @@ meaning and limits. Host scenario execution belongs to the
 
 A module is a path prefix and a directory: `base` (hello, image keys, boot
 status, post-mortem, link health, acceptance and refusal), `system`,
-`network`, `bluetooth`, `ieee802154`, `phy` (the RX-gain SRAM placement property) and `telemetry`. A module declares
+`network` and `telemetry` (the program-counter profile). A module declares
 its messages with `messages!`:
 
 - an endpoint is a request the device serves and names its one response;
@@ -51,11 +50,12 @@ message's schema changes its key, and the lock records the change for review.
 
 The crate compiles its radio families behind features of the observer
 registry's family names: `network` (the `network` module's traffic sessions,
-their evidence, UDP probes and stream patterns), `bluetooth` (Direct Test
-Mode, HCI, GATT and secure GATT), `ieee802154` (probes, air check, peer
-sessions and Thread). The shared core is always compiled: framing, the
-envelope, keys and image keys, the `base` and `system` modules, boot and post-mortem
-evidence, the event trace and the program-counter profile. An image enables only the families it serves, so its
+their evidence, UDP probes and stream patterns). The `bluetooth`,
+`ieee802154` and `phy` modules and the event trace went with the
+orchestration in #770 (tag `legacy-radio-2026-10-16`). The shared core is
+always compiled: framing, the envelope, keys and image keys, the `base` and
+`system` modules, boot and post-mortem evidence and the program-counter
+profile. An image enables only the families it serves, so its
 build, and the evidence bound to its sources, reads only their files; a
 family that is off has no messages in the build. The host decodes every
 message: the `registry` feature enables every family and lists each

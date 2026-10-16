@@ -80,7 +80,7 @@ reset or retained-sleep wakeup replay.
 | [Tracking graphs](src/tracking.rs) and [executor](src/executor.rs) | Execute selected children and validate their completions | No independent RF arbitration |
 | [Target port](src/target_port.rs) and [HAL PHY](../hal/src/phy.rs) | Typed MMIO, analog buses, hardware completion and bounded waits | Hardware access is borrowed from the admitted owner |
 | [Analog register bus](../../radio/analog/README.md) | Field, configuration and parallel transitions of the vendor analog-I2C leaves | The transitions touch no bus; the target port and HAL drive them |
-| [Radio system](../../../runtime/esp32s31/radio/README.md) | The arbiter, the platform resources and the vendor periodic tracking timer | Tracking runs under the lease and the grant-protect brackets; it pauses no protocol |
+| The owner of the shared radio (none now; the `radio-system` lane, #771) | The arbiter, the platform resources and the vendor periodic tracking timer | Tracking runs under the lease and the grant-protect brackets; it pauses no protocol |
 | [HAL stopped-MAC check](../hal/src/owner/maintenance.rs) | The stopped Wi-Fi MAC check at the final-client boundary | A CPU mutex does not stop MAC or DMA |
 | [Hardware coex control](../../espressif/coex/README.md) | Recovered timer requests, PTI, clock conversion and withdrawal accounting | Programmed timer identity is not an RF grant |
 
@@ -179,9 +179,30 @@ serialized by one mechanism:
 - `track_concurrent_phy` is one tick of the vendor `phy_track_pll`: it
   evaluates the clients' tracking period and runs due tracking at once. The
   vendor periodic timer that calls it belongs to the composition that owns
-  the arbiter, as it belongs to ESP-IDF's `esp_phy` component:
-  [`oer-esp32s31-radio-runtime`](../../../runtime/esp32s31/radio/README.md)
-  runs it for the shared radio.
+  the arbiter, as it belongs to ESP-IDF's `esp_phy` component; no
+  composition runs it now (the former `oer-esp32s31-radio-runtime` did, tag
+  `legacy-radio-2026-10-16`).
+
+### First and last PHY client
+
+The former radio runtime (tag `legacy-radio-2026-10-16`) chose the PHY
+transition for a joining client as the vendor `esp_phy_enable` does, under
+the arbiter lease:
+
+- RF closed: `wake_concurrent_rf` (the retained registration is restored
+  without calibration);
+- a client set already exists: nothing, the domain is already open;
+- otherwise: `register_concurrent_phy` with the retained calibration cache
+  when one was handed over (`PhyRegisterConfig::with_calibration_cache`), else
+  a calibrating registration; a registration refused as
+  `ConcurrentPhyError::AlreadyRegistered` counts as already open.
+
+A client then proves the domain ready (`phy_ready`) under the lease it joins
+with. Wi-Fi prepares the domain before it enters power, which a cold RF
+restart requires (#644). The last client's half of `esp_phy_disable` closes
+RF (`close_concurrent_rf`) only when the domain is open and its client set is
+empty; a `ConcurrentRfError::Recoverable` failure keeps RF open, any other
+started failure requires reset.
 
 IEEE 802.15.4 composes these steps in [its client module](src/ieee802154_client.rs).
 `join_ieee802154` runs on the HAL `Ieee802154Clocked` owner and consumes a

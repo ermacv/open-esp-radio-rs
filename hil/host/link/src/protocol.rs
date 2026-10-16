@@ -438,67 +438,6 @@ impl SerialCapture {
         Ok((status, samples))
     }
 
-    /// Every complete trace entry in storage, in storage order.
-    pub fn trace_entries(
-        &self,
-        slots: u16,
-    ) -> Result<Vec<oer_hil_protocol::telemetry::TraceEntry>> {
-        let mut entries = Vec::new();
-        let mut first = 0;
-        while first < slots {
-            match self.call(
-                0,
-                oer_hil_protocol::telemetry::GetTraceEntries { first },
-                Duration::from_secs(5),
-            )? {
-                Ok(oer_hil_protocol::telemetry::TraceEntriesPage(page))
-                    if page.first == first && page.next > first =>
-                {
-                    entries.extend(page.entries);
-                    first = page.next;
-                }
-                response => {
-                    return Err(format!("invalid trace page {first}: {response:?}").into());
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    /// The words of the snapshot in `slot`, with its page header; `None`
-    /// when the slot holds none or was overwritten while it was read.
-    pub fn trace_snapshot(
-        &self,
-        slot: u8,
-    ) -> Result<Option<(oer_hil_protocol::telemetry::TraceSnapshotPage, Vec<u32>)>> {
-        let mut words = Vec::new();
-        let mut header = None;
-        loop {
-            let offset = u16::try_from(words.len())?;
-            match self.call(
-                0,
-                oer_hil_protocol::telemetry::GetTraceSnapshot { slot, offset },
-                Duration::from_secs(5),
-            )? {
-                Ok(oer_hil_protocol::telemetry::TraceSnapshot(None)) => return Ok(None),
-                Ok(oer_hil_protocol::telemetry::TraceSnapshot(Some(page)))
-                    if page.offset == offset =>
-                {
-                    let done = page.words.is_empty()
-                        || words.len() + page.words.len() >= usize::from(page.len);
-                    words.extend(page.words.iter().copied());
-                    header.get_or_insert(page);
-                    if done {
-                        return Ok(header.map(|header| (header, words)));
-                    }
-                }
-                response => {
-                    return Err(format!("invalid trace snapshot page: {response:?}").into());
-                }
-            }
-        }
-    }
-
     /// Console bytes captured so far: a mark for
     /// [`Self::console_shows_boot_since`].
     pub fn console_length(&self) -> usize {

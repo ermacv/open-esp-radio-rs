@@ -7,80 +7,44 @@
 
 This workspace selects the shared board boot and memory profile and owns the
 Embassy executor, the USB Serial/JTAG transport and the HIL workloads of the
-Bluetooth LE and radio-free system images. Effective dependency locks are
-archived beside each image.
-
-The Bluetooth images reach the radio only through HCI.
-`agent/src/bluetooth.rs` starts the shared radio with
-`oer_esp32s31_radio_system::start`, which spawns the coexistence schedule,
-starts the production Bluetooth client on it, runs the radio runner, the HCI
-Controller service and its own periodic PHY tracking task, which reports a
-tracking failure as `reason=phy-tracking`, and serves the typed console. The `bluetooth-dtm` image (`bluetooth-hil`) serves the
-`bluetooth-dtm-*` scenarios: `bluetooth/dtm.rs` resets the Controller and turns
-each DTM operation into LE Transmitter Test v1 (channel 0, 37-byte PRBS9), LE
-Receiver Test v1 (channel 0), LE Test End or HCI Reset, reporting the Test End
-packet count. The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
-`bluetooth/gatt.rs` runs the Trouble Host and the plaintext GATT application
-over the Host end of the transport. Both images use the development Controller
-identity Core 5.4, company `0xffff`, subversion 1, and a 500-ppm sleep-clock
-bound. The `bluetooth-secure-gatt` image serves the `bluetooth-trouble-secure-gatt*`
-scenarios: `bluetooth/secure.rs` keeps one RAM bond store across Host epochs.
-Each epoch runs the Trouble Host and the secure application beside the radio
-runner and the HCI service. A requested restart resets the Host through HCI,
-retires the drained Host end of the transport, stops the Controller on the
-radio system, checks that the old Host end reports the transport closed and
-starts the next Controller epoch with a fresh Controller core. An application
-failure closes the Controller without restarting; an unconfirmed Reset keeps
-every owner.
+radio-free system images. Effective dependency locks are archived beside each
+image. The radio images and their workloads went with the orchestration in
+#770; tag `legacy-radio-2026-10-16` holds them.
 
 ## Application boundaries
 
 The agent binary is the HIL application of the shared stage-two boot
-contract. Each image class selects one base feature: `bluetooth-hil`,
-`bluetooth-gatt`, `bluetooth-secure-gatt`, `system-watchdog`,
-`system-panic-reset` or `boot-smoke`. Board initialization, relocation and
-interrupt-stack mechanics belong to the shared platform; application images
-use the same mechanism through `cargo fw build`. A hardware scenario verdict
-remains a separate HIL responsibility.
+contract. Each image class selects one base feature: `system-watchdog`,
+`system-panic-reset` or `boot-smoke` (`usb-jtag-off` adds to
+`system-watchdog`). Board initialization, relocation and interrupt-stack
+mechanics belong to the shared platform; application images use the same
+mechanism through `cargo fw build`. A hardware scenario verdict remains a
+separate HIL responsibility.
 
 ## Protocol families per image
 
 Each image enables only the HIL protocol families it serves
-([radio families](../../protocol/README.md#radio-families)), so its build, and
-the evidence bound to its sources, reads only their protocol modules: the
-Bluetooth images the `bluetooth` family and the radio-free `system-watchdog`,
-`diagnostic-usb-jtag-off` and `system-panic-reset` images only the shared
-core, `system` module included.
+([radio families](../../protocol/README.md#radio-families)): the radio-free
+`system-watchdog`, `diagnostic-usb-jtag-off` and `system-panic-reset` images
+read only the shared core, `system` module included.
 
-## Event trace
+## Panic and exception records
 
-Every Bluetooth image keeps one `oer-trace` trace in RTC fast
-memory beside the post-mortem record (`agent/src/trace.rs`, the agent's
-`trace-journal` feature, `cfg(trace_journal)` in `build.rs`): 512 entries and no
-snapshot slots. The agent's panic
-hook, which the platform's panic entry calls through its
-`panic-hook` feature, freeze it before the reset; every image but
-`system-panic-reset` has that hook (the agent's `panic-hook` feature, which
-each image's base feature enables), and that image runs the product panic
-entry alone, so the `system-panic-reset` scenario exercises the product's
-record-and-reset path. The hook and the exception entry format nothing: they record the post-mortem fault and the hart's trap
-registers, the vector it took and the sources pending and routed to it
-(`agent/src/fatal.rs`) in RTC fast memory and reset, and the next boot prints
-`OPEN_RADIO_HIL runtime=PANIC boot=previous` or `runtime=EXCEPTION
+The agent's panic hook, which the platform's panic entry calls through its
+`panic-hook` feature, runs in every image but `system-panic-reset` (the
+agent's `panic-hook` feature, which each image's base feature enables); that
+image runs the product panic entry alone, so the `system-panic-reset`
+scenario exercises the product's record-and-reset path. The hook and the
+exception entry format nothing: they record the post-mortem fault and the
+hart's trap registers, the vector it took and the sources pending and routed
+to it (`agent/src/fatal.rs`) in RTC fast memory and reset, and the next boot
+prints `OPEN_RADIO_HIL runtime=PANIC boot=previous` or `runtime=EXCEPTION
 boot=previous` with that state before anything else. A panic message with
-arguments is not kept, only a static one in task context. An interrupt-context
-panic omits location and message because compiler metadata may be in unavailable
-PSRAM; the hook receives the platform's safe `PanicDetails`. The hook's code,
-trace pointer/mask and diagnostic stage stay in SRAM, its records stay in RTC
-memory, and its fault CRC uses no cached lookup table. The next boot also holds the frozen
-trace for the host, which pages it out through the
-[trace commands](../../protocol/diagnostics.md#event-trace). The `bluetooth-trace` feature records the Bluetooth LE Controller,
-radio role and runtime events of
-[`oer-bluetooth-trace`](../../../crates/protocols/bluetooth/trace/README.md)
-through the composition's `trace` feature; the Bluetooth console serves the
-trace commands in every Bluetooth image, whose trace holds only the agent's
-own events without it. `diagnostic-bluetooth-gatt-trace` builds the GATT
-image with it, and product images never do.
+arguments is not kept, only a static one in task context. An
+interrupt-context panic omits location and message because compiler metadata
+may be in unavailable PSRAM; the hook receives the platform's safe
+`PanicDetails`. The hook's code and diagnostic stage stay in SRAM, its
+records stay in RTC memory, and its fault CRC uses no cached lookup table.
 
 ## Local dependency overrides
 
@@ -107,7 +71,7 @@ git clone https://github.com/ermacv/esp-hal.git ~/dev/esp-hal
 cd ~/dev/esp-hal
 git bisect start <bad-rev> <good-rev>
 git bisect run sh -c 'cd ~/dev/<checkout> &&
-  ESP_HAL_ROOT=~/dev/esp-hal cargo hil image build bluetooth-gatt || exit 125;
+  ESP_HAL_ROOT=~/dev/esp-hal cargo hil image build system-watchdog || exit 125;
   ESP_HAL_ROOT=~/dev/esp-hal cargo hil run <scenario>'
 git bisect reset
 ```

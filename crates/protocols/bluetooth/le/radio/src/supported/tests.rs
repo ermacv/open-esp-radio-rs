@@ -2,11 +2,10 @@ use crate::{
     AcceptListChange, AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel,
     ConnectionEvent, ConnectionEventTiming, ConnectionId, DataChannel, DataPdu, DataPduKind,
-    EventId, LeCapabilities, LeConnectionCapabilities, LeInstant, LePhy, LePhys,
-    LeRadioCapabilities, LeWindow, LegacyAdvertisingTypes, LinkAcknowledgement, NoCapabilities,
-    RadioDuration, RadioTiming, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
-    ScannerId, Supported, TestChannel, TestPayloadType, TestPhy, TestReceive, TestTransmit,
-    TxPower, Unplaced,
+    LeCapabilities, LeConnectionCapabilities, LeInstant, LePhy, LePhys, LeRadioCapabilities,
+    LeWindow, LegacyAdvertisingTypes, LinkAcknowledgement, NoCapabilities, RadioDuration,
+    RadioTiming, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId,
+    Supported, TestChannel, TestPayloadType, TestPhy, TestReceive, TestTransmit, TxPower, Unplaced,
 };
 
 /// LE 1M, a nonconnectable advertiser, a passive scanner and a peripheral
@@ -81,7 +80,6 @@ fn window(start: u64, duration: u64) -> LeWindow {
 
 fn scan(start: u64, duration: u64) -> ScanWindow {
     ScanWindow {
-        id: EventId::new(1),
         scanner: ScannerId::new(0),
         channel: AdvertisingChannel::Channel37,
         window: window(start, duration),
@@ -90,7 +88,6 @@ fn scan(start: u64, duration: u64) -> ScanWindow {
 
 fn advertise(anchor: u64, spacing: u64) -> AdvertisingEvent {
     AdvertisingEvent {
-        id: EventId::new(2),
         set: AdvertisingSetId::new(0),
         anchor: LeInstant::from_micros(anchor),
         channels: AdvertisingChannels::ALL,
@@ -223,7 +220,6 @@ fn data_and_tests_are_bounded_by_the_connection_and_test_capabilities() {
     assert!(Supported::<Peripheral, _>::new(pdu(27)).is_ok());
     assert!(Supported::<Peripheral, _>::new(pdu(28)).is_err());
     let test = |phy| TestReceive {
-        id: EventId::new(3),
         channel: TestChannel::new(0).unwrap(),
         phy,
         window: window(2_000, 100),
@@ -304,7 +300,6 @@ fn each_responsive_type_listens_as_its_pdu_type_says() {
 
 fn connection_event(timing: ConnectionEventTiming, priority: u8) -> ConnectionEvent {
     ConnectionEvent {
-        id: EventId::new(4),
         connection: ConnectionId::new(0),
         channel: DataChannel::new(0).unwrap(),
         window: window(2_000, 1_000),
@@ -353,7 +348,6 @@ fn a_connection_event_waits_within_the_backend_and_keeps_its_priority() {
 fn a_test_payload_is_at_most_255_octets() {
     let payload = [0; 256];
     let test = |length: usize| TestTransmit {
-        id: EventId::new(5),
         channel: TestChannel::new(0).unwrap(),
         phy: TestPhy::Le1M,
         window: window(2_000, 100),

@@ -3,42 +3,21 @@
 #![recursion_limit = "256"]
 #[cfg(not(any(
     feature = "boot-smoke",
-    feature = "bluetooth-hil",
-    feature = "bluetooth-gatt",
-    feature = "bluetooth-secure-gatt",
     feature = "system-watchdog",
     feature = "system-panic-reset"
 )))]
-compile_error!(
-    "select boot-smoke, bluetooth-hil, bluetooth-gatt, bluetooth-secure-gatt, system-watchdog or system-panic-reset"
-);
-#[cfg(any(
-    all(feature = "bluetooth-hil", feature = "bluetooth-gatt"),
-    all(feature = "bluetooth-hil", feature = "bluetooth-secure-gatt"),
-    all(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt")
-))]
-compile_error!(
-    "select one Bluetooth image: bluetooth-hil, bluetooth-gatt or bluetooth-secure-gatt"
-);
-#[cfg(all(
-    feature = "system-watchdog",
-    any(feature = "boot-smoke", feature = "bluetooth-radio")
-))]
-compile_error!("system-watchdog requires an exclusive radio-free image");
+compile_error!("select boot-smoke, system-watchdog or system-panic-reset");
+#[cfg(all(feature = "system-watchdog", feature = "boot-smoke"))]
+compile_error!("system-watchdog requires an exclusive image");
 #[cfg(all(
     feature = "system-panic-reset",
     any(
         feature = "panic-hook",
         feature = "boot-smoke",
-        feature = "system-watchdog",
-        feature = "bluetooth-radio"
+        feature = "system-watchdog"
     )
 ))]
-compile_error!(
-    "system-panic-reset requires an exclusive radio-free image with the product panic entry"
-);
-#[cfg(all(feature = "bluetooth-radio", feature = "boot-smoke"))]
-compile_error!("Bluetooth requires exclusive radio composition");
+compile_error!("system-panic-reset requires an exclusive image with the product panic entry");
 
 use core::{arch::asm, ffi::CStr, ptr};
 
@@ -53,65 +32,26 @@ oer_espressif_staged_runtime::interrupt_table! {
     wake: ExecutorWake = FROM_CPU_INTR0 => oer_espressif_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
     alarm: TimeAlarm = TG0_T0_LEVEL => oer_espressif_executor_embassy::timer_interrupt, Priority1, ProCpu;
-    #[cfg(feature = "bluetooth-radio")]
-    /// The Bluetooth Controller's primary interrupt.
-    bluetooth_primary: BluetoothPrimary = MODEM_BT_MAC => oer_esp32s31_radio_esp_hal::bluetooth_primary_interrupt_handler, Priority3, ProCpu;
-    #[cfg(feature = "bluetooth-radio")]
-    /// The modem low-power timer, the Controller's deadline source.
-    bluetooth_timer: BluetoothTimer = MODEM_LP_TIMER => oer_esp32s31_radio_esp_hal::bluetooth_modem_lp_timer_interrupt_handler, Priority3, ProCpu;
-    #[cfg(feature = "bluetooth-radio")]
-    /// The Bluetooth Controller's NRT interrupt.
-    bluetooth_nrt: BluetoothNrt = MODEM_BT_MAC_INT1 => oer_esp32s31_radio_esp_hal::bluetooth_nrt_default_interrupt_handler, Priority3, ProCpu;
-    #[cfg(any(
-        feature = "system-watchdog",
-        feature = "system-panic-reset",
-        feature = "bluetooth-radio"
-    ))]
+    #[cfg(any(feature = "system-watchdog", feature = "system-panic-reset"))]
     /// The USB Serial/JTAG console, to esp-hal's async driver.
     console_usb: ConsoleUsb = USB_DEVICE => esp_hal::usb::usb_serial_jtag::handle_async_interrupt, Priority1, ProCpu;
 }
 
-#[cfg(feature = "bluetooth-radio")]
-mod bluetooth;
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 mod exception;
 mod fatal;
-#[cfg(any(
-    feature = "system-watchdog",
-    feature = "system-panic-reset",
-    feature = "bluetooth-radio"
-))]
+#[cfg(any(feature = "system-watchdog", feature = "system-panic-reset"))]
 mod image_features;
 mod software_interrupt;
-#[cfg(feature = "bluetooth-radio")]
-mod stack_evidence;
-#[cfg(any(
-    feature = "system-watchdog",
-    feature = "system-panic-reset",
-    feature = "bluetooth-radio"
-))]
+#[cfg(any(feature = "system-watchdog", feature = "system-panic-reset"))]
 mod system;
-#[cfg(trace_journal)]
-mod trace;
-#[cfg(any(
-    feature = "system-watchdog",
-    feature = "system-panic-reset",
-    feature = "bluetooth-radio"
-))]
+#[cfg(any(feature = "system-watchdog", feature = "system-panic-reset"))]
 mod transport;
-#[cfg(feature = "bluetooth-radio")]
-use oer_espressif_staged_runtime::stacks as psram_task_stack;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
-#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
-const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
-#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
-const STACK_PAINT_MARGIN_BYTES: u32 = 256;
-#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
-const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 
 const PROFILE_CODE_START: u32 = 0x5001_0000;
 const PROFILE_CODE_END: u32 = 0x5100_0000;
@@ -169,19 +109,16 @@ use oer_espressif_staged_runtime as _;
 
 /// The image's record of a panic, which the platform's panic entry calls
 /// after its own record and before it resets the chip (feature `panic-hook`):
-/// it freezes the trace and records the post-mortem fault and the machine
+/// it records the post-mortem fault and the machine
 /// state, formatting nothing, so the panic path stays a leaf in every stack
 /// bound. The next boot reports what it recorded.
 #[cfg(feature = "panic-hook")]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".flash.critical.text.panic_hook")]
 fn oer_platform_panic_hook(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
-    // The trace keeps what happened before the panic.
-    #[cfg(trace_journal)]
-    oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);
-    #[cfg(any(feature = "system-watchdog", feature = "bluetooth-radio"))]
+    #[cfg(feature = "system-watchdog")]
     system::postmortem::record_panic(details);
-    #[cfg(not(any(feature = "system-watchdog", feature = "bluetooth-radio")))]
+    #[cfg(not(feature = "system-watchdog"))]
     let _ = details;
     let stage = 0;
     fatal::record_panic(stage);
@@ -201,17 +138,11 @@ extern "C" fn runtime_main() -> ! {
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
     // Before anything records a checkpoint over the previous boot's record.
-    #[cfg(any(feature = "system-watchdog", feature = "bluetooth-radio"))]
+    #[cfg(feature = "system-watchdog")]
     system::postmortem::begin();
     // Before any boot evidence is served: taking it clears the record.
-    #[cfg(any(
-        feature = "system-watchdog",
-        feature = "system-panic-reset",
-        feature = "bluetooth-radio"
-    ))]
+    #[cfg(any(feature = "system-watchdog", feature = "system-panic-reset"))]
     system::take_platform_panic();
-    #[cfg(trace_journal)]
-    trace::install();
     // The bootstrap configured PSRAM before entering this separately linked
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live
@@ -231,29 +162,6 @@ extern "C" fn runtime_main() -> ! {
     // SAFETY: bootstrap intentionally hands MIE over clear, and timer and
     // software wake interrupt ownership is complete at this point.
     unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
-
-    #[cfg(feature = "bluetooth-radio")]
-    bluetooth::start(
-        executor,
-        interrupts.wake,
-        oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes::new(
-            interrupts.bluetooth_primary,
-            interrupts.bluetooth_timer,
-            interrupts.bluetooth_nrt,
-        ),
-        oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
-            peripherals.MODEM_SYSCON,
-            peripherals.MODEM_LPCON,
-            peripherals.HP_SYS_CLKRST,
-            peripherals.PMU,
-            peripherals.LP_AON_CLK_RST,
-            peripherals.LP_PERI,
-            peripherals.LP_TSENS,
-            peripherals.I2C_ANA_MST,
-        ),
-        transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb),
-        peripherals.RNG,
-    );
 
     #[cfg(feature = "system-panic-reset")]
     system::panic_reset::start(
@@ -376,64 +284,6 @@ fn current_stack_pointer() -> u32 {
     let value: usize;
     unsafe { asm!("mv {value}, sp", value = out(reg) value, options(nomem, nostack)) };
     value as u32
-}
-
-#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
-pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::system::StackWatermark {
-    let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
-    let cpu0_top = symbol(ptr::addr_of!(_stack_start));
-    let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
-    let cpu0_paint_end = cpu0_top.saturating_sub(STACK_PAINT_MARGIN_BYTES);
-
-    measure_stack(
-        cpu0_bottom,
-        cpu0_paint_start,
-        cpu0_paint_end,
-        cpu0_top,
-        stack_minimum_free_bytes(0),
-    )
-}
-
-#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
-fn measure_stack(
-    bottom: u32,
-    paint_start: u32,
-    paint_end: u32,
-    top: u32,
-    minimum_free_bytes: u32,
-) -> oer_hil_protocol::system::StackWatermark {
-    if bottom >= paint_start || paint_start >= paint_end || paint_end > top {
-        fail(c"OPEN_RADIO_HIL runtime=FAIL reason=stack-paint-layout\r\n");
-    }
-    let mut lowest_used = paint_end;
-    let mut address = paint_start;
-    while address < paint_end {
-        let word = unsafe { (address as usize as *const u32).read_volatile() };
-        if word != STACK_PAINT_WORD {
-            lowest_used = address;
-            break;
-        }
-        address += 4;
-    }
-    oer_hil_protocol::system::StackWatermark {
-        capacity_bytes: top - bottom,
-        free_bytes: lowest_used - paint_start,
-        used_bytes: (top - bottom) - (lowest_used - paint_start),
-        minimum_free_bytes,
-    }
-}
-
-#[cfg(any(feature = "bluetooth-gatt", feature = "bluetooth-secure-gatt"))]
-fn stack_minimum_free_bytes(cpu: u8) -> u32 {
-    let value = match cpu {
-        0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),
-        1 => option_env!("OPEN_RADIO_CPU1_STACK_MINIMUM_FREE_BYTES"),
-        _ => None,
-    }
-    .expect("HIL runner must provide each target stack headroom policy");
-    value
-        .parse::<u32>()
-        .expect("stack headroom policy must be an unsigned byte count")
 }
 
 /// Halt the image unless the TRNG produces health-tested entropy.

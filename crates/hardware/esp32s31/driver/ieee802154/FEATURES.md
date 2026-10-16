@@ -69,7 +69,8 @@ HOST-ONLY scopes and are not capabilities admitted by the radio/MAC gate.
 
 ## Ownership and readiness
 
-Canonical section: `ieee802154-ownership-and-readiness`. The HAL, PAC, MAC
-engine and runtime become a service only through the
-[IEEE 802.15.4 system](../../../../composition/esp32s31/embassy/ieee802154/README.md),
-which joins them to the shared radio.
+Canonical section: `ieee802154-ownership-and-readiness`. The HAL, PAC and MAC
+engine are not a service: the former role, runtime and composition that
+joined them to the shared radio were deleted (#770, tag
+`legacy-radio-2026-10-16`); the engine records their
+[bring-up order](../../../espressif/ieee802154/engine/README.md#bring-up-and-teardown-order).

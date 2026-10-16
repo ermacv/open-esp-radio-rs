@@ -22,13 +22,11 @@ wifi = [
     "dep:rsn",
     "dep:rsn-service",
 ]
-bluetooth = ["dep:hci", "dep:hci-transport", "dep:le-ll"]
+bluetooth = ["dep:hci", "dep:le-ll"]
 ieee802154 = ["dep:ieee802154"]
 esp32s31 = ["dep:chip-hal"]
 esp32s31-bluetooth = ["esp32s31", "bluetooth", "dep:chip-bluetooth"]
 esp32s31-ieee802154 = ["esp32s31", "ieee802154", "dep:chip-ieee802154"]
-embassy-ieee802154 = ["esp32s31-ieee802154", "dep:ieee802154-composition", "dep:radio-system"]
-openthread = ["embassy-ieee802154", "dep:ieee802154-openthread"]
 
 [package.metadata.open-radio]
 layer = "facade"
@@ -43,8 +41,6 @@ supported-feature-profiles = [
     "ieee802154,esp32s31",
     "esp32s31-bluetooth,ieee802154",
     "esp32s31-ieee802154",
-    "embassy-ieee802154",
-    "openthread",
 ]
 
 [dependencies]
@@ -58,15 +54,11 @@ ap = { package = "oer-ieee80211-ap", path = "../protocols/ieee80211/ap", optiona
 rsn = { package = "oer-ieee80211-rsn", path = "../protocols/ieee80211/security/rsn", optional = true }
 rsn-service = { package = "oer-ieee80211-rsn-service", path = "../services/ieee80211/rsn", optional = true }
 hci = { package = "oer-bluetooth-hci", path = "../protocols/bluetooth/hci", optional = true }
-hci-transport = { package = "oer-bluetooth-hci-transport", path = "../services/bluetooth/hci/transport", optional = true }
 le-ll = { package = "oer-bluetooth-ll", path = "../protocols/bluetooth/le/ll", optional = true }
 ieee802154 = { package = "oer-ieee802154", path = "../protocols/ieee802154", optional = true }
 chip-hal = { package = "oer-esp32s31-hal", path = "../hardware/esp32s31/hal", optional = true }
 chip-bluetooth = { package = "oer-esp32s31-bluetooth", path = "../hardware/esp32s31/driver/bluetooth", optional = true }
 chip-ieee802154 = { package = "oer-espressif-ieee802154-engine", path = "../hardware/espressif/ieee802154/engine", optional = true }
-ieee802154-composition = { package = "oer-esp32s31-ieee802154-system", path = "../composition/esp32s31/embassy/ieee802154", optional = true }
-radio-system = { package = "oer-esp32s31-radio-system", path = "../composition/esp32s31/embassy/radio", optional = true }
-ieee802154-openthread = { package = "oer-ieee802154-openthread", path = "../adapters/openthread/ieee802154", optional = true }
 
 [lints]
 workspace = true

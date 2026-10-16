@@ -2,13 +2,14 @@
 //! `oer-radio-port` ([`Owner`](oer_radio_port::Owner),
 //! [`PortBody`](oer_radio_port::PortBody)).
 //!
-//! Every refusal of the former command port that a caller's own state
+//! Every refusal of the former command port (its `CommandError`, tag
+//! `legacy-radio-2026-10-16`) that a caller's own state
 //! explains is a type here ([ownership and refusals]); what the world
 //! controls (the air, time, the hardware) stays a typed outcome. A backend
-//! implements [`Ieee802154Backend`]; the Espressif runtime's is
-//! `Ieee802154RuntimeBackend`.
+//! implements [`Ieee802154Backend`]; no Espressif backend implements it
+//! now, the former runtime's was deleted (#770).
 //!
-//! | Refusal of the port trait | Form here |
+//! | Refusal of the former command port | Form here |
 //! | --- | --- |
 //! | lifecycle refusals, `CommandError::Disabled`, `AlreadyEnabled`, `Quiesced` | the owner's state; the shape has no quiesce |
 //! | `CommandError::Busy` (the caller's own operation runs) | the operation permit ([`Ieee802154Client::operation`], awaited in arrival order across the interfaces): a submission moves it into the backend's [`OperationPermits`], which gives it back when it takes the operation's terminal |

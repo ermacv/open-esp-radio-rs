@@ -1,6 +1,6 @@
 use core::ops::{BitAnd, BitOr, BitOrAssign};
 
-use crate::{Configuration, InterfaceSetting, TxMode};
+use crate::TxMode;
 
 /// A capability image contained bits unknown to this API version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,11 +47,10 @@ impl RadioCapabilities {
     pub const TRANSMIT_RETRIES: Self = Self(1 << 10);
     /// Reception in a window that opens at a monotonic radio time.
     pub const SCHEDULED_RECEIVE: Self = Self(1 << 11);
-    /// More than one addressing interface
-    /// ([`Configuration::Interface`], [`TxRequest::interface`](crate::TxRequest::interface)).
+    /// More than one addressing interface ([`Interface`](crate::Interface)).
     pub const MULTI_PAN: Self = Self(1 << 12);
     /// Network time written into a transmitted frame's Time IE at its SFD
-    /// ([`TxRequest::time_sync`](crate::TxRequest::time_sync)).
+    /// ([`TimeSync`](crate::TimeSync)).
     pub const TIME_SYNC: Self = Self(1 << 13);
 
     /// The bits this contract publishes; the image has room for more.
@@ -92,43 +91,6 @@ impl RadioCapabilities {
                 self.contains(Self::SCHEDULED_TRANSMIT)
                     && (!cca || self.contains(Self::CLEAR_CHANNEL_ASSESSMENT))
             }
-        }
-    }
-
-    /// Whether this controller supports the optional part of a configuration
-    /// update. Address filtering itself is a baseline operation.
-    pub const fn supports_configuration(self, configuration: Configuration) -> bool {
-        match configuration {
-            Configuration::Promiscuous(_) => self.contains(Self::PROMISCUOUS),
-            Configuration::AutomaticAcknowledgement(_) => {
-                self.contains(Self::AUTOMATIC_ACKNOWLEDGEMENT)
-            }
-            Configuration::PendingMode(_)
-            | Configuration::AddPendingAddress(_)
-            | Configuration::RemovePendingAddress(_)
-            | Configuration::ResetPendingTable(_) => self.contains(Self::SOURCE_MATCH),
-            Configuration::Interface { setting, .. } => {
-                self.contains(Self::MULTI_PAN) && self.supports_interface_setting(setting)
-            }
-            Configuration::PanId(_)
-            | Configuration::ShortAddress(_)
-            | Configuration::ExtendedAddress(_)
-            | Configuration::PanCoordinator(_) => true,
-        }
-    }
-
-    /// Whether this controller supports the optional part of one interface
-    /// setting, apart from multi-PAN itself.
-    pub const fn supports_interface_setting(self, setting: InterfaceSetting) -> bool {
-        match setting {
-            InterfaceSetting::PendingMode(_)
-            | InterfaceSetting::AddPendingAddress(_)
-            | InterfaceSetting::RemovePendingAddress(_)
-            | InterfaceSetting::ResetPendingTable(_) => self.contains(Self::SOURCE_MATCH),
-            InterfaceSetting::PanId(_)
-            | InterfaceSetting::ShortAddress(_)
-            | InterfaceSetting::ExtendedAddress(_)
-            | InterfaceSetting::Enabled(_) => true,
         }
     }
 }

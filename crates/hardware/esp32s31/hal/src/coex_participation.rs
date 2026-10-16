@@ -7,7 +7,8 @@
 //! its [`CoexAbsent`]: it cannot leave power while it takes part. External
 //! coexistence takes part with its own [`ExternalCoexistence`]. The
 //! arbiter's participant set follows these states; the coexistence policy
-//! acts on it in the radio system.
+//! acts on it in the shared radio's owner (the `oer-espressif-coex` README
+//! records the participant policy).
 //!
 //! Coexistence does not depend on the client's common power: Wi-Fi enables
 //! it before entering power, Bluetooth after its PHY engine and IEEE 802.15.4
@@ -83,7 +84,7 @@ impl<K: RadioClientKind> CoexAbsent<K> {
 }
 
 /// Client `K` takes part in coexistence.
-#[must_use = "coexistence is left through the radio system"]
+#[must_use = "coexistence is left through the shared radio's owner"]
 #[derive(Debug)]
 pub struct Coexisting<K: RadioClientKind> {
     _client: PhantomData<fn() -> K>,
@@ -97,7 +98,7 @@ impl<K: RadioClientKind> Coexisting<K> {
 }
 
 /// External coexistence takes part in coexistence.
-#[must_use = "external coexistence is stopped through the radio system"]
+#[must_use = "external coexistence is stopped through the shared radio's owner"]
 #[derive(Debug)]
 pub struct ExternalCoexistence {
     _private: (),

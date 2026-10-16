@@ -186,8 +186,9 @@ fn short_hash(hash: &str) -> &str {
 }
 
 /// The newest flash of every board, in order of first appearance, and the
-/// newest event of every startup-artifact host file. The artifact is a host
-/// file uploaded at each boot, so it belongs to a checkout, not to a board.
+/// newest recorded event of every startup-artifact host file. The artifact
+/// was a host file belonging to a checkout, not to a board; no current image
+/// uploads or writes it, so only earlier records name one.
 pub fn latest(events: &[BoardEvent]) -> (Vec<&BoardEvent>, Vec<&BoardEvent>) {
     let flashes = newest_per_key(events, |event| match &event.kind {
         BoardEventKind::Flashed { .. } => Some(event.device.as_deref()),

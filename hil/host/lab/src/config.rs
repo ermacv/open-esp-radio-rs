@@ -114,7 +114,6 @@ pub struct DeviceConfig {
     /// outlives its port name, which a reset can change.
     pub mac: String,
     pub serial: PathBuf,
-    pub startup_artifact: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -343,7 +342,6 @@ impl LabConfig {
         let device_serial = resolve(board)?;
         let device_mac = board.mac()?.to_string();
         let device_id = board.id.clone();
-        let device_startup_artifact = board.startup_artifact.clone();
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
             return Err("HIL station SSID must contain 1..=32 bytes".into());
         }
@@ -465,13 +463,6 @@ impl LabConfig {
             }
             RawStationFixtureConfig::External { phys } => validate_phys("external", phys)?,
         }
-        let startup_artifact = device_startup_artifact.map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        });
         let station = StationConfig {
             ssid: Zeroizing::new(std::mem::take(&mut raw.station.ssid)),
             passphrase: Zeroizing::new(std::mem::take(&mut raw.station.passphrase)),
@@ -511,7 +502,6 @@ impl LabConfig {
                 id: device_id,
                 mac: device_mac,
                 serial: device_serial,
-                startup_artifact,
             },
             station,
             access_point,
@@ -771,7 +761,6 @@ impl LabConfig {
                 id: String::from("test-device"),
                 mac: String::from("30:ED:A0:00:00:FF"),
                 serial: PathBuf::from("/dev/ttyACM0"),
-                startup_artifact: None,
             },
             station: StationConfig {
                 ssid: Zeroizing::new(String::from("test-network")),

@@ -118,8 +118,8 @@ impl<'a> Context<'a> {
         self.capture_of(self.lab, output)
     }
 
-    /// [`Self::capture`] of the board under test as `dut` describes it: the
-    /// laboratory with a boot-specific setting such as its startup artifact.
+    /// [`Self::capture`] of the board under test as `dut` describes it, which
+    /// may differ from the laboratory's in its console or reset path.
     pub fn capture_of(&self, dut: &dyn Dut, output: &Path) -> Result<SerialCapture> {
         oer_process::check_cancelled()?;
         let relative = output

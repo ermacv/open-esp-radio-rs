@@ -75,10 +75,10 @@ impl<'de> Deserialize<'de> for RunId {
     }
 }
 
-/// A sealed run that evidence names: its ID and the SHA-256 of its
-/// bundle, the reference the evidence archive checks (#761 Q7).
+/// A sealed run that evidence names: its ID and the SHA-256 of its seal
+/// (`integrity.json`), the reference the evidence archive checks (#761 Q7).
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RunRef {
     pub run: RunId,
     pub sha256: Sha256,
@@ -86,10 +86,12 @@ pub struct RunRef {
 
 /// Whether a span's samples support its quantile.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "support")]
+#[serde(rename_all = "kebab-case", tag = "support", deny_unknown_fields)]
 pub enum Support {
-    /// At least the samples [`QUANTILE`] at [`CONFIDENCE`] needs.
-    Measured,
+    /// At least the samples [`QUANTILE`] at [`CONFIDENCE`] needs. A struct
+    /// variant, so `deny_unknown_fields` reaches it too: an internally
+    /// tagged unit variant would accept any extra field.
+    Measured {},
     /// Too few samples so far; why the span is used anyway. Every plan that
     /// uses it carries the label.
     Provisional { reason: String },
@@ -210,7 +212,7 @@ impl TryFrom<RawStandProfile> for StandProfile {
                 errors.push(ProfileError::NoEvidence(name.clone()));
             }
             match &span.support {
-                Support::Measured if span.samples < required => {
+                Support::Measured {} if span.samples < required => {
                     errors.push(ProfileError::Unsupported {
                         span: name.clone(),
                         samples: span.samples,
@@ -248,7 +250,7 @@ impl StandProfile {
             .get(name)
             .ok_or_else(|| WaitError::NoSpan(name.clone()))?;
         let provisional = match &span.support {
-            Support::Measured => None,
+            Support::Measured {} => None,
             Support::Provisional { reason } => Some(Provisional {
                 span: name.clone(),
                 reason: reason.clone(),
@@ -296,7 +298,10 @@ pub(crate) mod tests {
     fn too_few_samples_cannot_claim_support() {
         let flash = name!(SpanName, "flash.application");
         assert_eq!(
-            profile(vec![(flash.clone(), span(25_000_000, Support::Measured))]),
+            profile(vec![(
+                flash.clone(),
+                span(25_000_000, Support::Measured {})
+            )]),
             Err(ProfileErrors(vec![ProfileError::Unsupported {
                 span: flash.clone(),
                 samples: 201,
@@ -357,6 +362,66 @@ pub(crate) mod tests {
         let text = r#"{"spans":{"boot-to-hello":{"maximum-micros":1,"samples":1,"margin":[1,1],
             "margin-reason":"r","support":{"support":"measured"},"evidence":[]}}}"#;
         assert!(serde_json::from_str::<StandProfile>(text).is_err());
+    }
+
+    /// A field no reader knows is refused at every level, so a run reference
+    /// reaches the profile only through `evidence`, the field
+    /// `cargo qualification check references` will read once a profile is
+    /// tracked (owner decision 6226361520 on #761).
+    #[test]
+    fn a_profile_refuses_fields_it_does_not_read() {
+        let provisional = Support::Provisional {
+            reason: "first".into(),
+        };
+        let valid = profile(vec![(
+            name!(SpanName, "boot-to-hello"),
+            span(900_000, provisional),
+        )])
+        .unwrap();
+        let value = serde_json::to_value(&valid).unwrap();
+        assert_eq!(
+            serde_json::from_value::<StandProfile>(value.clone()).unwrap(),
+            valid
+        );
+        // Both supports refuse an unknown field: `Provisional` here, and a
+        // measured span below.
+        let mut measured = value.clone();
+        measured["spans"]["boot-to-hello"]["support"] = serde_json::json!({"support": "measured"});
+        assert_eq!(
+            serde_json::from_value::<RawStandProfile>(measured.clone())
+                .unwrap()
+                .spans
+                .values()
+                .next()
+                .unwrap()
+                .support,
+            Support::Measured {}
+        );
+        measured["spans"]["boot-to-hello"]["support"]["cited-runs"] = serde_json::json!([]);
+        let error = serde_json::from_value::<RawStandProfile>(measured).unwrap_err();
+        assert!(
+            error.to_string().contains("unknown field"),
+            "measured: {error}"
+        );
+        for pointer in [
+            "",
+            "/spans/boot-to-hello",
+            "/spans/boot-to-hello/support",
+            "/spans/boot-to-hello/evidence/0",
+        ] {
+            let mut extended = value.clone();
+            extended
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("cited-runs".into(), serde_json::json!([]));
+            let error = serde_json::from_value::<StandProfile>(extended).unwrap_err();
+            assert!(
+                error.to_string().contains("unknown field"),
+                "{pointer}: {error}"
+            );
+        }
     }
 
     #[test]

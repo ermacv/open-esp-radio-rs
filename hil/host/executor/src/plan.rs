@@ -442,7 +442,7 @@ mod tests {
             samples: 3_000,
             margin: Factor::ONE,
             margin_reason: "test".into(),
-            support: Support::Measured,
+            support: Support::Measured {},
             evidence: vec![RunRef {
                 run: RunId::parse("1788729094522-000d170b").unwrap(),
                 sha256: Sha256([0; 32]),

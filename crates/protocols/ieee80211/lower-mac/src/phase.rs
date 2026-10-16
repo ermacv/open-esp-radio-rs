@@ -414,6 +414,12 @@ pub type AggregateCompleted<'id, P> = crate::Completed<
     <P as PhaseTypes<'id>>::TxAggregate,
     PhaseAggregateOutcome<'id, P>,
 >;
+/// A receive Block Ack slot of the phase types `P`.
+pub type PhaseBlockAckSlot<'id, P> =
+    <<P as PhaseTypes<'id>>::BlockAckPool as crate::association::RxBlockAckPool>::Slot<
+        'id,
+        <P as PhaseTypes<'id>>::BlockAckPath,
+    >;
 /// The outcome of a single MPDU in the phase types `P`.
 pub type PhaseSingleOutcome<'id, P> =
     crate::SingleOutcome<<P as PhaseTypes<'id>>::AckEvidence, <P as PhaseTypes<'id>>::AirDenied>;
@@ -427,10 +433,10 @@ pub type PhaseAggregateOutcome<'id, P> = crate::AggregateOutcome<
 /// depend on the install alone, so a caller holds them across the phase's
 /// lends ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131533566)).
 pub trait KeyTypes<'id> {
-    /// Total PTK slots in the same installation pool as the association owner.
-    const PAIRWISE_SLOTS: usize;
-    /// Total GTK slots in that pool, including slots unused by a consumer.
-    const GROUP_SLOTS: usize;
+    /// The installation pool of this role's association domain: its
+    /// [`KeyPool`](crate::association::KeyPool) constants are the key
+    /// capacity.
+    type Pool: crate::association::KeyPool;
     /// The one affine permission to choose this association's SPP mode.
     type AssociationStart: 'id;
     /// Immutable association owner required by every PTK/GTK installation.
@@ -468,9 +474,9 @@ pub trait KeyTypes<'id> {
     >;
     /// The role's affine pairwise key slots (an access point's: its
     /// association identifiers).
-    type PairwiseSlot: 'id;
+    type PairwiseSlot: crate::association::AssociationSlot<Pool = Self::Pool> + 'id;
     /// The role's affine group key slots, retained through removal.
-    type GroupSlot: 'id;
+    type GroupSlot: crate::association::AssociationSlot<Pool = Self::Pool> + 'id;
     /// An installed pairwise key, which holds its slot.
     type PairwiseKey: 'id;
     /// An installed group key, which holds its slot.
@@ -723,14 +729,14 @@ pub trait PhaseTypes<'id>: Sized {
     /// hardware shares between its roles (owner decision, Claude Code chat
     /// with common, 2026-10-12).
     type BlockAckKind;
-    /// The receive Block Ack slots the install mints: the `N` of its
-    /// `Slots<BlockAckKind, N>` pool, the one source of that capacity.
-    /// Running out is a missing slot token, never a comparison with this
-    /// number: no agreement is accepted without a slot
+    /// The install's pool of receive Block Ack slots, `BlockAckSlots<K, N>`:
+    /// its slots name its size, so its
+    /// [`RxBlockAckPool::LEN`](crate::association::RxBlockAckPool::LEN) is the
+    /// capacity of the slots the backend actually mints. No agreement is
+    /// accepted without a slot. Key capacity is likewise each role's
+    /// [`KeyTypes::Pool`], which its slot types name
     /// ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225755828)).
-    /// Key capacity is likewise [`KeyTypes::PAIRWISE_SLOTS`] and
-    /// [`KeyTypes::GROUP_SLOTS`] of each role.
-    const RX_BLOCK_ACK_SLOTS: usize;
+    type BlockAckPool: crate::association::RxBlockAckPool<Kind = Self::BlockAckKind>;
     /// A running receive Block Ack agreement, which holds its slot.
     type BlockAck;
 }
@@ -1163,11 +1169,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     #[must_use = "an agreement holds its slot; dropping it loses the slot until the next install"]
     fn add_block_ack(
         &mut self,
-        slot: Slot<
-            'id,
-            <Self::Types as PhaseTypes<'id>>::BlockAckKind,
-            <Self::Types as PhaseTypes<'id>>::BlockAckPath,
-        >,
+        slot: PhaseBlockAckSlot<'id, Self::Types>,
         agreement: SupportedBlockAck<Self::Caps>,
     ) -> <Self::Types as PhaseTypes<'id>>::BlockAck;
 
@@ -1187,11 +1189,7 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     fn remove_block_ack(
         &mut self,
         agreement: <Self::Types as PhaseTypes<'id>>::BlockAck,
-    ) -> Slot<
-        'id,
-        <Self::Types as PhaseTypes<'id>>::BlockAckKind,
-        <Self::Types as PhaseTypes<'id>>::BlockAckPath,
-    >;
+    ) -> PhaseBlockAckSlot<'id, Self::Types>;
 }
 
 /// The station interface of a running phase.
@@ -1574,16 +1572,18 @@ impl<R> RetryPlan<R> {
     /// ```
     pub fn limit(mut self, transmissions: core::num::NonZeroU8) -> Self {
         let first = self.first.transmissions.min(transmissions);
-        let mut left = first.get()..transmissions.get();
+        // The budget left after the first stage; it only shrinks, so once a
+        // stage is dropped every later one is too: the occupied cells stay a
+        // prefix.
+        // `first` is at most `transmissions`, so this is their difference.
+        let mut left = transmissions.get().abs_diff(first.get());
         self.first.transmissions = first;
-        // The budget only shrinks, so once a stage is dropped every later
-        // one is too: the occupied cells stay a prefix.
         for cell in &mut self.rest {
-            let taken = cell.as_ref().map_or(0, |stage| {
-                left.by_ref()
-                    .take(usize::from(stage.transmissions.get()))
-                    .count() as u8
-            });
+            let taken = cell
+                .as_ref()
+                .map_or(0, |stage| stage.transmissions.get().min(left));
+            // `taken` is at most `left`.
+            left = left.abs_diff(taken);
             match (cell.as_mut(), core::num::NonZeroU8::new(taken)) {
                 (Some(stage), Some(taken)) => stage.transmissions = taken,
                 (_, None) => *cell = None,

@@ -25,6 +25,135 @@ struct OwnerKind<R, const P: usize, const G: usize>(PhantomData<R>);
 struct PairwiseKind<R, const P: usize, const G: usize>(PhantomData<R>);
 struct GroupKind<R, const P: usize, const G: usize>(PhantomData<R>);
 
+mod sealed {
+    /// Only this crate's slot and pool types bind a capacity.
+    pub trait Sealed {}
+}
+
+/// The key slots one association domain's pool mints: its capacity, known
+/// at compile time
+/// ([owner decision on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225755828)).
+pub trait KeyPool {
+    /// The PTK slots.
+    const PAIRWISE_SLOTS: usize;
+    /// The GTK slots, including slots unused by a consumer.
+    const GROUP_SLOTS: usize;
+}
+
+impl<R, const P: usize, const G: usize> KeyPool for AssociationPool<R, P, G> {
+    const PAIRWISE_SLOTS: usize = P;
+    const GROUP_SLOTS: usize = G;
+}
+
+/// A key slot, which names the pool that minted it. Only
+/// [`PairwiseKeySlot`] and [`GroupKeySlot`] implement it, so a backend's
+/// declared [`KeyTypes::Pool`](crate::KeyTypes::Pool) is the pool its slots
+/// actually come from: a declaration of another size does not compile.
+///
+/// ```compile_fail,E0271
+/// use oer_ieee80211_lower_mac::{Station, association::*};
+/// fn declared<S: AssociationSlot<Pool = AssociationPool<Station, 1, 4>>>() {}
+/// declared::<PairwiseKeySlot<'static, Station, 2, 2>>();
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::{Station, association::*};
+/// fn declared<S: AssociationSlot<Pool = AssociationPool<Station, 2, 2>>>() {}
+/// declared::<PairwiseKeySlot<'static, Station, 2, 2>>();
+/// declared::<GroupKeySlot<'static, Station, 2, 2>>();
+/// ```
+pub trait AssociationSlot: sealed::Sealed {
+    /// The pool that minted the slot.
+    type Pool: KeyPool;
+}
+
+impl<R: InterfaceRole, const P: usize, const G: usize, Path: PoolPath> sealed::Sealed
+    for PairwiseKeySlot<'_, R, P, G, Path>
+{
+}
+impl<R: InterfaceRole, const P: usize, const G: usize, Path: PoolPath> AssociationSlot
+    for PairwiseKeySlot<'_, R, P, G, Path>
+{
+    type Pool = AssociationPool<R, P, G>;
+}
+impl<R: InterfaceRole, const P: usize, const G: usize, Path: PoolPath> sealed::Sealed
+    for GroupKeySlot<'_, R, P, G, Path>
+{
+}
+impl<R: InterfaceRole, const P: usize, const G: usize, Path: PoolPath> AssociationSlot
+    for GroupKeySlot<'_, R, P, G, Path>
+{
+    type Pool = AssociationPool<R, P, G>;
+}
+
+/// The receive Block Ack slots of an install: `N` slots of kind `K`, each a
+/// [`BlockAckSlot`] that names `N`. It is the only pool those slots come
+/// from, so its `N` is the capacity, known at compile time.
+pub struct BlockAckSlots<K, const N: usize>(PhantomData<fn() -> K>);
+
+impl<K, const N: usize> PoolSet for BlockAckSlots<K, N> {
+    type Pools<'id, Path: PoolPath> = [BlockAckSlot<'id, K, N, Path>; N];
+    fn build<'id, Path: PoolPath>(builder: PoolBuilder<'id, Path>) -> Self::Pools<'id, Path> {
+        builder
+            .into_pools::<Slots<K, N>>()
+            .map(|slot| BlockAckSlot { slot })
+    }
+}
+
+/// One receive Block Ack slot of a pool of `N`: an agreement holds it.
+/// Only [`BlockAckSlots`] mints it.
+#[must_use = "a Block Ack slot is capacity; dropping it loses it until the next install"]
+pub struct BlockAckSlot<'id, K, const N: usize, Path: PoolPath = Root> {
+    slot: Slot<'id, K, Path>,
+}
+
+impl<K, const N: usize, Path: PoolPath> BlockAckSlot<'_, K, N, Path> {
+    /// The slot's index in its pool, for the backend that places the
+    /// agreement.
+    pub fn index(&self) -> u8 {
+        self.slot.index()
+    }
+}
+
+/// The pool of an install's receive Block Ack slots, with its capacity and
+/// slot type. Only [`BlockAckSlots`] implements it, so
+/// [`PhaseTypes::BlockAckPool`](crate::PhaseTypes::BlockAckPool) names the
+/// slots the backend mints: a slot of a pool of another size is another
+/// type.
+///
+/// ```compile_fail,E0308
+/// use oer_ieee80211_lower_mac::association::*;
+/// type Declared = BlockAckSlots<u8, 4>;
+/// fn take<'id>(_: <Declared as RxBlockAckPool>::Slot<'id, oer_radio_port::Root>) {}
+/// fn give<'id>(minted: BlockAckSlot<'id, u8, 2>) {
+///     take(minted)
+/// }
+/// ```
+///
+/// ```
+/// use oer_ieee80211_lower_mac::association::*;
+/// type Declared = BlockAckSlots<u8, 2>;
+/// fn take<'id>(_: <Declared as RxBlockAckPool>::Slot<'id, oer_radio_port::Root>) {}
+/// fn give<'id>(minted: BlockAckSlot<'id, u8, 2>) {
+///     take(minted)
+/// }
+/// ```
+pub trait RxBlockAckPool: sealed::Sealed {
+    /// The kind of the slots.
+    type Kind;
+    /// The slots the pool mints.
+    const LEN: usize;
+    /// One slot of the pool, of the install component `Path`.
+    type Slot<'id, Path: PoolPath>;
+}
+
+impl<K, const N: usize> sealed::Sealed for BlockAckSlots<K, N> {}
+impl<K, const N: usize> RxBlockAckPool for BlockAckSlots<K, N> {
+    type Kind = K;
+    const LEN: usize = N;
+    type Slot<'id, Path: PoolPath> = BlockAckSlot<'id, K, N, Path>;
+}
+
 /// One independently configured association domain and all of its key slots.
 /// Interface-scoped hardware assigns one domain to the whole interface.
 pub struct AssociationPool<R, const P: usize, const G: usize>(PhantomData<R>);

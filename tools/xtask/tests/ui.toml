@@ -54,20 +54,27 @@ cases = [
 
 [[suite]]
 name = "rate-capabilities"
-packages = ["oer-ieee80211-lower-mac"]
+packages = ["oer-ieee80211-lower-mac", "oer-radio-port"]
 features = []
 targets = ["host", "esp32s31"]
 cases = [
     "crates/protocols/ieee80211/lower-mac/tests/ui/frame_capabilities.rs",
     "crates/protocols/ieee80211/lower-mac/tests/ui/rate_capabilities.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/block_ack_pool_fake.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/block_ack_pool_size.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/key_slot_fake.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/key_pool_size.rs",
 ]
 
 [[suite]]
 name = "rate-selection"
-packages = ["oer-espressif-ieee80211-policy", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac"]
+packages = ["oer-espressif-ieee80211-policy", "oer-ieee80211-lower-mac", "oer-ieee80211-upper-mac", "oer-time"]
 features = []
 targets = ["host", "esp32s31"]
-cases = ["crates/protocols/espressif/ieee80211/policy/tests/ui/ack_snr_required.rs"]
+cases = [
+    "crates/protocols/espressif/ieee80211/policy/tests/ui/ack_snr_required.rs",
+    "crates/protocols/espressif/ieee80211/policy/tests/ui/block_ack_snr_required.rs",
+]
 
 [[suite]]
 name = "ccmp-key-owner"
@@ -123,6 +130,7 @@ targets = ["host", "esp32s31"]
 cases = [
     "crates/protocols/ieee80211/lower-mac/tests/ui/accepted_owner.rs",
     "crates/protocols/ieee80211/lower-mac/tests/ui/terminal_reconstruction.rs",
+    "crates/protocols/ieee80211/lower-mac/tests/ui/single_aggregate_outcome.rs",
     "crates/protocols/ieee80211/lower-mac/tests/ui/disable_rx.rs",
     "crates/runtime/ieee80211/tests/ui/accepted_mpdu.rs",
     "crates/runtime/ieee80211/tests/ui/execution_projection.rs",

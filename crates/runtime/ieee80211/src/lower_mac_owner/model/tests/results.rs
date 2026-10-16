@@ -208,7 +208,18 @@ impl Work for Results {
             assert_eq!(ticket.index(), original_ticket);
             assert_eq!(buffer.slot.index(), original_buffer);
         }
-        assert_eq!(air.sent().len(), 2, "one publication per attempt");
+        // One transmission per attempt that reached the air: a denied one
+        // did not.
+        let on_air = if matches!(self.result, AirAnswer::AirDenied) {
+            1
+        } else {
+            2
+        };
+        assert_eq!(
+            air.sent().len(),
+            on_air,
+            "one transmission per attempt on the air"
+        );
     }
 }
 

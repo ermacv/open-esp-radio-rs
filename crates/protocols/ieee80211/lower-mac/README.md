@@ -170,7 +170,17 @@ back; its operations are synchronous and never wait:
   receive Block Ack agreement is a token that holds its slot, replaced or
   removed by value. Its slot holds desired state: repeated add/replace/remove
   writes coalesce to the latest value before the driver's next command.
-  They occupy no command slots. The command bound is tickets + twice the
+  They occupy no command slots. Their capacity is fixed by the types of the
+  slots themselves, known at compile time. A key slot (`PairwiseKeySlot`,
+  `GroupKeySlot`) names its `AssociationPool<R, P, G>` through the sealed
+  `AssociationSlot`, and `KeyTypes::Pool` must be that pool (`KeyPool`'s
+  `PAIRWISE_SLOTS` and `GROUP_SLOTS`). A receive Block Ack slot is a
+  `BlockAckSlot<'id, K, N>` that only the pool `BlockAckSlots<K, N>` mints,
+  and `PhaseTypes::BlockAckPool` must be that pool (`RxBlockAckPool::LEN`).
+  A declared capacity other than the minted one does not compile, the
+  capabilities carry no copy of these counts, and running out is a missing
+  slot token, never a comparison
+  ([owner decisions on #764](https://github.com/ermacv/open-esp-radio-rs/issues/764#issuecomment-6225755828)). The command bound is tickets + twice the
   pairwise slots + one GTK permission per interface + configure permissions
   + TSF permissions + two gate commands. The terminal bound is tickets +
   pairwise slots + GTK permissions + gate closing + configure permissions

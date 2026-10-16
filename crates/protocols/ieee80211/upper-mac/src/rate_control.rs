@@ -11,7 +11,7 @@
 
 use core::num::NonZeroU16;
 
-use oer_ieee80211_lower_mac::{LinkMetric, SnrSample};
+use oer_ieee80211_lower_mac::{BlockAckSnr, LinkMetric};
 use oer_ieee80211_mac::{
     he::{He20Capabilities, He20PeerState},
     ht::HtPeerCapabilities,
@@ -105,10 +105,13 @@ pub struct AmpduUnavailable;
 /// A zero-count observation cannot reach a controller:
 ///
 /// ```compile_fail,E0061
-/// use oer_ieee80211_lower_mac::SnrSample;
 /// use oer_ieee80211_upper_mac::rate_control::RateControl;
-/// fn empty<C: RateControl>(control: &mut C, now: oer_time::Instant) {
-///     control.observe_ampdu(now, 0, 0, SnrSample::Unmeasured);
+/// fn empty<C: RateControl, B: oer_ieee80211_lower_mac::BlockAckSnr>(
+///     control: &mut C,
+///     now: oer_time::Instant,
+///     ack: &B,
+/// ) {
+///     control.observe_ampdu(now, 0, 0, ack);
 /// }
 /// ```
 ///
@@ -125,16 +128,22 @@ pub struct AmpduUnavailable;
 ///
 /// ```
 /// use core::num::NonZeroU16;
-/// use oer_ieee80211_lower_mac::SnrSample;
+/// use oer_ieee80211_lower_mac::{BlockAckSnr, SnrSample};
 /// use oer_ieee80211_upper_mac::rate_control::{
 ///     AmpduUnavailable, BlockAckTally, MpduOutcome, RateControl,
 /// };
+/// struct Measured(i8);
+/// impl BlockAckSnr for Measured {
+///     fn snr_sample(&self) -> SnrSample {
+///         SnrSample::Measured(self.0)
+///     }
+/// }
 /// fn observe<C: RateControl>(control: &mut C, now: oer_time::Instant)
 ///     -> Result<(), AmpduUnavailable>
 /// {
 ///     control.observe_mpdu(NonZeroU16::MIN, MpduOutcome::Acknowledged, Some(30));
 ///     let tally = BlockAckTally::new(NonZeroU16::MIN, 1).unwrap();
-///     control.observe_ampdu(now, tally, SnrSample::Measured(30))
+///     control.observe_ampdu(now, tally, &Measured(30))
 /// }
 /// ```
 pub trait RateControl: Sized {
@@ -157,14 +166,15 @@ pub trait RateControl: Sized {
     fn observe_mpdu(&mut self, attempts: NonZeroU16, outcome: MpduOutcome, ack_snr_db: Option<i8>);
 
     /// An A-MPDU exchange ended at `now` with checked counts and the
-    /// BlockAck's SNR sample: an unmeasured BlockAck feeds no SNR. A
-    /// controller without A-MPDU state returns [`AmpduUnavailable`] without
-    /// changing rate or SNR state; the caller receives this refusal directly.
-    fn observe_ampdu(
+    /// backend's evidence `ack` of its BlockAck, which splits into an SNR
+    /// sample or none: an unmeasured BlockAck feeds no SNR. A controller
+    /// without A-MPDU state returns [`AmpduUnavailable`] without changing
+    /// rate or SNR state; the caller receives this refusal directly.
+    fn observe_ampdu<B: BlockAckSnr>(
         &mut self,
         now: Instant,
         tally: BlockAckTally,
-        ack_snr: SnrSample,
+        ack: &B,
     ) -> Result<(), AmpduUnavailable>;
 }
 
@@ -195,11 +205,11 @@ impl RateControl for FixedRateControl {
     ) {
     }
 
-    fn observe_ampdu(
+    fn observe_ampdu<B: BlockAckSnr>(
         &mut self,
         _now: Instant,
         _tally: BlockAckTally,
-        _ack_snr: SnrSample,
+        _ack: &B,
     ) -> Result<(), AmpduUnavailable> {
         Ok(())
     }

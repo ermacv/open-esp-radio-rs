@@ -1,5 +1,6 @@
 use super::*;
 use alloc::collections::BTreeSet;
+use oer_ieee80211_lower_mac::association::RxBlockAckPool;
 use oer_ieee80211_lower_mac::{AggregateAttempt, MpduStartSpacing};
 
 struct Window {
@@ -289,25 +290,53 @@ fn a_duplicate_or_out_of_window_sent_subframe_returns_its_owner_and_body() {
     }
 }
 
-/// The install mints exactly the declared Block Ack slots: the pool is the
-/// capacity, and an agreement beyond it has no token to take.
-struct DeclaredSlots;
+/// Every Block Ack slot the pool mints carries a running agreement: the
+/// pool's length is the capacity the backend applies, with no smaller table
+/// behind it.
+struct EverySlotApplied<'a>(&'a ModelAir);
 
-impl Work for DeclaredSlots {
+impl Work for EverySlotApplied<'_> {
     async fn work<'p, 'id: 'p>(
         self,
-        _phase: &mut ModelPhase<'p, 'id>,
+        phase: &mut ModelPhase<'p, 'id>,
         resources: ModelResources<'id>,
     ) {
+        let agreement = |tid| {
+            SupportedBlockAck::new(
+                IndividualAddress::new(PEER).unwrap(),
+                Tid::new(tid).unwrap(),
+                SequenceNumber::new(0).unwrap(),
+                32,
+            )
+            .unwrap()
+        };
+        let mut running = Vec::new();
+        for (tid, slot) in (0..).zip(resources.block_acks) {
+            running.push(phase.station().add_block_ack(slot, agreement(tid)));
+        }
+        yield_now().await;
+        let applied = self.0.receive_agreements();
         assert_eq!(
-            resources.block_acks.len(),
-            <ModelTypes as PhaseTypes<'id>>::RX_BLOCK_ACK_SLOTS
+            applied.len(),
+            <<ModelTypes as PhaseTypes<'id>>::BlockAckPool as RxBlockAckPool>::LEN
         );
+        let tids: BTreeSet<_> = applied
+            .iter()
+            .map(|(_, agreement)| agreement.tid.get())
+            .collect();
+        assert_eq!(
+            tids.len(),
+            applied.len(),
+            "each slot keeps its own agreement"
+        );
+        for agreement in running {
+            let _slot = phase.station().remove_block_ack(agreement);
+        }
     }
 }
 
 #[test]
-fn the_install_mints_the_declared_block_ack_slots() {
-    let (backend, _) = backend();
-    let _port_end = block_on(run_port(backend, Body(DeclaredSlots)));
+fn every_minted_block_ack_slot_carries_an_applied_agreement() {
+    let (backend, air) = backend();
+    let _port_end = block_on(run_port(backend, Body(EverySlotApplied(&air))));
 }

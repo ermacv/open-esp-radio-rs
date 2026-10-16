@@ -1,8 +1,9 @@
 extern crate std;
 mod payload;
 use super::*;
+use core::convert::Infallible;
 use core::{cell::Cell, future::Future, pin::pin, task::Waker};
-use oer_ieee80211_lower_mac::{ChannelWidth, LowerMacCapabilities, TxOutcome, WithdrawCause};
+use oer_ieee80211_lower_mac::{ChannelWidth, LowerMacCapabilities, SingleOutcome, WithdrawCause};
 use oer_radio_port::{Quarantined, branded};
 use std::{boxed::Box, sync::mpsc, thread, time::Instant, vec::Vec};
 
@@ -173,7 +174,9 @@ fn full_setup_and_phase_keep_fifo_whole_non_send_owners_and_three_dma_fragments(
                 );
                 let returned = submission
                     .operation
-                    .complete(TxOutcome::Withdrawn(WithdrawCause::GateClosed))
+                    .complete(SingleOutcome::<(), Infallible>::Withdrawn(
+                        WithdrawCause::GateClosed,
+                    ))
                     .into_parts(&mut terminals);
                 assert!(core::ptr::eq(returned.context.0, &drops));
                 for (body, lease) in returned.payload.fragments.iter().enumerate() {

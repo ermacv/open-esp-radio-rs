@@ -1,8 +1,8 @@
-//! Portable EDCA contention: the CSMA/CA backoff draw above the lower-MAC
-//! port.
-//!
-//! A backend that counts down a chosen backoff but does not draw it
-//! takes the slot count of each attempt from here. [`EdcaContention`] keeps the contention window of one
+//! Portable EDCA contention: the CSMA/CA backoff draw, for a backend whose
+//! hardware counts a chosen backoff down without drawing it, or for the
+//! upper-MAC retry planner (`TxAttemptPlan::backoff_slots`). The backoff
+//! does not cross the lower-MAC port: the backend draws its queue's
+//! contention below it. [`EdcaContention`] keeps the contention window of one
 //! access category (IEEE 802.11-2020 10.23.2): it starts at `CWmin`, doubles
 //! after each failed attempt of a frame up to `CWmax` and returns to
 //! `CWmin` when the frame ends. The random source is injected, so a seeded
@@ -84,7 +84,9 @@ impl EdcaContention {
 
     /// Draw the backoff slots of the next attempt uniformly from `0..=CW`.
     pub fn draw(self, entropy: &mut impl BackoffEntropy) -> u16 {
-        (entropy.next_u32() & u32::from(self.cw())) as u16
+        // CW is 2^n - 1 below 2^16: its mask keeps only low bits.
+        let [b0, b1, ..] = entropy.next_u32().to_le_bytes();
+        u16::from_le_bytes([b0, b1]) & self.cw()
     }
 
     /// Double the window after a failed attempt of the frame (an ACK or CTS

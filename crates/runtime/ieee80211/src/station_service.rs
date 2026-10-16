@@ -92,7 +92,7 @@
 //! fixture parsing and serialization do not belong to the product API.
 
 use core::marker::PhantomData;
-use oer_ieee80211_lower_mac::association::KEY_BANK_CAPACITY;
+use oer_ieee80211_lower_mac::association::{KEY_BANK_CAPACITY, KeyPool};
 use oer_ieee80211_sta::machine::TxRefusal;
 
 use core::future::{Future, poll_fn};
@@ -239,8 +239,10 @@ where
     Ty: PhaseTypes<'id, TxBody = core::convert::Infallible> + TxBufferPool<'id, S>,
     S: TxBufferClass,
 {
-    const PAIRWISE_SLOTS: usize = Ty::StationKeys::PAIRWISE_SLOTS;
-    const TOTAL_GROUP_SLOTS: usize = Ty::StationKeys::GROUP_SLOTS;
+    const PAIRWISE_SLOTS: usize =
+        <<Ty::StationKeys as KeyTypes<'id>>::Pool as KeyPool>::PAIRWISE_SLOTS;
+    const TOTAL_GROUP_SLOTS: usize =
+        <<Ty::StationKeys as KeyTypes<'id>>::Pool as KeyPool>::GROUP_SLOTS;
     const GROUP_SLOTS: usize = GROUPS;
     type Small = S;
     type EpochPath = Ty::EpochPath;

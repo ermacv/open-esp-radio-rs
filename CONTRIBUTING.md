@@ -11,7 +11,8 @@ Actions, is covered by the
 an uncovered request fails with `Credit balance too low`. It reviews each
 open, ready, same-repository pull request into `main` once, when the PR opens
 or is marked ready, in parallel with CI, and again when a collaborator
-comments `@claude review` on it. Draft PRs are not reviewed. Every push is
+comments `@claude review` on it. Draft PRs are not reviewed, and every push
+opens a draft, so the review runs when a person marks the PR ready. Every push is
 reviewed before it leaves the checkout by the local review
 (`cargo xtask review`, run by `cargo xtask push`), which blocks on 🔴 and 🟡
 findings, files its 🔵 wording findings as issues without blocking, and is paid by the developer's Claude Code plan; this review audits
@@ -46,7 +47,7 @@ open, a `@claude review` comment reviews it again; once merged, whoever takes
 the issue reviews its diff against the current `main`. Findings are filed
 before the PR review is posted, so a failed post loses none. A finding whose issue was closed as fixed
 came back and is filed anew; one closed as not planned stays dismissed. It
-is not a required check: a PR merges once
+is not a required check: a PR can be merged once
 `ci-ok` passes, and the findings stay open as issues. `cargo xtask
 ci-status`, `check changed`, `push` and the session start hook list the open
 findings of the checkout's branch one by one and count the others; the
@@ -63,7 +64,8 @@ your API credits, open **Settings → Workload identity → Connect workload →
 GitHub Actions**. Create a service account and federation rule for this
 reviewer, scoped to `workspace:developer` in the workspace that should pay for
 inference. Set a workspace spend limit in Console to control monthly spend;
-each review also stops at an estimated $5 (`max_budget_usd`). The script
+each review also stops at an estimated $5 (`max_budget_usd`), large PRs
+included ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/781#issuecomment-6225420192)). The script
 refreshes the GitHub OIDC token file every four minutes, since the CLI re-reads
 it whenever its access token expires. The fast host `claude-review` check runs
 the script's offline regressions.
@@ -153,8 +155,8 @@ artifact. See [source policy](docs/source-policy.md).
 
 Run commands from the repository root unless the component guide says otherwise.
 Changes reach `main` through pull requests. `cargo xtask push` runs the fast
-gate on exactly the committed tree, pushes the branch, opens its pull request
-and enables auto-merge, so the branch merges once CI passes. `cargo xtask check
+gate on exactly the committed tree, pushes the branch and opens its pull
+request as a draft; a person marks it ready and merges it once CI passes. `cargo xtask check
 changed` runs the same gate over uncommitted work, and `--full` adds what CI
 checks on the pull request. The table lists what each boundary
 adds when you iterate on it.

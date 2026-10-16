@@ -83,8 +83,9 @@ cargo fmt --all -- --check
 cargo xtask check docs
 ```
 
-`cargo xtask push` runs the fast gate, pushes the branch and opens its pull
-request, which merges once CI passes; `cargo xtask check changed` runs the
+`cargo xtask push` runs the fast gate and the local review, pushes the branch
+and opens its pull request as a draft, which a person marks ready and merges
+once CI passes; `cargo xtask check changed` runs the
 gate over uncommitted work: formatting of every affected workspace, the lock
 and capability-anchor checks where they apply, Clippy of the changed packages
 and every package depending on them, and the tests of the changed packages.

@@ -41,11 +41,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    Claude Code process (`cargo xtask review`, minutes; an unchanged diff
    reuses its verdict) and refuses a 🔴 or 🟡 finding, pushes the branch, opens the pull request titled by its first
    commit (`gh pr create --fill-first`), files the review's 🔵 wording
-   findings as `review: …` issues of the branch
-   and enables auto-merge. Do not wait for CI: GitHub merges the branch once
-   the required `ci-ok` check passes. `--draft` opens a draft for a person
-   to merge and enables no auto-merge; it changes nothing else, so the local
-   review runs and blocks as on any push. `--skip-review "<reason>"` is the
+   findings as `review: …` issues of the branch. The pull request opens as
+   a draft and the push never enables auto-merge: a person marks it ready
+   and merges it once the required `ci-ok` check passes. Do not wait for CI.
+   `--skip-review "<reason>"` is the
    only way to skip the review, only when Claude Code cannot run; the reason
    is commented on the pull request. Rebase onto
    `origin/main` when the push refuses a branch behind it, or to resolve a

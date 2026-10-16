@@ -261,8 +261,8 @@ on-air capability.
 
 The [MAC engine](../../../crates/hardware/espressif/ieee802154/engine/src/engine.rs)
 owns the vendor state machine, `next_operation` and its DMA buffers; the PAC
-owns register authority. The [runtime](../../../crates/runtime/espressif/ieee802154/src/lib.rs)
-serializes the engine with the MAC owners and queues its notifications, and
-the platform adapter owns source-132 routing.
+owns register authority. The runtime that
+serialized the engine with the MAC owners and routed source 132 was removed
+in #770 (tag `legacy-radio-2026-10-16`).
 A `STOP` write is not a proof of terminal DMA quiescence. RF/BTBB readiness,
 TX-power policy and on-air service require separate evidence.

@@ -5,7 +5,7 @@ IEEE 802.15.4) with its HIL stand, vendor verification and qualification.
 Coding agents do almost all the work; the owner sets the tasks.
 
 **Chips.** ESP32-S31 is the production target: every layer, the
-qualification catalogs and programs, and the examples. ESP32-C5 has
+qualification catalogs. ESP32-C5 has
 investigation inputs only: its register model and PAC, HAL, platform,
 esp-hal SoC adapter, HIL target and vendor verification; it has no radio
 driver, role, runtime, composition, qualification catalog or example yet.
@@ -59,7 +59,6 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `tools/` | Gate (xtask, tidy), dev kit (`cargo fw`), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
 | `stand/` | `cargo stand` and the shared stand's packages: [stand guide](hil/host/stand.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |
-| `examples/` | Buildable applications |
 | `docs/` | Cross-owner contracts: [architecture](docs/architecture.md), [documentation](docs/documentation.md), [verification and qualification](docs/verification-and-qualification.md) |
 
 Task workflows live in `.claude/skills/`: `protocol-change`,

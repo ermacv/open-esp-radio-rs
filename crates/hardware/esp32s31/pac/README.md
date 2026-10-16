@@ -76,10 +76,9 @@ names each word and its guarantee.
 
 ## Validation
 
-`cargo registers generate --check`, `cargo xtask check architecture` and
-`cargo hil images check --class bluetooth-dtm` validate register
-sources, dependency direction, handwritten unsafe boundaries and a linked
-image. Publication checks also cover source-only publication reproducibility unconditionally. Artifact-scoped
+`cargo registers generate --check` and `cargo xtask check architecture`
+validate register sources, dependency direction and handwritten unsafe
+boundaries. Publication checks also cover source-only publication reproducibility unconditionally. Artifact-scoped
 publication is additionally checked when its review report is present.
 Generated addresses, masks and field positions are not regression test oracles;
 ownership and memory protocols are tested through behavior and typed contracts.

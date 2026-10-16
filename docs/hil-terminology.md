@@ -15,7 +15,7 @@ and the [protocol](../hil/protocol/README.md) define the contracts in detail.
 | DUT | The board a scenario tests. A board is a DUT only within a run that names it so. |
 | Peer | A board or radio that is the other end of a scenario: a Direct Test Mode reference board, an IEEE 802.15.4 peer board, a Wi-Fi station. A peer board is flashed and reset like a DUT. |
 | Fixture | Host-controlled equipment that is not a board: the laptop radio, the OpenWrt router, the Bluetooth adapter. |
-| Fixture provider | The installable host software that operates one kind of fixture (`linux-net`, `linux-bluetooth`). |
+| Fixture provider | The installable host software that operates one kind of fixture (`linux-net`). |
 | Air | The shared radio medium, claimed as a resource like a board. |
 | Stand | Everything one host operates for HIL: its boards, fixtures and air, and the arbiter that orders access to them. |
 | Board support | The host operations on one board: flash, start, reset, console, JTAG and post-mortem, parametrized by its chip's profile. |

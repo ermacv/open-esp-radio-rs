@@ -24,7 +24,7 @@ The port is on the owner shape: `LowerMacBackend` and its parts in `crates/proto
 
 ## Shared contracts (change only with their owners)
 
-`crates/radio/port` (`RadioPort`, `PortResult`, `Poisoned`, `ClockInfo`, `ClockRelation`, `RelationSample`, `Generation`), `crates/time` (`Instant`, `RadioInstant`), `crates/radio/coex`, the shared radio system `crates/runtime/esp32s31/radio` and `crates/composition/esp32s31/embassy/radio`, the HAL split `crates/hardware/esp32s31/hal/src/root.rs`, PAC and `registers/`.
+`crates/radio/port` (`RadioPort`, `PortResult`, `Poisoned`, `ClockInfo`, `ClockRelation`, `RelationSample`, `Generation`), `crates/time` (`Instant`, `RadioInstant`), `crates/radio/coex`, the HAL split `crates/hardware/esp32s31/hal/src/root.rs`, PAC and `registers/`.
 
 ## Traps
 

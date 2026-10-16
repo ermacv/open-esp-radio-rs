@@ -88,7 +88,7 @@ tag `legacy-wifi-2026-10-16`.
 Chip PHY waits through `oer_esp32s31_phy::executor::wait::delay`: synchronous
 ROM settles of at most 20 us, and an absolute deadline on the caller's
 `oer_time::Timer` for every other wait, which never ends when the deadline is
-unrepresentable. Every chip radio composition passes
+unrepresentable. A chip radio composition passes
 [`oer_time_embassy::EmbassyClock`](adapters/embassy/time/). Chip PHY stays
 executor-independent, and the executor/time ABI backend owns no PHY policy.
 
@@ -172,9 +172,8 @@ operational radio feature. Do not infer concurrent-radio support or new
 capabilities from structural reuse.
 
 [Qualification](../qualification/README.md) is the readiness authority. Its
-[Bluetooth](../qualification/targets/esp32s31/bluetooth-le.toml) and
-[IEEE 802.15.4](../qualification/targets/esp32s31/ieee802154.toml) manifests
-connect production owners to host, vendor and dated HIL evidence. Validation
+program manifests connect production owners to host, vendor and dated HIL
+evidence; none exists since #770 (tag `legacy-radio-2026-10-16`). Validation
 of a manifest is not a passing hardware qualification.
 
 Unit tests live in separate child files beside the modules whose private

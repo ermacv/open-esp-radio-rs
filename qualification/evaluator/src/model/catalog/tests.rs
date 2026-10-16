@@ -787,11 +787,14 @@ fn bluetooth_maintenance_facts_reach_all_views_without_promoting_products() {
     )
     .unwrap();
     let domains = BTreeSet::from(["bluetooth", "phy", "whole-radio"]);
-    // The radio system that composed the maintenance went in #770: the
-    // tracking transactions remain, so the facts are partial.
+    // The radio system that composed the maintenance went in #770; the
+    // tracking transactions remain complete, so the facts stay implemented.
     for (fact_id, expected) in [
-        ("bluetooth-idle-phy-maintenance", SourceStatus::Partial),
-        ("bluetooth-periodic-phy-maintenance", SourceStatus::Partial),
+        ("bluetooth-idle-phy-maintenance", SourceStatus::Implemented),
+        (
+            "bluetooth-periodic-phy-maintenance",
+            SourceStatus::Implemented,
+        ),
     ] {
         let fact = &catalog.source_facts[fact_id];
         assert_eq!(fact.status, expected);

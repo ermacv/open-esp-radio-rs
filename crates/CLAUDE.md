@@ -8,9 +8,8 @@ Production libraries, one directory per layer; the
 | `protocols/` | Sans-IO protocol state machines and the ports their drivers implement |
 | `services/` | Executor-free drivers that wait on ports and feed the state machines |
 | `hardware/` | Chip and family PAC, HAL, PHY and radio drivers |
-| `roles/` | Executor-free chip role compositions (LE Controller) |
 | `runtime/` | Executor-independent async radio execution over the `oer-time` ports |
-| `adapters/`, `composition/` | Executor, `embassy-time` and board bindings; final compositions |
+| `adapters/` | Executor, `embassy-time` and board bindings |
 | `oer/` | The public facade; no internal package depends on it |
 
 ## Rules
@@ -19,7 +18,7 @@ Production libraries, one directory per layer; the
   `cargo xtask check architecture` enforces it independently of directories.
 - A `protocol` package never awaits: time and events enter as values
   ([sans-IO](../docs/architecture.md#sans-io-protocols-executors-and-time)).
-  Only adapters, compositions and the facade use `embassy-time` or an executor.
+  Only adapters and the facade use `embassy-time` or an executor.
 - Standard `rustfmt` and Rust naming. Typed ownership and state transitions,
   not raw addresses or register images.
   Find a PAC accessor by grepping `hardware/<chip>/pac/src/generated.rs` or

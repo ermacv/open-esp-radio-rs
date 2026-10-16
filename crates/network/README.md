@@ -1,8 +1,8 @@
 # Network boundaries
 
 This directory owns stack-facing contracts; chip radio execution belongs to
-`crates/runtime` and complete ESP32-S31 composition belongs to
-`crates/composition`. No ESP32-S31 composition links a network stack.
+`crates/runtime`. No ESP32-S31 composition exists to link a network stack
+since #770 (tag `legacy-radio-2026-10-16`).
 
 | Path | Responsibility |
 | --- | --- |

@@ -25,6 +25,7 @@ workspace = true
 # Chip APIs exist only for the chip target; document them there alone.
 default-target = "riscv32imafc-unknown-none-elf"
 targets = []
+features = ["esp32s31"]
 
 [package.metadata.open-radio]
 layer = "adapter"

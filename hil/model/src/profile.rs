@@ -357,6 +357,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn only_store_run_ids_parse() {
+        assert!(RunId::parse("1788729094522-000d170b").is_some());
+        for text in [
+            "",
+            "1788729094522",
+            "-000d170b",
+            "1788729094522-",
+            "17887x-00",
+            "1788729094522-000D170B",
+            "a-b",
+        ] {
+            assert!(RunId::parse(text).is_none(), "{text:?}");
+        }
+    }
+
+    #[test]
     fn a_new_recipe_uses_the_declared_bounds() {
         let drain = name!(BoundName, "lower-mac.drain");
         let recipe = Sha256([7; 32]);

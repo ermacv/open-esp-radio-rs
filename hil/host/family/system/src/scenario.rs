@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use oer_hil_scenario::{AirUse, Plan, ScenarioFamily};
-use oer_hil_scenario_catalog::bounded;
 use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::context::Context;
 use oer_hil_workload::{family::Workload, fixture::Fixtures};
@@ -21,38 +20,12 @@ pub enum SystemScenario {
     BootSmoke {},
     /// SoC watchdog reset on its exclusive radio-free image.
     Watchdog {},
-    /// The hang watchdog of the correctness image records a stalled
-    /// executor's post-mortem and resets the chip.
-    HangWatchdog {},
     /// The product panic entry records an intentional panic and resets the
     /// chip on its exclusive radio-free image.
     PanicReset {},
     /// The stand brings back a board whose image switched its USB
     /// Serial/JTAG off: its reset ladder and its download entry.
     StandRecovery {},
-    MemoryBenchmark {
-        boots: u8,
-        iterations: u16,
-        sizes: Vec<u16>,
-        #[serde(default = "single_frame_batch")]
-        batch_sizes: Vec<u8>,
-    },
-    /// Target timer progress against the host clock on the correctness image.
-    Timebase {
-        boots: u8,
-        intervals: u16,
-        period_millis: u16,
-    },
-    /// esp-hal's inter-processor call into each core, core 0 included, on the
-    /// correctness image.
-    IpcCall { calls: u8 },
-    /// An interrupt-table source stays silent until its owner enables it and
-    /// after its owner disables it, on the correctness image.
-    InterruptTable { probes: u8 },
-}
-
-fn single_frame_batch() -> Vec<u8> {
-    vec![1]
 }
 
 const BOOT_SMOKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -62,53 +35,8 @@ impl ScenarioFamily for SystemScenario {
         match self {
             Self::BootSmoke {}
             | Self::Watchdog {}
-            | Self::HangWatchdog {}
             | Self::PanicReset {}
             | Self::StandRecovery {} => Ok(()),
-            Self::MemoryBenchmark {
-                boots,
-                iterations,
-                sizes,
-                batch_sizes,
-            } => {
-                bounded(*boots, 1, 20, "boots")?;
-                bounded(*iterations, 1, 64, "iterations")?;
-                bounded(sizes.len(), 1, 16, "sizes.len()")?;
-                bounded(batch_sizes.len(), 1, 32, "batch_sizes.len()")?;
-                for (index, size) in sizes.iter().enumerate() {
-                    bounded(*size, 1, 4096, "size")?;
-                    if sizes[..index].contains(size) {
-                        return Err("memory benchmark sizes must be distinct".into());
-                    }
-                }
-                for (index, frames) in batch_sizes.iter().enumerate() {
-                    bounded(*frames, 1, 32, "batch size")?;
-                    if batch_sizes[..index].contains(frames) {
-                        return Err("memory benchmark batch sizes must be distinct".into());
-                    }
-                    if sizes
-                        .iter()
-                        .any(|bytes| u32::from(*bytes) * u32::from(*frames) > 49_152)
-                    {
-                        return Err(
-                            "memory benchmark case exceeds 49152 payload bytes per iteration"
-                                .into(),
-                        );
-                    }
-                }
-                Ok(())
-            }
-            Self::Timebase {
-                boots,
-                intervals,
-                period_millis,
-            } => {
-                bounded(*boots, 1, 20, "boots")?;
-                bounded(*intervals, 2, 100, "intervals")?;
-                bounded(*period_millis, 1, 1_000, "period_millis")
-            }
-            Self::IpcCall { calls } => bounded(*calls, 1, 100, "calls"),
-            Self::InterruptTable { probes } => bounded(*probes, 1, 100, "probes"),
         }
     }
 
@@ -116,13 +44,8 @@ impl ScenarioFamily for SystemScenario {
         Plan::target_only(match self {
             Self::BootSmoke {} => ImageClass::BootSmoke,
             Self::Watchdog {} => ImageClass::SystemWatchdog,
-            Self::HangWatchdog {} => ImageClass::Correctness,
             Self::PanicReset {} => ImageClass::SystemPanicReset,
             Self::StandRecovery {} => ImageClass::DiagnosticUsbJtagOff,
-            Self::MemoryBenchmark { .. } => ImageClass::DiagnosticMemoryBenchmark,
-            Self::Timebase { .. } => ImageClass::Correctness,
-            Self::IpcCall { .. } => ImageClass::Correctness,
-            Self::InterruptTable { .. } => ImageClass::Correctness,
         })
     }
 
@@ -143,41 +66,8 @@ impl Workload for SystemScenario {
                 capture.wait_for_boot_smoke(BOOT_SMOKE_TIMEOUT)
             }),
             Self::Watchdog {} => system::watchdog::run(output, context),
-            Self::HangWatchdog {} => system::hang_watchdog::run(output, context),
             Self::PanicReset {} => system::panic_reset::run(output, context),
             Self::StandRecovery {} => system::stand_recovery::run(output, context),
-            Self::MemoryBenchmark {
-                boots,
-                iterations,
-                sizes,
-                batch_sizes,
-            } => system::memory_benchmark::run(
-                system::memory_benchmark::Config {
-                    boots: *boots,
-                    iterations: *iterations,
-                    sizes,
-                    batch_sizes,
-                },
-                output,
-                context,
-            ),
-            Self::Timebase {
-                boots,
-                intervals,
-                period_millis,
-            } => system::timebase::run(
-                system::timebase::Config {
-                    boots: *boots,
-                    intervals: *intervals,
-                    period_millis: *period_millis,
-                },
-                output,
-                context,
-            ),
-            Self::IpcCall { calls } => system::ipc_call::run(*calls, output, context),
-            Self::InterruptTable { probes } => {
-                system::interrupt_table::run(*probes, output, context)
-            }
         }
     }
 }
@@ -195,22 +85,8 @@ mod tests {
         for (text, image) in [
             ("kind = 'boot-smoke'", ImageClass::BootSmoke),
             ("kind = 'watchdog'", ImageClass::SystemWatchdog),
-            ("kind = 'hang-watchdog'", ImageClass::Correctness),
             ("kind = 'panic-reset'", ImageClass::SystemPanicReset),
             ("kind = 'stand-recovery'", ImageClass::DiagnosticUsbJtagOff),
-            (
-                "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = [64]",
-                ImageClass::DiagnosticMemoryBenchmark,
-            ),
-            (
-                "kind = 'timebase'\nboots = 1\nintervals = 2\nperiod_millis = 10",
-                ImageClass::Correctness,
-            ),
-            ("kind = 'ipc-call'\ncalls = 1", ImageClass::Correctness),
-            (
-                "kind = 'interrupt-table'\nprobes = 1",
-                ImageClass::Correctness,
-            ),
         ] {
             let scenario = parse(text);
             scenario.validate().unwrap();
@@ -219,17 +95,9 @@ mod tests {
     }
 
     #[test]
-    fn memory_benchmark_rejects_duplicate_or_oversized_cases() {
-        for text in [
-            "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = [64, 64]",
-            "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = []",
-            "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = [4096]\nbatch_sizes = [32]",
-            "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = [64]\nbatch_sizes = [2, 2]",
-        ] {
-            assert!(parse(text).validate().is_err(), "{text}");
-        }
+    fn a_workload_names_no_image() {
         assert!(
-            toml::from_str::<SystemScenario>("kind = 'boot-smoke'\nimage = 'correctness'").is_err()
+            toml::from_str::<SystemScenario>("kind = 'boot-smoke'\nimage = 'boot-smoke'").is_err()
         );
     }
 }

@@ -16,7 +16,6 @@ oer-hil-schema = { path = "../../schema" }
 oer-image-bundle = { path = "../../../tools/image/bundle" }
 oer-chip-profile = { path = "../../../tools/chip-profile" }
 oer-durable = { path = "../../../tools/durable" }
-oer-elf = { path = "../../../tools/elf" }
 oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }

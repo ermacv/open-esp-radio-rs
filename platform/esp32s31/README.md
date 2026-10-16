@@ -71,7 +71,7 @@ inter-processor call's line (CLINT software interrupt 3) and runs the posted
 function from that dispatcher, instead of writing its own handler into the
 slot; `enable_interrupts_after_handoff` panics when any hardware-vector slot
 differs from the runtime's entries, so a later direct binding cannot run on
-the interrupted stack. HIL's `system-ipc-call` calls each core.
+the interrupted stack.
 
 Each image declares its peripheral interrupt sources once with
 `oer_esp32s31_platform_runtime::interrupt_table!` (source, handler, level,
@@ -188,19 +188,18 @@ that number is no bound to hold a watermark to.
 From the repository root:
 
 ```console
-cargo fw build monitor
-cargo fw build station
-cargo fw flash --device <MAC|PORT> --monitor target/firmware/esp32s31-station/build-<id>
+cargo fw build thread
+cargo fw flash --device <MAC|PORT> --monitor target/firmware/esp32s31-thread/build-<id>
 ```
 
-Select `station`, `access-point`, `monitor` or `thread`. Application
+`thread` is the one example. Application
 credentials remain environment configuration of the example; HIL credentials
 remain stand file. Each successful invocation retains a separate image bundle
 under `target/firmware/esp32s31-<example>/build-<id>/`:
 `application.bin`, ROM `bootloader.bin`, `partitions.bin`, `otadata.bin`,
 the slot partition table, packed runtime, `runtime.elf`, `bootstrap.elf`,
 both resolved lockfiles, `source-inputs.json` and placement/stack reports;
-`cargo fw flash` writes it to an attached board (`cargo fw flash station` builds and writes in one step). The build rejects invalid placement and a stack whose
+`cargo fw flash` writes it to an attached board (`cargo fw flash thread` builds and writes in one step). The build rejects invalid placement and a stack whose
 root's call-chain bound does not fit its storage less its reserve before flash.
 A task stack's bound may be partial (the executor's task polls are indirect
 calls the analysis does not resolve); its report names every unresolved site,

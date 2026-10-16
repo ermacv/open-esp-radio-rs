@@ -193,11 +193,6 @@ dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
 [[unused-dependency]]
-manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
 manifest = "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml"
 dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
@@ -218,11 +213,6 @@ dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
 [[unused-dependency]]
-manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
 manifest = "crates/runtime/ieee80211/Cargo.toml"
 dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
@@ -234,11 +224,6 @@ reason = "test builds select critical-section's std implementation for the crate
 
 [[unused-dependency]]
 manifest = "crates/adapters/trouble/bluetooth/gatt/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
-manifest = "examples/esp32s31/access-point/Cargo.toml"
 dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
@@ -261,11 +246,6 @@ reason = "test builds select embassy-time's std driver and generic timer queue f
 manifest = "verification/esp32s31/probes/bluetooth/library/Cargo.toml"
 dependency = "oer-esp32s31-phy"
 reason = "enables the PHY's validation-probes feature for the Bluetooth driver the probe compiles"
-
-[[unused-dependency]]
-manifest = "hil/targets/esp32s31/agent/Cargo.toml"
-dependency = "xarxa-owned"
-reason = "the owned-network feature selects the workspace's xarxa features for the owned stack adapter"
 
 # Dependencies another crate's macro expands to paths in.
 
@@ -427,14 +407,6 @@ reason = "Standalone compiler contract executed by the host/RV32 UI catalog with
 
 [[uncompiled]]
 path = "crates/protocols/ieee80211/sta/tests/ui/retired_data.rs"
-reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
-
-[[uncompiled]]
-path = "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_reinstallation.rs"
-reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
-
-[[uncompiled]]
-path = "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_commit_once.rs"
 reason = "Standalone compiler contract executed by the host/RV32 UI catalog with a positive twin."
 
 [[uncompiled]]

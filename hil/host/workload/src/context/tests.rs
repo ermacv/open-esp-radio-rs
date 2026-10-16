@@ -27,7 +27,7 @@ fn signal_cancellation_harness() {
     let started = Instant::now();
     // A protocol wait no message ends: only the cancellation does.
     let error = capture
-        .wait_for_connected_station(Duration::from_secs(60))
+        .wait_for_message_after(0, Duration::from_secs(60), |_| false)
         .unwrap_err();
     sender.join().unwrap();
     assert!(oer_process::is_cancelled(&*error));
@@ -43,7 +43,7 @@ fn signal_cancellation_harness() {
     assert!(records[0].failure.is_none());
     assert!(oer_process::check_cancelled().is_err());
     let lab = oer_hil_lab::config::LabConfig::for_test();
-    let context = super::Context::new(&lab, Default::default(), &output.0);
+    let context = super::Context::new(&lab, &output.0);
     let next = output.0.join("must-not-reset");
     let error = context
         .capture(&next)

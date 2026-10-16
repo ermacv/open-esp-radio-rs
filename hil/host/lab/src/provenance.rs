@@ -4,13 +4,13 @@ use oer_durable::unix_millis;
 use oer_process::CommandExt as _;
 use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path};
 
-use oer_hil_protocol::wifi::NetworkIpv4Configuration;
+use crate::wifi::NetworkIpv4Configuration;
 
+use crate::wifi::WifiChannelWidth;
 use crate::{
     Result,
     config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
 };
-use oer_hil_protocol::wifi::WifiChannelWidth;
 use oer_hil_run_bundle_format::lab::AccessPointDefinition;
 use oer_hil_run_bundle_format::lab::ChannelWidth;
 use oer_hil_run_bundle_format::lab::FixtureObservation;

@@ -106,14 +106,12 @@ impl ScenarioCatalog {
             roles.insert(id.clone(), document.header.role);
             definitions.insert(id, document.value);
         }
-        let checks = definitions
-            .iter()
-            .map(|(id, document)| Ok((id.clone(), checks::contracts(document)?)))
-            .collect::<Result<_>>()?;
         Ok(Self {
             repetitions,
             roles,
-            checks,
+            // No scenario family publishes a named check; the Wi-Fi
+            // contracts went with the Wi-Fi scenarios (#762).
+            checks: BTreeMap::new(),
             definitions,
         })
     }

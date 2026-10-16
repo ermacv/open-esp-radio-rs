@@ -15,21 +15,15 @@
 //! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
 //! Controller epoch on request. All reach the radio only through the HCI
 //! transport.
-//!
-//! The `wifi-ble-coex` image instead starts the GATT application as a client
-//! of the Wi-Fi image's shared radio ([`shared`]); the Wi-Fi image keeps the
-//! radio system, its periodic tasks and the HIL console.
 
 #[cfg(feature = "bluetooth-radio")]
 mod console;
 #[cfg(feature = "bluetooth-hil")]
 mod dtm;
-#[cfg(any(feature = "bluetooth-gatt", feature = "wifi-ble-coex"))]
+#[cfg(feature = "bluetooth-gatt")]
 mod gatt;
 #[cfg(feature = "bluetooth-secure-gatt")]
 mod secure;
-#[cfg(feature = "wifi-ble-coex")]
-pub(crate) mod shared;
 
 use oer_bluetooth_controller::LeVersionInformation;
 #[cfg(any(feature = "bluetooth-hil", feature = "bluetooth-gatt"))]
@@ -53,8 +47,6 @@ const VERSION: LeVersionInformation = LeVersionInformation::new(0x0d, 0xffff, 1)
 
 #[cfg(feature = "bluetooth-radio")]
 pub(super) type Radio = oer_esp32s31_radio_system::SharedRadio;
-#[cfg(feature = "wifi-ble-coex")]
-pub(super) type Radio = oer_esp32s31_ieee80211_system::SharedRadio;
 
 #[cfg(feature = "bluetooth-radio")]
 static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
@@ -226,7 +218,7 @@ async fn client(
 
 /// The report of a service that ended for `exit` and disabled the port; the
 /// Controller then stops without a restart.
-#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+#[cfg(feature = "bluetooth-radio")]
 fn exit_reason(exit: oer_esp32s31_bluetooth_system::ServeExit) -> &'static core::ffi::CStr {
     use oer_esp32s31_bluetooth_system::ServeExit;
     match exit {
@@ -242,7 +234,7 @@ fn exit_reason(exit: oer_esp32s31_bluetooth_system::ServeExit) -> &'static core:
 /// The report of a service whose port's `disable` failed, naming why the
 /// service stopped serving, or that found the port poisoned. The caller
 /// keeps every owner as it is.
-#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+#[cfg(feature = "bluetooth-radio")]
 fn stop_failure_reason(
     ended: &oer_radio_port::PortEnd<
         oer_esp32s31_bluetooth_system::BluetoothSystemBackend,
@@ -275,7 +267,7 @@ fn stop_failure_reason(
 }
 
 /// The report of a port poisoned while it served, naming the fault.
-#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+#[cfg(feature = "bluetooth-radio")]
 fn poisoned_reason(
     cause: oer_esp32s31_bluetooth_system::BluetoothSystemFault,
 ) -> &'static core::ffi::CStr {

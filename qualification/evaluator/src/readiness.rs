@@ -344,8 +344,8 @@ mod tests {
 
     #[test]
     fn a_report_is_named_by_its_program_path() {
-        let program = Path::new(model::PROGRAMS).join("esp32s31/wifi-sta.toml");
-        assert_eq!(report_name(&program).unwrap(), "esp32s31-wifi-sta.json");
+        let program = Path::new(model::PROGRAMS).join("esp32s31/ieee802154.toml");
+        assert_eq!(report_name(&program).unwrap(), "esp32s31-ieee802154.json");
         assert!(report_name(Path::new("elsewhere/a.toml")).is_err());
     }
 

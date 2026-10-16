@@ -91,7 +91,7 @@ fn profiles(chips: &oer_repo::chips::Chips) -> Vec<Profile> {
         for (features, required, forbidden, bluetooth_only) in [
             (
                 Some(""),
-                &["oer-memory", "oer-network-interface", "oer-radio"][..],
+                &["oer-memory", "oer-network-interface"][..],
                 &["wifi", "bluetooth", "ieee802154"][..],
                 false,
             ),

@@ -2,8 +2,7 @@
 //!
 //! The Trouble Host owns HCI and ATT over the Host end of the transport; the
 //! HIL console only reads the value-only observations the application
-//! reports. The `wifi-ble-coex` image runs the same Host and application and
-//! folds the same observations for the Wi-Fi console.
+//! reports.
 
 use core::cell::Cell;
 

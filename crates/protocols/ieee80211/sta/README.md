@@ -124,7 +124,7 @@ Module map:
 - `power_save`: what the access point knows of the station's power state and
   the TIM's decision;
 - `station`: the application's vocabulary (lifecycle stages, fault reasons,
-  reconnect policy) that `oer-radio` publishes;
+  reconnect policy);
 - `modem_sleep`: the connected station's power manager, after the vendor's
   `pm.o` and `pm_coex.o`, with the vendor's timing constants;
 - `sa_query`: the SA Query procedure of an association under management
@@ -172,7 +172,7 @@ The terminal takes this vector by value, preserving order through completion,
 failure and cancellation without sparse entries or a separate counter.
 
 Frame parsing/building belongs in `crates/protocols/ieee80211/mac`; ESP32-S31 ordering
-and hardware ownership belong in `crates/roles/esp32s31/ieee80211/sta`; clocks, tasks,
+and hardware ownership belong in the chip driver and its future role; clocks, tasks,
 DMA wakeups and network leases belong to the radio runtime; final resource
 claims and board composition belong to integration.
 

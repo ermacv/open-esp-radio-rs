@@ -153,7 +153,6 @@ pub struct IrqDrain {
 /// the ISR preempts a poll. Lane waits support the separate finite RX/TX
 /// services; a lane has only one waiter and is not consumed concurrently with
 /// batch processing. Registering or polling performs no hardware operation.
-// CAPABILITY: wifi-interrupt-epoch-owners
 pub struct IrqConsumer<M: RxDelivery = Unmoderated> {
     pending: AtomicU32,
     rx: AtomicWaker,

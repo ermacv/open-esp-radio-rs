@@ -46,7 +46,7 @@ cargo test -p <package>
 cargo registers validate --manifest registers/<chip>/publication/registers.toml
 cargo registers generate --manifest registers/<chip>/publication/registers.toml
 cargo xtask check architecture
-cargo hil images check --class performance --type-check
+cargo hil images check --class <class> --type-check   # a class compiling the changed code
 cargo verification check provenance --chip <chip>   # after SOURCE citations change
 cargo xtask check changed
 ```

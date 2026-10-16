@@ -57,9 +57,8 @@ advertised WMM Parameter Set neither acquires admission nor selects a
 hardware queue. AP encoders take an explicit `Advertisement` and a
 `Channel` of either band: a 5 GHz beacon or Association Response carries
 no DSSS Parameter Set and no ERP element, and a beacon refuses a 5 GHz
-advertisement with a DSSS rate;
-`roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
-advertisement. The portable codec carries no implicit ESP32-S31 profile.
+advertisement with a DSSS rate. The portable codec carries no implicit
+ESP32-S31 profile; a chip AP selects its own advertisement.
 
 `arbiter/src/coordinator.rs` decides the channel of a port a station and an
 access point share (`ChannelCoordinator`): the station's BSS decides it, and

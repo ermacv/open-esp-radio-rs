@@ -2,8 +2,8 @@
 //! a run reads from the stand file, the lock a run holds on its boards and
 //! fixtures, the pre-run observation of the cell, fixture software leases,
 //! the recovery of a board that stopped answering and the post-mortem of a
-//! failed repetition. The stand implements the link's `Dut` and
-//! `StationNetwork` ports for the board it leased.
+//! failed repetition. The stand implements the link's `Dut` port for the
+//! board it leased.
 //!
 //! It actuates no hardware and writes no flash record itself: boards are
 //! reached through board I/O (`oer-hil-board`), exclusion and the board
@@ -21,6 +21,7 @@ pub mod provenance;
 pub mod recovery;
 pub mod software;
 pub mod usb_events;
+pub mod wifi;
 
 /// The root-owned laptop radio helper installed by
 /// `cargo stand fixture install --provider linux-net`.

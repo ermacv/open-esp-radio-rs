@@ -1,7 +1,7 @@
 //! Opt-in packet evidence from the OpenWrt AP's own TX monitor tap.
 
+use crate::air;
 use crate::openwrt::capture::RemoteCapture;
-use oer_hil_family_ieee80211_evidence::air;
 use oer_process::CommandExt as _;
 use std::{
     collections::{BTreeMap, BTreeSet},

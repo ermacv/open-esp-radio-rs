@@ -32,7 +32,6 @@ fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
     let observed = receive(&mut decoder, bytes).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
-mod airtime;
 mod secure_gatt;
 
 /// Feeds `bytes` and returns the last complete frame as message `M`.
@@ -50,7 +49,7 @@ fn receive<M: crate::Message>(
     });
     last
 }
-use crate::system::{HangTarget, InjectHang};
+use crate::system::InjectPanic;
 use crate::{
     Envelope, WireKind, ieee802154::Ieee802154EdEventProbeEvidence,
     ieee802154::Ieee802154EdEventProbeRequest, ieee802154::Ieee802154EdEventProbeStop,
@@ -62,147 +61,11 @@ use crate::{
     ieee802154::Ieee802154ValidationRxAbortEnableState, network::Completion, network::Direction,
     network::FlowConfig, network::Ipv4Endpoint, network::SessionConfig,
     network::SessionLinkRequirements, network::Transport, phy::StartupArtifactChunk,
-    system::StackUsage, system::StackWatermark, wifi::StationAttemptFailureReason,
-    wifi::StationDisconnectReason, wifi::StationFailureStage, wifi::StationLifecycleEvent,
-    wifi::WifiRadioRestartEvidence, wifi::WifiRadioRestartRf, wifi::WifiRole,
-    wifi::WifiRoleTransitionEvidence,
+    system::StackUsage, system::StackWatermark,
 };
 
-fn command(sequence: u32) -> Envelope<InjectHang> {
-    Envelope::new(
-        0x1234_5678_9abc_def0,
-        sequence,
-        42,
-        sequence,
-        InjectHang(HangTarget::Console),
-    )
-}
-
-#[test]
-fn initialization_preserves_each_explicit_ap_scheduler_policy() {
-    for ap_scheduler in [
-        crate::wifi::WifiApScheduler::Disabled,
-        crate::wifi::WifiApScheduler::RrHtResponse24,
-        crate::wifi::WifiApScheduler::DeficitHtResponse24,
-    ] {
-        let expected = Envelope::new(
-            1,
-            1,
-            0,
-            1,
-            crate::wifi::Initialize(crate::wifi::InitializationConfiguration {
-                ap_scheduler,
-                ipv4: crate::wifi::NetworkIpv4Configuration::Dhcp,
-                data_plane: Default::default(),
-                rx_checksum: Default::default(),
-                tx_udp_checksum: Default::default(),
-                tx_buffer: Default::default(),
-                rx_continuation: Default::default(),
-                l1_cache_counters: false,
-            }),
-        );
-        let mut encoder = FrameEncoder::new();
-        let mut decoder = FrameDecoder::new();
-        let observed =
-            receive(&mut decoder, encoder.encode(&expected).unwrap()).map(Result::unwrap);
-        assert_eq!(observed, Some(expected));
-    }
-}
-
-#[test]
-fn memory_benchmark_bounds_and_worst_case_evidence_fit_the_wire() {
-    use crate::{
-        system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode,
-        system::MemoryBenchmarkRequest, system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,
-    };
-    let request = MemoryBenchmarkRequest {
-        mode: MemoryBenchmarkMode::GdmaAsync,
-        source: MemoryBenchmarkSource::Psram,
-        bytes: 1536,
-        frames: 32,
-        iterations: 64,
-    };
-    assert!(request.validate());
-    for frames in [0, 33, u8::MAX] {
-        assert!(!MemoryBenchmarkRequest { frames, ..request }.validate());
-    }
-    for (bytes, frames) in [(4096, 1), (4096, 12), (1514, 32)] {
-        assert!(
-            MemoryBenchmarkRequest {
-                bytes,
-                frames,
-                ..request
-            }
-            .validate()
-        );
-    }
-    for (bytes, frames) in [(4096, 13), (1537, 32)] {
-        assert!(
-            !MemoryBenchmarkRequest {
-                bytes,
-                frames,
-                ..request
-            }
-            .validate()
-        );
-    }
-    for bytes in [0, 4097, u16::MAX] {
-        assert!(!MemoryBenchmarkRequest { bytes, ..request }.validate());
-    }
-    for iterations in [0, 65, u16::MAX] {
-        assert!(
-            !MemoryBenchmarkRequest {
-                iterations,
-                ..request
-            }
-            .validate()
-        );
-    }
-    assert!(
-        MemoryBenchmarkRequest {
-            bytes: 1,
-            iterations: 1,
-            ..request
-        }
-        .validate()
-    );
-    let command = Envelope::new(7, 3, 0, 2, crate::system::RunMemoryBenchmark(request));
-    let mut encoder = FrameEncoder::new();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, encoder.encode(&command).unwrap()).map(Result::unwrap);
-    assert_eq!(observed, Some(command));
-    let event = Envelope::new(
-        u64::MAX,
-        u32::MAX,
-        u64::MAX,
-        u32::MAX,
-        crate::system::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
-            request,
-            completed_iterations: u16::MAX,
-            elapsed_micros: u64::MAX,
-            elapsed_cycles: u64::MAX,
-            elapsed_instructions: u64::MAX,
-            foreground_cycles: u64::MAX,
-            foreground_instructions: u64::MAX,
-            polls: u32::MAX,
-            stop: MemoryBenchmarkStop::GuardCorrupted,
-        }),
-    );
-    let frame = encoder.encode(&event).unwrap();
-    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(event));
-}
-
-#[test]
-fn command_envelope_remains_small_enough_for_embedded_queues() {
-    let size = core::mem::size_of::<Envelope<crate::wifi::StartStationAccessPoint>>();
-    // The largest command owns two independent WPA2 credential sets for
-    // one atomic STA+AP request. Keep the complete decoded queue element
-    // within an explicit embedded budget instead of splitting that
-    // ownership across hidden compatibility state.
-    assert!(size <= 288, "command envelope occupies {size} bytes");
+fn command(sequence: u32) -> Envelope<InjectPanic> {
+    Envelope::new(0x1234_5678_9abc_def0, sequence, 42, sequence, InjectPanic)
 }
 
 #[test]
@@ -419,95 +282,6 @@ fn ieee802154_ed_event_probe_command_and_evidence_fit_and_round_trip() {
 }
 
 #[test]
-fn access_point_retry_evidence_fits_and_round_trips() {
-    use crate::{wifi::WifiAccessPointEvidence, wifi::WifiMacRxHardwareEvidence};
-
-    let evidence = WifiAccessPointEvidence {
-        rx_hardware: WifiMacRxHardwareEvidence {
-            mpdu_count: u16::MAX,
-            data_success: u16::MAX,
-            fcs_error: u16::MAX,
-            abort: u16::MAX,
-            abort_fcs_pass: u16::MAX,
-            power_drop_error: u16::MAX,
-            he_sig_b_error: u16::MAX,
-            same_bm_error: u16::MAX,
-            signal_field: u16::MAX,
-            end: u16::MAX,
-            other_unicast: u16::MAX,
-            buffer_full: u16::MAX,
-            fifo_overflow: u16::MAX,
-            tkip_error: u16::MAX,
-            bluetooth_block_error: u16::MAX,
-            frequency_hop_error: u16::MAX,
-            last_unmatched_error: u16::MAX,
-            ack_interrupt: u16::MAX,
-            rts_interrupt: u16::MAX,
-            brx_agc_error: u16::MAX,
-            brx_error: u16::MAX,
-            nrx_error: u16::MAX,
-            nrx_abort: u16::MAX,
-            nrx_agc_exit: u16::MAX,
-            nrx_baseband_off: u16::MAX,
-            nrx_fdm_watchdog: u16::MAX,
-            nrx_restart: u16::MAX,
-            nrx_service: u16::MAX,
-            nrx_tx_over: u16::MAX,
-            nrx_unsupported: u16::MAX,
-            nrx_he_format: u16::MAX,
-            nrx_ht_sig: u16::MAX,
-            nrx_he_unsupported: u16::MAX,
-            nrx_he_sig_a_crc: u16::MAX,
-            rx_hang: u8::MAX,
-            tx_hang: u8::MAX,
-            rx_tx_hang: u32::MAX,
-            rx_tx_panic: u32::MAX,
-        },
-        data_tx_attempts: u32::MAX,
-        data_tx_retried_frames: u32::MAX,
-        data_tx_maximum_attempts: u8::MAX,
-        data_tx_minimum_final_rate_kbps: u32::MAX,
-        data_tx_ack_snr_samples: u32::MAX,
-        data_tx_minimum_ack_snr_db: i8::MIN,
-        data_tx_maximum_ack_snr_db: i8::MAX,
-        tx_ack_timeout_retries: u32::MAX,
-        tx_cts_timeout_retries: u32::MAX,
-        tx_collision_retries: u32::MAX,
-        ..WifiAccessPointEvidence::default()
-    };
-    let evidence = crate::wifi::WifiAccessPointEvidence {
-        first_rx_protocol_rejection: Some(crate::wifi::WifiRxRejection {
-            reason: crate::wifi::WifiRxRejectionReason::FragmentRetryPacketNumberMismatch {
-                fragment_number: u8::MAX,
-                expected: u64::MAX,
-                observed: u64::MAX,
-            },
-            at_micros: u64::MAX,
-            transmitter: Some([u8::MAX; 6]),
-            frame_control: Some(u16::MAX),
-            sequence_control: Some(u16::MAX),
-            tid: Some(u8::MAX),
-            key_id: Some(u8::MAX),
-            packet_number: Some(u64::MAX),
-            mpdu_length: u32::MAX,
-        }),
-        tx_retention: Some(crate::wifi::WifiTxRetentionEvidence {
-            active_queue_full: u32::MAX,
-            unicast_power_save_full: u32::MAX,
-            group_power_save_full: u32::MAX,
-        }),
-        ..evidence
-    };
-    let expected = Envelope::new(7, 3, 9, 2, crate::wifi::AccessPointStopped(evidence));
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
 fn round_trips_one_byte_at_a_time() {
     let expected = command(7);
     let mut encoder = FrameEncoder::new();
@@ -542,11 +316,11 @@ fn wire_header_is_fixed_and_precedes_the_postcard_body() {
         u32::from_le_bytes(raw[14..18].try_into().unwrap()),
         expected.message_sequence
     );
-    assert_eq!(raw[KEY_RANGE], <InjectHang as crate::Message>::KEY.0);
+    assert_eq!(raw[KEY_RANGE], <InjectPanic as crate::Message>::KEY.0);
     let payload_length = usize::from(u16::from_le_bytes(raw[LENGTH_RANGE].try_into().unwrap()));
     assert_eq!(decoded, WIRE_HEADER_BYTES + payload_length + CHECKSUM_BYTES);
     assert_eq!(
-        postcard::from_bytes::<InjectHang>(
+        postcard::from_bytes::<InjectPanic>(
             &raw[WIRE_HEADER_BYTES..WIRE_HEADER_BYTES + payload_length]
         )
         .unwrap(),
@@ -568,7 +342,7 @@ fn a_frame_of_another_type_is_not_decoded_as_this_one() {
             frame.key,
             <crate::base::GetBootStatus as crate::Message>::KEY
         );
-        seen = Some(frame.decode::<InjectHang>().is_none());
+        seen = Some(frame.decode::<InjectPanic>().is_none());
     });
     assert_eq!(seen, Some(true));
     assert_eq!(decoder.counters().frames, 1);
@@ -580,7 +354,7 @@ fn rejects_an_event_on_the_command_endpoint() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let observed = receive::<InjectHang>(&mut decoder, frame);
+    let observed = receive::<InjectPanic>(&mut decoder, frame);
     assert_eq!(observed, Some(Err(DecodeError::MessageKind)));
     assert_eq!(decoder.counters().message_kind_errors, 1);
     assert_eq!(decoder.counters().deserialize_errors, 0);
@@ -603,7 +377,7 @@ fn leading_delimiter_recovers_from_text_output() {
         &input[..NOISE.len() + frame.len()],
         |result| {
             if let Ok(frame) = result {
-                observed = frame.decode::<InjectHang>().map(Result::unwrap);
+                observed = frame.decode::<InjectPanic>().map(Result::unwrap);
             }
         },
     );
@@ -648,107 +422,6 @@ fn discards_overfull_noise_until_a_delimiter() {
 }
 
 #[test]
-fn credentials_round_trip_without_debugging_the_secret() {
-    extern crate std;
-
-    use crate::wifi::NetworkCredentials;
-
-    let credentials = NetworkCredentials::try_new(b"test-network", b"private-password").unwrap();
-    assert_eq!(credentials.ssid(), b"test-network");
-    assert_eq!(credentials.passphrase(), b"private-password");
-    let debug = std::format!("{credentials:?}");
-    assert!(!debug.contains("private-password"));
-
-    let expected = Envelope::new(
-        7,
-        1,
-        0,
-        1,
-        crate::wifi::StartStation(crate::wifi::StationStart {
-            credentials,
-            power_save: crate::wifi::WifiStationPowerSave::MaxModem { listen_interval: 3 },
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn access_point_request_round_trips_without_debugging_the_secret() {
-    extern crate std;
-
-    use crate::{
-        wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointRequest,
-        wifi::WifiAccessPointSecurity, wifi::WifiChannelWidth,
-    };
-
-    let request = WifiAccessPointRequest {
-        credentials: NetworkCredentials::try_new(b"open-radio-ap", b"private-password").unwrap(),
-        security: WifiAccessPointSecurity::Wpa2Personal,
-        channel: 6,
-        channel_width: WifiChannelWidth::Mhz40Above,
-        client_limit: 4,
-        ipv4: NetworkIpv4Configuration::Static {
-            address: [10, 43, 0, 1],
-            prefix_length: 24,
-            gateway: None,
-        },
-    };
-    assert_eq!(request.validate(), Ok(()));
-    let mut invalid_geometry = request.clone();
-    invalid_geometry.channel = 13;
-    assert_eq!(
-        invalid_geometry.validate(),
-        Err(crate::wifi::WifiAccessPointRequestError::Channel)
-    );
-    let debug = std::format!("{request:?}");
-    assert!(!debug.contains("private-password"));
-
-    let expected = Envelope::new(7, 1, 0, 2, crate::wifi::StartAccessPoint(request));
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn station_access_point_request_round_trips_as_one_owned_command() {
-    use crate::{
-        wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointRequest,
-        wifi::WifiAccessPointSecurity, wifi::WifiChannelWidth, wifi::WifiStationAccessPointRequest,
-    };
-
-    let request = WifiStationAccessPointRequest {
-        station_credentials: NetworkCredentials::try_new(b"upstream-ap", b"upstream-password")
-            .unwrap(),
-        access_point: WifiAccessPointRequest {
-            credentials: NetworkCredentials::try_new(b"open-radio-ap", b"downstream-password")
-                .unwrap(),
-            security: WifiAccessPointSecurity::Wpa2Personal,
-            channel: 6,
-            channel_width: WifiChannelWidth::Mhz40Above,
-            client_limit: 1,
-            ipv4: NetworkIpv4Configuration::Static {
-                address: [192, 168, 4, 1],
-                prefix_length: 24,
-                gateway: None,
-            },
-        },
-    };
-    assert_eq!(request.validate(), Ok(()));
-    let expected = Envelope::new(7, 1, 0, 3, crate::wifi::StartStationAccessPoint(request));
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
 fn asymmetric_bidirectional_session_round_trips() {
     let expected = Envelope::new(
         7,
@@ -756,7 +429,7 @@ fn asymmetric_bidirectional_session_round_trips() {
         11,
         3,
         crate::network::Configure(SessionConfig {
-            network_interface: crate::wifi::WifiNetworkInterface::Station,
+            network_interface: crate::network::WifiNetworkInterface::Station,
             transport: Transport::Udp,
             direction: Direction::Bidirectional,
             completion: Completion::DurationMillis(12_000),
@@ -819,7 +492,7 @@ fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
         11,
         3,
         crate::network::Configure(SessionConfig {
-            network_interface: crate::wifi::WifiNetworkInterface::AccessPoint,
+            network_interface: crate::network::WifiNetworkInterface::AccessPoint,
             transport: Transport::Udp,
             direction: Direction::Bidirectional,
             completion: Completion::DurationMillis(12_000),
@@ -896,182 +569,6 @@ fn dedicated_irq_stacks_round_trip_with_explicit_inactive_hart() {
             receive(&mut decoder, encoder.encode(&response).unwrap()).map(Result::unwrap);
         assert_eq!(observed, Some(response));
     }
-}
-
-#[test]
-fn station_beacon_loss_generation_round_trips() {
-    let expected = Envelope::new(
-        7,
-        3,
-        0,
-        0,
-        crate::wifi::StationLifecycle(StationLifecycleEvent::Disconnected {
-            generation: 4,
-            reason: StationDisconnectReason::BeaconLoss,
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn connected_station_negotiated_link_round_trips_on_current_version() {
-    let expected = Envelope::new(
-        7,
-        4,
-        0,
-        0,
-        crate::wifi::StationLifecycle(StationLifecycleEvent::Connected {
-            generation: 5,
-            association_bandwidth_mhz: Some(40),
-            security: Some(crate::wifi::StationLinkSecurity::Wpa2Personal {
-                management_protection: true,
-            }),
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn station_retry_exhaustion_round_trips_without_text_markers() {
-    let expected = Envelope::new(
-        7,
-        4,
-        0,
-        0,
-        crate::wifi::StationLifecycle(StationLifecycleEvent::RetryExhausted {
-            generation: 1,
-            attempts: 3,
-            stage: StationFailureStage::CandidateSelection,
-            reason: StationAttemptFailureReason::NoCandidate,
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn station_fault_round_trips_with_its_portable_reason() {
-    let expected = Envelope::new(
-        7,
-        4,
-        0,
-        0,
-        crate::wifi::StationLifecycle(StationLifecycleEvent::Faulted {
-            generation: 2,
-            phase: crate::wifi::StationFaultPhase::Teardown,
-            cause: crate::wifi::StationFaultCause::Security,
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn explicit_wifi_role_transition_round_trips_with_request_identity() {
-    let expected = Envelope::new(
-        7,
-        5,
-        0,
-        42,
-        crate::wifi::RoleTransitioned(WifiRoleTransitionEvidence {
-            previous: WifiRole::Station,
-            current: WifiRole::Idle,
-            generation: 9,
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn radio_restart_round_trips_rf_outcome_with_request_identity() {
-    let expected = Envelope::new(
-        7,
-        6,
-        0,
-        43,
-        crate::wifi::RadioRestarted(WifiRadioRestartEvidence {
-            generation: 10,
-            rf: WifiRadioRestartRf::ClosedAndWoken,
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn maximum_monitor_frame_chunk_fits_and_round_trips() {
-    use crate::{
-        wifi::WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, wifi::WifiMonitorEvidenceSource,
-        wifi::WifiMonitorFrameChunk, wifi::WifiMonitorObserved,
-    };
-
-    let bytes = [0xa5; WIFI_MONITOR_FRAME_CHUNK_MAX_LEN];
-    let chunk = WifiMonitorFrameChunk::try_new(
-        7,
-        11,
-        123_456,
-        WIFI_MONITOR_FRAME_CHUNK_MAX_LEN as u16,
-        1_024,
-        0,
-        Some(WifiMonitorObserved {
-            source: WifiMonitorEvidenceSource::Hardware,
-            value: 6,
-        }),
-        Some(WifiMonitorObserved {
-            source: WifiMonitorEvidenceSource::Hardware,
-            value: -42,
-        }),
-        None,
-        &bytes,
-    )
-    .unwrap();
-    let expected = Envelope::new(9, 3, 0, 77, crate::wifi::MonitorFrame(chunk));
-    let mut encoder = FrameEncoder::new();
-    let wire = encoder.encode(&expected).unwrap();
-    assert!(wire.len() <= MAX_WIRE_FRAME_BYTES);
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, wire).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn control_mailbox_overflow_disconnect_round_trips_on_current_protocol() {
-    let expected = Envelope::new(
-        7,
-        5,
-        0,
-        43,
-        crate::wifi::StationLifecycle(crate::wifi::StationLifecycleEvent::Disconnected {
-            generation: 11,
-            reason: StationDisconnectReason::ControlMailboxOverflow,
-        }),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
 }
 
 #[test]
@@ -2081,7 +1578,13 @@ fn the_largest_hci_exchange_fits_one_frame_each_way() {
 fn an_intact_frame_whose_payload_is_not_its_type_is_a_payload_error() {
     // Equal keys mean equal schemas, so only a defective sender produces
     // this: an intact frame whose body is no value of the type it names.
-    let expected = command(9);
+    let expected = Envelope::new(
+        0x1234_5678_9abc_def0,
+        9,
+        42,
+        9,
+        crate::system::WatchdogTest(crate::system::WatchdogTestMode::Complete),
+    );
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let encoded = &frame[2..frame.len() - 1];
@@ -2092,7 +1595,7 @@ fn an_intact_frame_whose_payload_is_not_its_type_is_a_payload_error() {
     assert_eq!(
         protected,
         WIRE_HEADER_BYTES + 1,
-        "a hang target is one variant byte"
+        "a watchdog test mode is one variant byte"
     );
     raw[WIRE_HEADER_BYTES] = 0x7f;
     let checksum = CRC32C.checksum(&raw[..protected]).to_le_bytes();
@@ -2103,7 +1606,7 @@ fn an_intact_frame_whose_payload_is_not_its_type_is_a_payload_error() {
     let frame = &reencoded[..written + 3];
 
     let mut decoder = FrameDecoder::new();
-    let observed = receive::<InjectHang>(&mut decoder, frame);
+    let observed = receive::<crate::system::WatchdogTest>(&mut decoder, frame);
     assert_eq!(observed, Some(Err(DecodeError::Payload)));
     assert_eq!(decoder.counters().frames, 1);
 }
@@ -2120,19 +1623,10 @@ fn a_message_serialized_by_its_producer_frames_like_an_encoded_one() {
         &expected.body,
     )
     .unwrap();
-    assert!(outbound.is::<InjectHang>());
+    assert!(outbound.is::<InjectPanic>());
     let queued = encoder
         .encode_outbound(expected.boot_id, &outbound)
         .unwrap()
         .to_vec();
     assert_eq!(queued, direct);
-}
-
-#[test]
-fn a_max_modem_power_save_needs_a_listen_interval() {
-    use crate::wifi::WifiStationPowerSave;
-    assert!(WifiStationPowerSave::None.is_valid());
-    assert!(WifiStationPowerSave::MinModem.is_valid());
-    assert!(WifiStationPowerSave::MaxModem { listen_interval: 3 }.is_valid());
-    assert!(!WifiStationPowerSave::MaxModem { listen_interval: 0 }.is_valid());
 }

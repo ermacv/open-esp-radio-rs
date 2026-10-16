@@ -1,6 +1,5 @@
 //! The application's station vocabulary: lifecycle stages, fault reasons
-//! and the reconnect policy, which `oer-radio` publishes. The station
-//! itself is [`crate::machine`].
+//! and the reconnect policy. The station itself is [`crate::machine`].
 
 /// The stage of the station's lifecycle a fault or a report names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

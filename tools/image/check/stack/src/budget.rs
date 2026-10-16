@@ -6,8 +6,8 @@
 //! class
 //! (<https://github.com/ermacv/open-esp-radio-rs/issues/524#issuecomment-6108624676>),
 //! and kept 512 MiB of working memory once it accounted the whole analysis:
-//! about twice the largest image's accounted peak, 240 MB for the
-//! wifi-ble-coex runtime image
+//! about twice the largest image's accounted peak, 240 MB for the former
+//! wifi-ble-coex runtime image (tag `legacy-wifi-2026-10-16`)
 //! (<https://github.com/ermacv/open-esp-radio-rs/issues/524#issuecomment-6113444583>).
 //! The work budget is the primary bound: it does not depend on the
 //! machine's load. The deadline is a backstop. Working memory covers the

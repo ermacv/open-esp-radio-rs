@@ -1,29 +1,18 @@
 //! Chip-independent HIL target logic.
 //!
 //! The ESP32-S31 HIL runtime composes these modules with its radio, executor
-//! and console; host tests exercise the same compiled code. Network modules
-//! use the owned Xarxa stack selected by the `owned-network` feature, as the
-//! runtime does.
+//! and console; host tests exercise the same compiled code.
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
-
-#[cfg(feature = "owned-network")]
-extern crate embassy_net_owned as embassy_net;
 
 pub mod base;
 #[cfg(feature = "secure-gatt")]
 pub mod bluetooth_gatt;
 pub mod console;
 pub mod liveness;
-#[cfg(feature = "system")]
-pub mod memory_benchmark;
-#[cfg(feature = "wifi")]
-pub mod network;
 pub mod postmortem;
 pub mod profile;
 pub mod sample_request;
-#[cfg(feature = "wifi")]
-pub mod traffic;
 
 #[doc(hidden)]
 pub use oer_hil_protocol as __protocol;

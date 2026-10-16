@@ -13,8 +13,6 @@ mod fault;
 pub use fault::*;
 mod register_image;
 pub use register_image::*;
-mod tracking_hold;
-pub use tracking_hold::*;
 
 crate::messages! {
     /// Destructive checkpoints in actual PHY maintenance; diagnostic only.
@@ -27,15 +25,10 @@ crate::messages! {
     /// The direct source-owned RX-gain transaction executes from internal
     /// SRAM.
     property RxHotSram = "phy/rx-hot-sram";
-    /// One forced tracking tick can be timed on request
-    /// (`phy/tracking/hold/measure`); diagnostic only.
-    property TrackingHoldProbe = "phy/tracking-hold";
     endpoint ControlFault = "phy/fault/control" => crate::phy::FaultState;
     topic FaultState = "phy/fault/state";
     endpoint ControlTracking = "phy/tracking/control" => crate::phy::TrackingState;
     topic TrackingState = "phy/tracking/state";
-    endpoint MeasureTrackingHold = "phy/tracking/hold/measure" => crate::phy::TrackingHold;
-    topic TrackingHold = "phy/tracking/hold";
     endpoint ReadRegisterImage = "phy/register-image/read" => crate::phy::RegisterImageWords;
     topic RegisterImageWords = "phy/register-image/words";
     endpoint ReadAnalogImage = "phy/analog-image/read" => crate::phy::AnalogImageBytes;
@@ -62,14 +55,6 @@ pub struct ControlTracking(pub crate::phy::PhyTrackingCommand);
 /// `phy/tracking/state`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct TrackingState(pub crate::phy::PhyTrackingEvidence);
-
-/// Time one forced tracking tick while the periodic timer is suspended.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct MeasureTrackingHold(pub crate::phy::PhyTrackingHoldRequest);
-
-/// `phy/tracking/hold`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct TrackingHold(pub crate::phy::PhyTrackingHoldEvidence);
 
 /// Read a window of the radio-PHY register image without effect.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]

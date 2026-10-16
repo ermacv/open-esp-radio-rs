@@ -459,9 +459,6 @@ pub struct Gate {
     /// `static-interrupts`, leaving the routes to the image's table.
     #[serde(default)]
     pub static_interrupts: bool,
-    /// The Wi-Fi composition the architecture audit resolves.
-    #[serde(default)]
-    pub integration: Option<Integration>,
     /// The production PHY library the PHY audit builds.
     #[serde(default)]
     pub phy: Option<PhyLibrary>,
@@ -479,18 +476,6 @@ pub struct Gate {
 pub struct Doctest {
     pub package: String,
     pub features: String,
-}
-
-/// The Wi-Fi composition and its HIL runtime the architecture audit holds
-/// to their diagnostics selection.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct Integration {
-    pub manifest: PathBuf,
-    pub package: String,
-    /// The PHY package whose registration diagnostics follow the
-    /// composition's.
-    pub phy: String,
 }
 
 /// The production PHY library and the chip's packages its build may

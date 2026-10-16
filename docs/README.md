@@ -7,10 +7,8 @@ details live beside their owner; this directory contains shared contracts.
 
 | Goal | Start | Continue |
 | --- | --- | --- |
-| Understand the architecture | [From binary evidence to a Wi-Fi station](binary-to-station.md) | [Worked channel change](channel-walkthrough.md), [responsibility and dependency reference](architecture.md) |
 | Make a first contribution | [Host tutorial](first-contribution.md) | [Contribution workflow](../CONTRIBUTING.md), [manage issues and dependencies](issues.md) |
 | Investigate hardware | [Blobray task map](../tools/blobray/README.md#choose-a-task) | [Reviewed models and publication](../registers/README.md), [PHY research](phy/README.md) |
-| Build and validate a station | [ESP32-S31 route](station-hardware.md) | [Application example](../examples/esp32s31/station/README.md), [HIL](../hil/README.md), [qualification](../qualification/README.md) |
 
 These routes assume Rust and embedded basics. The host route needs no board or
 private binary; the hardware route names additional prerequisites at each step.
@@ -30,14 +28,8 @@ You do not need to read every component reference to make a first change.
   HIL, verification and qualification responsibilities.
 - [Driver architecture](../crates/README.md): layers, resources and application
   integration.
-- [Channel walkthrough](channel-walkthrough.md): one real hardware fact through
-  review, publication, PAC, HAL, PHY and the station scan caller.
 - [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi, IEEE 802.15.4,
   Bluetooth and module naming.
-- [Network implementation](network-implementations.md): the owned Xarxa
-  integration, its dependency pins and how it reaches the radio.
-- [Wi-Fi network integration](wifi-egress.md): packet ownership, SRAM admission,
-  completion, compatibility and research boundaries.
 - [Verification and qualification](verification-and-qualification.md): evidence
   strength, freshness and the sole readiness authority.
 - [HIL provenance and replay](hil-reproducibility.md): artifact identity,
@@ -61,9 +53,8 @@ inventories. These source references do not replace machine qualification or
 hardware evidence.
 
 For API semantics, consult module/item rustdoc: the published
-[host](https://ermacv.github.io/open-esp-radio-rs/api/host/oer/index.html),
-[ESP32-S31](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31/oer_esp32s31_phy/index.html)
-and [ESP32-S31 Wi-Fi composition](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31/oer_esp32s31_ieee80211_system/index.html)
+[host](https://ermacv.github.io/open-esp-radio-rs/api/host/oer/index.html)
+and [ESP32-S31](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31/oer_esp32s31_phy/index.html)
 documentation, or `cargo xtask doc` from the repository root. Each package is
 documented once, for the target and features in its `[package.metadata.docs.rs]`.
 CLI references use each binary's `--help`; they are separate from library rustdoc.

@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 
 use oer_hil_protocol::{FRAMING_VERSION, Key, Kind, MESSAGES_LOCK, MessageInfo, registry};
 
-const MODULES: [&str; 8] = [
+const MODULES: [&str; 7] = [
     "base",
     "system",
-    "wifi",
     "network",
     "bluetooth",
     "ieee802154",

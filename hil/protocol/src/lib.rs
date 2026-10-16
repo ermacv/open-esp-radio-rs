@@ -44,7 +44,6 @@ pub mod network;
 pub mod phy;
 pub mod system;
 pub mod telemetry;
-pub mod wifi;
 
 /// Every module's messages, for a host that decodes any frame.
 #[cfg(feature = "registry")]
@@ -52,7 +51,6 @@ pub fn registry() -> impl Iterator<Item = &'static MessageInfo> {
     [
         base::MESSAGES,
         system::MESSAGES,
-        wifi::MESSAGES,
         network::MESSAGES,
         bluetooth::MESSAGES,
         ieee802154::MESSAGES,

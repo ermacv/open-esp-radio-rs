@@ -24,68 +24,6 @@ use oer_hil_protocol::{
 use oer_hil_run_bundle_format::run::Comparison;
 use oer_hil_run_bundle_format::run::MeasurementUnit;
 
-#[test]
-fn memory_counter_scopes_preserve_full_values_without_cpu_percentages() {
-    use oer_hil_protocol::{
-        system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode,
-        system::MemoryBenchmarkRequest, system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,
-    };
-    let cycles = u64::from(u32::MAX) + 100;
-    let events = [event(
-        7,
-        3,
-        0,
-        9,
-        oer_hil_protocol::system::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
-            request: MemoryBenchmarkRequest {
-                mode: MemoryBenchmarkMode::GdmaAsync,
-                source: MemoryBenchmarkSource::Psram,
-                bytes: 1514,
-                frames: 32,
-                iterations: 32,
-            },
-            completed_iterations: 32,
-            elapsed_micros: 500,
-            elapsed_cycles: cycles,
-            elapsed_instructions: 1000,
-            foreground_cycles: 200,
-            foreground_instructions: 100,
-            polls: 64,
-            stop: MemoryBenchmarkStop::Completed,
-        }),
-    )];
-    let observations = protocol::observations("boot-001", &events, 100);
-    let elapsed = observations
-        .iter()
-        .find(|value| value.name.ends_with("memory.elapsed.cycles"))
-        .unwrap();
-    assert_eq!(elapsed.value, cycles);
-    assert_eq!(elapsed.unit, MeasurementUnit::Count);
-    assert!(
-        observations
-            .iter()
-            .any(|value| value.name.ends_with("memory.frames-per-iteration") && value.value == 32)
-    );
-    assert!(
-        observations
-            .iter()
-            .any(|value| value.name.ends_with("memory.bytes-per-frame") && value.value == 1514)
-    );
-    assert!(observations.iter().any(
-        |value| value.name.ends_with("memory.bytes-per-iteration") && value.value == 1514 * 32
-    ));
-    assert!(
-        observations
-            .iter()
-            .any(|value| value.name.ends_with("memory.foreground.cycles") && value.value == 200)
-    );
-    assert!(
-        observations
-            .iter()
-            .all(|value| value.unit != MeasurementUnit::BasisPoints)
-    );
-}
-
 fn transport(bytes: u64, elapsed_micros: u64) -> TransportEvidence {
     TransportEvidence {
         rx_maximum_silence_micros: None,
@@ -245,38 +183,6 @@ fn semantic_checks_record_only_explicit_observations() {
             .count(),
         1
     );
-}
-
-#[test]
-fn aggregate_fill_projects_one_measurement_set_per_association() {
-    use oer_hil_protocol::wifi::WifiApAggregateFill;
-    let fill = |association_id, aggregates, subframes| {
-        oer_hil_protocol::wifi::AccessPointAggregateFill(WifiApAggregateFill {
-            generation: 4,
-            association_id,
-            aggregates,
-            subframes,
-            maximum_subframes: 32,
-            histogram: [1, 2, 3, 4, aggregates - 10],
-        })
-    };
-    let events = [
-        event(7, 3, 0, 9, fill(1, 100, 2_900)),
-        event(7, 3, 0, 10, fill(2, 60, 1_700)),
-    ];
-    let observations = protocol::observations("boot-001", &events, 100);
-    let value = |name: &str| {
-        observations
-            .iter()
-            .find(|observation| observation.name.ends_with(name))
-            .map(|observation| observation.value)
-    };
-    assert_eq!(value("ap.aggregate-fill.aid-1.aggregates"), Some(100));
-    assert_eq!(value("ap.aggregate-fill.aid-1.subframes"), Some(2_900));
-    assert_eq!(value("ap.aggregate-fill.aid-2.subframes"), Some(1_700));
-    assert_eq!(value("ap.aggregate-fill.aid-2.maximum-subframes"), Some(32));
-    assert_eq!(value("ap.aggregate-fill.aid-2.histogram-32"), Some(50));
-    assert_eq!(value("ap.aggregate-fill.aid-1.histogram-2-7"), Some(2));
 }
 
 #[test]

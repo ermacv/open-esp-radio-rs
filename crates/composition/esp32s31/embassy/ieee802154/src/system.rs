@@ -744,8 +744,8 @@ impl Ieee802154System {
     /// `esp_coex_wifi_i154_enable` does for a Thread border router: enable
     /// coexistence for IEEE 802.15.4 and publish its schedule status, so the
     /// coexistence schedule counts it (`RadioGuard::enable_ieee802154_coex`).
-    /// The image must run `RadioSystem::run_coex_schedule` once, as its
-    /// Wi-Fi composition does. Nothing happens when it already takes part.
+    /// The image must run `RadioSystem::run_coex_schedule` once. Nothing
+    /// happens when it already takes part.
     pub async fn enable_wifi_coexistence<P, C: PlatformClockProvider>(
         self,
         radio: &RadioSystem<P, C, EmbassyClock>,

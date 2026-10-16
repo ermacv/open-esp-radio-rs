@@ -44,7 +44,6 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct Plan {
     pub image: ImageClass,
     pub requirements: Requirements,
-    pub settings: oer_hil_protocol::wifi::TargetSettings,
     /// Named observations the workload publishes. Their acceptance limits
     /// remain in the family's criteria; listing a check is not a verdict.
     pub checks: Vec<&'static str>,
@@ -58,7 +57,6 @@ impl Plan {
         Self {
             image,
             requirements: Requirements::default(),
-            settings: oer_hil_protocol::wifi::TargetSettings::default(),
             checks: Vec::new(),
             wifi: WifiLabUse::default(),
         }

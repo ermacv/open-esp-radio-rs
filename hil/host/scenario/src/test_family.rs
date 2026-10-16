@@ -66,7 +66,7 @@ impl ScenarioFamily for TestFamily {
                 silence,
                 load: _,
             } => {
-                let mut plan = Plan::target_only(ImageClass::Correctness);
+                let mut plan = Plan::target_only(ImageClass::BluetoothGatt);
                 plan.requirements.station_network = *station_network;
                 plan.checks.push("udp.rx.target-rate");
                 if *silence {

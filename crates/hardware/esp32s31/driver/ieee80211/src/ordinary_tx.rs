@@ -989,7 +989,6 @@ where
         capped_power(self.power.power_pair(rate_code), ceiling)
     }
 
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-individual-no-ack
     fn start_transaction<H: TxHardware>(
         &mut self,
         hardware: &mut H,

@@ -238,7 +238,8 @@ const RX_BLOCK_ACK_BANKS: usize = RESOURCES.rx_block_ack_entries as usize;
 const MAX_PROGRAM_PSDU: usize = 0x0fff;
 /// Light-sleep wake lead the vendor power manager publishes beside the
 /// station TBTT lead (`g_pm_cfg[16]`, as
-/// `roles/esp32s31/ieee80211/sta/src/modem_sleep.rs` records it). The port
+/// `crates/protocols/ieee80211/sta/src/modem_sleep.rs` records it in
+/// `TBTT_WAKE_WINDOW_MICROS`). The port
 /// reports TBTTs only; it keeps the vendor relation between the two leads.
 const STATION_TBTT_WAKE_WINDOW_MICROS: u16 = 1_500;
 
@@ -296,7 +297,6 @@ impl SignalMetadata for Esp32s31RxMeta {
 /// descriptor capacity, and with the MIC and the FCS fits the transmit
 /// programs' PSDU length field (the legacy program's 12 bits). Each ordinary
 /// EDCA queue holds one attempt. 5 GHz is absent from the ESP32-S31.
-// CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts
 pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapabilities {
     let buffered =
         (buffer_size & !3).saturating_sub(TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE);
@@ -650,7 +650,7 @@ pub struct LowerMacConfig {
     /// Executor watchdog of one publication.
     pub publication_timeout: oer_time::Duration,
     /// The epoch of the core's TSF relations, a number no other owner of a
-    /// TSF relation took (`MacClockHandle::tsf_epoch`).
+    /// TSF relation took.
     pub tsf_epoch: u32,
 }
 
@@ -1168,7 +1168,6 @@ where
     }
 
     /// Plan one MPDU's publication from its common values.
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels
     fn plan_mpdu(
         &self,
         common: CommonAdmission,
@@ -1299,7 +1298,6 @@ where
     /// # Errors
     ///
     /// Why the aggregate cannot go as one publication.
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-a-mpdu
     fn ampdu_settings<S: AmpduBacking, const SLOTS: usize>(
         &self,
         values: AmpduValues,
@@ -1990,7 +1988,6 @@ where
     /// The station's TSF and the generation of its relation, for a
     /// [`TsfSample`](oer_ieee80211_lower_mac::TsfSample) the backend pairs
     /// with its radio clock: the access-point timer has no read seam.
-    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tsf
     pub fn station_tsf_reading<H: StationTsfHardware>(
         &self,
         hardware: &mut H,

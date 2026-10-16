@@ -38,7 +38,6 @@ pub struct MacInterruptEpochDrain {
 /// lends that token to a platform route. Quiescence first recovers the exact
 /// token and only then drains coalesced IRQ publications, preventing one
 /// epoch's wake from becoming work in the next epoch.
-// CAPABILITY: wifi-interrupt-epoch-owners
 pub struct InterruptEpoch<'runtime, R, M: RxDelivery>
 where
     R: MacInterruptRoute,

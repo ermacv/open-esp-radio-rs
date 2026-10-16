@@ -5,11 +5,10 @@ framing 2
 base
 bluetooth base system
 ieee802154 base
-network base system wifi
+network base system
 phy base
 system
 telemetry
-wifi base
 [messages]
 base/accepted 1ac686128bebf3dd topic
 base/boot 472a6c8ee83e5591 topic
@@ -128,34 +127,14 @@ phy/startup-artifact e19bebb242ac5508 property
 phy/startup-artifact/part f9009c10dff8abb5 topic
 phy/startup-artifact/ready c1d6ed78910cefdc topic
 phy/startup-artifact/upload d719a6e460b8c641 endpoint
-phy/tracking-hold 55b6448723bbce33 property
 phy/tracking/control 36c987e42b3ce69a endpoint
-phy/tracking/hold 186a5f4fce97018d topic
-phy/tracking/hold/measure dde336f2a2b646b9 endpoint
 phy/tracking/state b95b96002f5ea5d3 topic
-system/hang/inject 2a42c5b154094a25 endpoint
-system/hang/injected ab4b470f0e8147f6 topic
-system/interrupt-latency 0f789db2ef7d8e84 property
-system/interrupt-latency/measure 97d378e1cf9d4610 endpoint
-system/interrupt-latency/measured b6a32be4bcdaff2c topic
 system/interrupt-stacks cc93bc9290533df4 topic
 system/interrupt-stacks/get 651c27a44d5bc802 endpoint
-system/ipc-call 2d19c0acb90b2ce9 property
-system/ipc/call 89ef451b0d9c998b endpoint
-system/ipc/called c05bc9a934183a5d topic
-system/memory-benchmark 6490d78e1fedac51 property
-system/memory-benchmark/completed 898d77a237a16f8e topic
-system/memory-benchmark/run 9166cc0e5e410a17 endpoint
 system/panic/inject 4a8069a58696abc1 endpoint
 system/panic/injected 9f469405c60e21be topic
-system/source-gate d05b7b5ab4fd2bc9 property
-system/source-gate/probe 355544731c965096 endpoint
-system/source-gate/probed 90ef30dc91e76718 topic
 system/stacks 415930f2a651bd9c topic
 system/stacks/get 3af83191bf626410 endpoint
-system/timebase-probe 5e565d5e923db7c7 property
-system/timebase/probe 1166b04f07380f1f endpoint
-system/timebase/probed 341699ecb055fc81 topic
 system/usb/disable 0341ab5f7efd972b endpoint
 system/usb/disabled 8571c744c847ea4b topic
 system/watchdog/armed ba82e77bc5b7470c topic
@@ -178,42 +157,3 @@ telemetry/trace/entries/get 7729a19377cfc57c endpoint
 telemetry/trace/snapshot 238cb0f59b838aed topic
 telemetry/trace/snapshot/get c4c75e7467e29054 endpoint
 telemetry/trace/state ff15b6ee814383f1 topic
-wifi/access-point fc54708e3a37bba1 property
-wifi/access-point/aggregate-fill b1a41e6ca1a90d61 topic
-wifi/access-point/airtime/peer 8431f681e6483456 topic
-wifi/access-point/airtime/report a5568ab0edf671c4 topic
-wifi/access-point/start 4a6837ce5901b42f endpoint
-wifi/access-point/started 11ab76d50e5fc395 topic
-wifi/access-point/stop a3d816777c42756a endpoint
-wifi/access-point/stopped a985084a26dfe2ec topic
-wifi/driver-observation 56bbff41d89e7e5d property
-wifi/initialize 17a08d12a3fba165 endpoint
-wifi/initialized e28dc136e86fe706 topic
-wifi/monitor-capture e801c0d8a6785363 property
-wifi/monitor/capture b4bce2ff2f52ef64 endpoint
-wifi/monitor/capture/completed 662db8a858097285 topic
-wifi/monitor/frame d7619cfd61dd089f topic
-wifi/monitor/start 33b835565eadac52 endpoint
-wifi/monitor/started 3cf3fdb12eddec3c topic
-wifi/monitor/stop c2b4af55d3e4c21f endpoint
-wifi/monitor/stopped 964d6674e5a30762 topic
-wifi/radio/restart a6e69c37326e0715 endpoint
-wifi/radio/restarted f3c8408cb9ba50da topic
-wifi/role-control 19df79291890467a property
-wifi/role/failed 9fbde0d90a80b765 topic
-wifi/role/transitioned b791cd6c129690b7 topic
-wifi/runtime-initialization 50e2f030c764a5bb property
-wifi/scan 1af5fc8dc0b1d601 endpoint
-wifi/scan/completed 56ce65e6eb21584b topic
-wifi/station-access-point 983d21f4339a181c property
-wifi/station-access-point/start 5016be8f5cdfcda7 endpoint
-wifi/station-access-point/stop bdfd1fa8942de861 endpoint
-wifi/station-access-point/stopped b19fad621c6a61f6 topic
-wifi/station-epoch-control 2be4ec938d7449c8 property
-wifi/station-lifecycle-events c3a1976b57a6f76d property
-wifi/station/epoch/completed d3b39806204e44a2 topic
-wifi/station/epoch/cycle f93465935d9839c1 endpoint
-wifi/station/lifecycle 6889113445a59b82 topic
-wifi/station/start f7577d9aafde3569 endpoint
-wifi/station/stop 82add8a7b5f872f9 endpoint
-wifi/tx-architecture-probe 9e611d3cba8f896d property

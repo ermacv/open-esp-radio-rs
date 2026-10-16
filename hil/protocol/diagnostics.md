@@ -1,4 +1,4 @@
-# Platform and memory HIL diagnostics
+# Platform HIL diagnostics
 
 ## Platform reset and watchdog
 
@@ -28,21 +28,6 @@ it disconnect. Only a reset of the chip brings it back. The host arms
 `SerialCapture::expect_detach` before the request, so the end of the stream
 that follows closes the capture without a failure.
 
-`system::CallAcrossCores` (`IpcCall`, images that run both cores) posts
-functions through esp-hal's inter-processor call: one from core 0 to itself
-and one to core 1, which posts one back to core 0. `CoresCalled` names the
-core each ran on, `None` for one that did not run within 100 ms. The call's
-line enters through the platform's stack-switching vector entry and the
-vectored dispatcher, so the `system-ipc-call` scenario exercises that path on
-both cores.
-
-`system::ProbeSourceGate` (`SourceGate`, the radio images that run both
-cores) fires system timer alarm 2, a source of the image's interrupt table,
-three times: before its owner enables the source with its token, after, and
-after it disables the source again. `SourceGated` counts the table handler's
-runs in each phase; the `system-interrupt-table` scenario requires none, one
-and none.
-
 `system::WatchdogTest` is served only by the dedicated watchdog image.
 The dedicated radio-free image's one-second engineering budget exercises completion, a synchronous
 poll that never returns, cancellation, missing completion and late restoration
@@ -70,7 +55,8 @@ without a trace reports `installed: false`.
 
 ## Program-counter profile
 
-An image with the `pc-profile` diagnostic feature samples the interrupted
+No image builds the `pc-profile` diagnostic feature now. An image with it
+samples the interrupted
 program counter and return address of each selected hart at a fixed period.
 `ProfileControl::Arm { harts, period_us }` discards the previous profile and
 arms the next one; `Disarm` stops it and `Status` reports `ProfileStatus`.
@@ -86,36 +72,17 @@ target; the host symbolizes them against the run's ELF.
 Sampling perturbs timing: a profiled run is diagnostic evidence, never a
 throughput or timing measurement.
 
-## Memory copy benchmark
-
-`system::RunMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
-GDMA copy from SRAM/PSRAM into SRAM. A request specifies 1..=4096 payload bytes
-per frame, 1..=32 frames and 1..=64 measured iterations. Each iteration copies
-at most 49,152 payload bytes, excluding storage padding and guards. The CPU
-copies frames in a loop; GDMA uses one scatter-gather chain per iteration.
-`system::MemoryBenchmarkCompleted` echoes the request and retains completed iterations,
-terminal correctness status and separate elapsed/foreground counter scopes.
-Completed iterations account for entire batches whose payloads and guards
-passed verification; a partially completed batch does not add an iteration.
-Foreground means the whole CPU/blocking operation, or async prepare/start,
-poll and cleanup windows. IRQs inside those windows remain included. These
-values do not measure CPU utilization. The host imposes a per-case response
-deadline; a target stalled inside synchronous hardware preparation may need
-reset. Feature discovery identifies images implementing this diagnostic.
-
 ## Stack measurements
 
 `StackUsage` carries task watermarks and optional dedicated IRQ watermarks for
-both running Wi-Fi harts. CPU1 samples its own stacks through a bounded
-request/response task; CPU0 never scans its live stack storage. A missing
-response fails rather than publishing a cached measurement. Images with shared
+both harts. A hart that runs no executor reports `None`. A missing response
+fails rather than publishing a cached measurement. Images with shared
 task/IRQ stacks report `None` for both dedicated IRQ fields.
 
 `system::GetInterruptStacks` provides a separate short response without enlarging
 the wire-frame limit. Bluetooth reports its CPU0 dedicated IRQ watermark and
 `None` for its inactive CPU1. The secure GATT workload checks this response at
-its boundaries. Wi-Fi
-accepts this query under the same idle-session conditions as `system::GetStacks`.
+its boundaries.
 
 IRQ sampling runs in thread mode with local interrupts masked during the SRAM
 scan. It therefore adds a short interruption to RF servicing; these diagnostic

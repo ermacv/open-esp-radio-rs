@@ -55,8 +55,8 @@ impl ApTsfHardware for RadioRuntimeOwner {
 
 /// The owner of the access-point TSF writes. It lives as long as its user
 /// (one access point of the role, one port core); its generations come from
-/// an epoch it takes when created (`MacClockHandle::tsf_epoch` of the radio
-/// start), so a later owner's generations never repeat an earlier one's.
+/// an epoch its creator supplies, a number no other TSF relation owner took,
+/// so a later owner's generations never repeat an earlier one's.
 #[derive(Debug, Eq, PartialEq)]
 pub struct AccessPointTsf {
     relation: TsfRelation,
@@ -77,7 +77,6 @@ impl AccessPointTsf {
 
     /// Reset the timer to zero and start it: a new generation, as an
     /// access point's `set_tsf`.
-    // CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-hardware-tsf
     pub fn restart<H: ApTsfHardware>(&mut self, hardware: &mut H) {
         self.relation.break_relation();
         hardware.reset_and_start_access_point_tsf(AccessPointTsfWrite { _owner: () });

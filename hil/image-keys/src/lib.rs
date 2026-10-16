@@ -11,8 +11,7 @@
 //! it sends (an endpoint's response changes its key without changing the
 //! request's) and of every property it has.
 
-use oer_hil_protocol::{Key, Message, base, bluetooth, ieee802154, network, phy, system};
-use oer_hil_protocol::{telemetry, wifi};
+use oer_hil_protocol::{Key, Message, base, bluetooth, phy, system};
 
 /// The most keys one image reports.
 pub const IMAGE_KEYS: usize = 80;
@@ -60,7 +59,7 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         add(system::PanicInjected::KEY, true);
         return sorted(keys);
     }
-    if enabled("bluetooth-radio") && !enabled("open-radio-hil") {
+    if enabled("bluetooth-radio") {
         if enabled("bluetooth-secure-gatt") {
             add(bluetooth::SecureGatt::KEY, true);
         } else if enabled("bluetooth-gatt") {
@@ -73,75 +72,6 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         add(bluetooth::Trace::KEY, enabled("bluetooth-trace"));
         return sorted(keys);
     }
-    let traffic = !enabled("memory-benchmark");
-    add(bluetooth::Gatt::KEY, enabled("wifi-ble-coex"));
-    add(phy::FaultInjection::KEY, enabled("phy-fault-injection"));
-    add(
-        phy::RegisterImage::KEY,
-        enabled("open-radio-hil") && traffic,
-    );
-    add(phy::StartupArtifact::KEY, traffic);
-    add(phy::RxHotSram::KEY, enabled("phy-rx-hot-sram"));
-    add(phy::TrackingHoldProbe::KEY, enabled("phy-tracking-hold"));
-    add(
-        system::InterruptLatencyProbe::KEY,
-        enabled("interrupt-latency-probe"),
-    );
-    // No image serves a Wi-Fi role or its network traffic while the roles'
-    // orchestration returns on the lower-MAC port (#563).
-    let _ = traffic;
-    add(wifi::DriverObservation::KEY, enabled("driver-observation"));
-    add(
-        network::RxDeliveryReport::KEY,
-        enabled("rx-delivery-telemetry"),
-    );
-    add(
-        telemetry::RxOwnership::KEY,
-        enabled("rx-ownership-telemetry"),
-    );
-    add(telemetry::PcProfile::KEY, enabled("pc-profile"));
-    add(telemetry::RxClock::KEY, enabled("rx-clock-probe"));
-    add(
-        telemetry::StationExit::KEY,
-        enabled("station-exit-evidence") && !enabled("driver-observation"),
-    );
-    add(
-        telemetry::TaskPoll::KEY,
-        enabled("connected-datapath-poll-telemetry"),
-    );
-    add(
-        wifi::TxArchitectureProbe::KEY,
-        enabled("tx-architecture-probes"),
-    );
-    add(
-        telemetry::Core0RxCycles::KEY,
-        enabled("core0-rx-cycle-telemetry") || enabled("core0-rx-coarse-telemetry"),
-    );
-    add(telemetry::MacIrq::KEY, enabled("mac-irq-telemetry"));
-    add(telemetry::CpuLoad::KEY, enabled("cpu-load") && traffic);
-    add(system::TimebaseProbe::KEY, true);
-    add(system::IpcCall::KEY, enabled("open-radio-hil"));
-    add(
-        system::SourceGate::KEY,
-        enabled("open-radio-hil") && traffic,
-    );
-    add(system::MemoryBenchmark::KEY, !traffic);
-    add(
-        ieee802154::EventStatusProbe::KEY,
-        enabled("ieee802154-event-status-probe"),
-    );
-    add(
-        ieee802154::EdEventProbe::KEY,
-        enabled("ieee802154-ed-event-probe"),
-    );
-    add(ieee802154::AirCheck::KEY, enabled("ieee802154-radio"));
-    add(ieee802154::Session::KEY, enabled("ieee802154-radio"));
-    add(ieee802154::Thread::KEY, enabled("ieee802154-thread"));
-    add(
-        ieee802154::RouteProbe::KEY,
-        enabled("ieee802154-route-probe"),
-    );
-    add(ieee802154::MacTrace::KEY, enabled("ieee802154-trace"));
     sorted(keys)
 }
 
@@ -157,39 +87,16 @@ pub const READ_FEATURES: &[&str] = &[
     "system-panic-reset",
     "usb-jtag-off",
     "bluetooth-radio",
-    "open-radio-hil",
     "bluetooth-secure-gatt",
     "bluetooth-gatt",
     "bluetooth-trace",
     "phy-rx-hot-sram",
-    "memory-benchmark",
-    "wifi-ble-coex",
-    "phy-fault-injection",
-    "phy-tracking-hold",
-    "interrupt-latency-probe",
-    "driver-observation",
-    "rx-delivery-telemetry",
-    "rx-ownership-telemetry",
-    "pc-profile",
-    "rx-clock-probe",
-    "station-exit-evidence",
-    "connected-datapath-poll-telemetry",
-    "tx-architecture-probes",
-    "core0-rx-cycle-telemetry",
-    "core0-rx-coarse-telemetry",
-    "mac-irq-telemetry",
-    "cpu-load",
-    "ieee802154-event-status-probe",
-    "ieee802154-ed-event-probe",
-    "ieee802154-radio",
-    "ieee802154-thread",
-    "ieee802154-route-probe",
-    "ieee802154-trace",
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oer_hil_protocol::network;
 
     fn with(features: &[&str]) -> ImageKeys {
         image_keys(&|feature| features.contains(&feature))
@@ -219,11 +126,6 @@ mod tests {
             "bluetooth-radio",
             "bluetooth-secure-gatt"
         ])));
-        // The coexistence image is a Wi-Fi image with the GATT application;
-        // it serves no Wi-Fi traffic while the roles return on the port.
-        let coex = with(&["open-radio-hil", "bluetooth-radio", "wifi-ble-coex"]);
-        assert!(has::<bluetooth::Gatt>(&coex) && !has::<network::Udp>(&coex));
-        assert!(!has::<bluetooth::Dtm>(&coex));
     }
 
     #[test]
@@ -232,44 +134,10 @@ mod tests {
             &["system-watchdog"][..],
             &["system-panic-reset"],
             &["bluetooth-radio"],
-            &["open-radio-hil"],
         ] {
             let keys = with(features);
             assert!(BASE.iter().all(|key| keys.contains(key)), "{features:?}");
         }
-    }
-
-    #[test]
-    fn a_memory_benchmark_image_offers_no_traffic() {
-        let benchmark = with(&["open-radio-hil", "memory-benchmark"]);
-        assert!(has::<system::MemoryBenchmark>(&benchmark));
-        assert!(!has::<network::Udp>(&benchmark) && !has::<phy::RegisterImage>(&benchmark));
-        let performance = with(&["open-radio-hil"]);
-        assert!(!has::<system::MemoryBenchmark>(&performance));
-        assert!(has::<phy::RegisterImage>(&performance));
-        // No image serves a Wi-Fi role or its traffic (#563).
-        assert!(
-            !has::<network::Udp>(&performance) && !has::<wifi::StationEpochControl>(&performance)
-        );
-    }
-
-    #[test]
-    fn station_exit_evidence_is_its_own_only_without_driver_observation() {
-        let exit = |features: &[&str]| has::<telemetry::StationExit>(&with(features));
-        assert!(exit(&["open-radio-hil", "station-exit-evidence"]));
-        assert!(!exit(&[
-            "open-radio-hil",
-            "station-exit-evidence",
-            "driver-observation"
-        ]));
-    }
-
-    #[test]
-    fn a_traffic_image_with_idle_accounting_reports_cpu_load() {
-        let load = |features: &[&str]| has::<telemetry::CpuLoad>(&with(features));
-        assert!(load(&["open-radio-hil", "cpu-load"]));
-        assert!(!load(&["open-radio-hil"]));
-        assert!(!load(&["open-radio-hil", "cpu-load", "memory-benchmark"]));
     }
 
     #[test]

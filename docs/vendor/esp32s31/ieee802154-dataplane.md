@@ -171,7 +171,7 @@ non-replayable value to the bounded Embassy queue; task code never receives
 status-register authority.
 The platform adapter owns source-132 routing and its teardown around the
 prepared interrupt owner. Same-bit arrival and level-line retrigger do not
-change the W1C access contract; the `ieee802154-route-probe` HIL cell answers both on the ESP32-S31 over the
+change the W1C access contract; the former `ieee802154-route-probe` HIL cell (tag `legacy-wifi-2026-10-16`) answered both on the ESP32-S31 over the
 production owners and route adapter: a second arrival of an event whose bit
 is still latched is cleared with the first (the arrivals coalesce, as the
 vendor's snapshot-then-clear ISR also assumes), and an event latched after the

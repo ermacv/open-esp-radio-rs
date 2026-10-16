@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cargo_metadata::{Metadata, Package, PackageId};
+use cargo_metadata::{Package, PackageId};
 
 use crate::{Result, graph::Graph};
 use oer_process::Checkout;
@@ -58,29 +58,6 @@ impl CargoConfiguration {
     }
 }
 
-pub fn package_for_manifest<'a>(metadata: &'a Metadata, manifest: &Path) -> Result<&'a Package> {
-    let canonical = manifest.canonicalize()?;
-    let mut candidates = metadata.packages.iter().filter(|package| {
-        package
-            .manifest_path
-            .as_std_path()
-            .canonicalize()
-            .is_ok_and(|path| path == canonical)
-    });
-    let package = candidates
-        .next()
-        .ok_or_else(|| format!("manifest has no Cargo package: {}", manifest.display()))?;
-    if candidates.next().is_some() {
-        return Err(format!(
-            "manifest identifies multiple Cargo packages: {}",
-            manifest.display()
-        )
-        .into());
-    }
-    Ok(package)
-}
-
-/// The repository model of the checkout (`oer-repo`).
 pub fn model(ctx: &Checkout) -> Result<oer_repo::Model> {
     Ok(oer_repo::Model::load(&oer_repo::Repo::from_git(
         &ctx.root,
@@ -270,38 +247,6 @@ pub fn id_for_name(graph: &Graph, name: &str) -> Result<PackageId> {
         return Err(format!("ambiguous package name {name}").into());
     }
     Ok(id)
-}
-
-pub fn package_feature(graph: &Graph, name: &str, feature: &str) -> Result<bool> {
-    let id = id_for_name(graph, name)?;
-    let resolve = graph
-        .metadata
-        .resolve
-        .as_ref()
-        .ok_or("missing Cargo resolve graph")?;
-    let node = resolve
-        .nodes
-        .iter()
-        .find(|node| node.id == id)
-        .ok_or("missing Cargo resolve node")?;
-    Ok(node.features.iter().any(|f| f.as_str() == feature))
-}
-
-pub fn forbid_features(graph: &Graph, forbidden: &[&str]) -> Result<()> {
-    for node in &graph
-        .metadata
-        .resolve
-        .as_ref()
-        .ok_or("missing Cargo resolve graph")?
-        .nodes
-    {
-        for feature in &node.features {
-            if forbidden.contains(&feature.as_str()) {
-                return Err(format!("forbidden feature {feature} enabled in {}", node.id).into());
-            }
-        }
-    }
-    Ok(())
 }
 
 pub fn closure<'a>(graph: &'a Graph, root: &PackageId) -> Result<Vec<&'a Package>> {

@@ -13,54 +13,9 @@ pub enum ImageClass {
     BluetoothGatt,
     BluetoothSecureGatt,
     BootSmoke,
-    Performance,
-    Correctness,
-    /// The performance Wi-Fi image with the Bluetooth LE GATT application
-    /// running beside it on the shared radio.
-    WifiBleCoex,
-    DiagnosticMacIrq,
-    DiagnosticTxWait,
-    DiagnosticRxClock,
-    DiagnosticTaskResidence,
-    DiagnosticTxArchitecture,
-    DiagnosticTaskPoll,
-    DiagnosticCore0RxCoarse,
-    DiagnosticCore0RxCycles,
-    DiagnosticRxDelivery,
-    DiagnosticRxOwnership,
-    /// The performance image with only the Wi-Fi system's diagnostics: the
-    /// station's exit evidence without the executor and PHY observers.
-    DiagnosticStationExit,
     /// The plaintext Trouble GATT image recording the Bluetooth LE trace
     /// (`bluetooth-trace`), for the scenario that checks the trace.
     DiagnosticBluetoothGattTrace,
-    DiagnosticIeee802154EventStatus,
-    DiagnosticIeee802154EdEvent,
-    /// The IEEE 802.15.4 radio image as the product builds its radio: the
-    /// image vendor comparisons boot.
-    DiagnosticIeee802154Radio,
-    /// The IEEE 802.15.4 radio image recording the MAC trace, for the
-    /// scenarios against the reference peer: a failed one's post-mortem
-    /// holds the last MAC events.
-    DiagnosticIeee802154RadioTrace,
-    /// The IEEE 802.15.4 radio image with OpenThread over its client.
-    DiagnosticIeee802154Thread,
-    /// The IEEE 802.15.4 same-bit and level-retrigger route probe.
-    DiagnosticIeee802154Route,
-    DiagnosticMemoryBenchmark,
-    /// The correctness Wi-Fi image that times one forced shared-PHY tracking
-    /// tick on request (`phy/tracking/hold`): the RF hold of tracking with
-    /// Wi-Fi as a client.
-    DiagnosticPhyTrackingHold,
-    /// The IEEE 802.15.4 radio image that times a forced tracking tick: the
-    /// RF hold with the Bluetooth/IEEE 802.15.4 class as a client.
-    DiagnosticIeee802154TrackingHold,
-    /// The joint Wi-Fi/Bluetooth LE image that times a forced tracking tick:
-    /// the RF hold with both tracking classes as clients.
-    DiagnosticWifiBleCoexTrackingHold,
-    /// The correctness Wi-Fi image that times a software interrupt raised
-    /// at the radio interrupts' level (`system/interrupt-latency`, #643).
-    DiagnosticInterruptLatency,
     /// The system watchdog image that, on request, switches its USB
     /// Serial/JTAG off its pads: the board leaves USB, for the stand's
     /// recovery scenario.
@@ -88,39 +43,14 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 8] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
         Self::SystemPanicReset,
         Self::BluetoothDtm,
         Self::BootSmoke,
-        Self::Performance,
-        Self::Correctness,
-        Self::WifiBleCoex,
-        Self::DiagnosticMacIrq,
-        Self::DiagnosticTxWait,
-        Self::DiagnosticRxClock,
-        Self::DiagnosticTaskResidence,
-        Self::DiagnosticTxArchitecture,
-        Self::DiagnosticTaskPoll,
-        Self::DiagnosticCore0RxCoarse,
-        Self::DiagnosticCore0RxCycles,
-        Self::DiagnosticRxDelivery,
-        Self::DiagnosticRxOwnership,
-        Self::DiagnosticStationExit,
         Self::DiagnosticBluetoothGattTrace,
-        Self::DiagnosticIeee802154EventStatus,
-        Self::DiagnosticIeee802154EdEvent,
-        Self::DiagnosticIeee802154Radio,
-        Self::DiagnosticIeee802154RadioTrace,
-        Self::DiagnosticIeee802154Thread,
-        Self::DiagnosticIeee802154Route,
-        Self::DiagnosticMemoryBenchmark,
-        Self::DiagnosticPhyTrackingHold,
-        Self::DiagnosticIeee802154TrackingHold,
-        Self::DiagnosticWifiBleCoexTrackingHold,
-        Self::DiagnosticInterruptLatency,
         Self::DiagnosticUsbJtagOff,
     ];
 
@@ -129,30 +59,7 @@ impl ImageClass {
     pub const fn diagnostic(self) -> bool {
         matches!(
             self,
-            Self::DiagnosticMacIrq
-                | Self::DiagnosticTxWait
-                | Self::DiagnosticRxClock
-                | Self::DiagnosticTaskResidence
-                | Self::DiagnosticTxArchitecture
-                | Self::DiagnosticTaskPoll
-                | Self::DiagnosticCore0RxCoarse
-                | Self::DiagnosticCore0RxCycles
-                | Self::DiagnosticRxDelivery
-                | Self::DiagnosticRxOwnership
-                | Self::DiagnosticStationExit
-                | Self::DiagnosticBluetoothGattTrace
-                | Self::DiagnosticIeee802154EventStatus
-                | Self::DiagnosticIeee802154EdEvent
-                | Self::DiagnosticIeee802154Radio
-                | Self::DiagnosticIeee802154RadioTrace
-                | Self::DiagnosticIeee802154Thread
-                | Self::DiagnosticIeee802154Route
-                | Self::DiagnosticMemoryBenchmark
-                | Self::DiagnosticPhyTrackingHold
-                | Self::DiagnosticIeee802154TrackingHold
-                | Self::DiagnosticWifiBleCoexTrackingHold
-                | Self::DiagnosticInterruptLatency
-                | Self::DiagnosticUsbJtagOff
+            Self::DiagnosticBluetoothGattTrace | Self::DiagnosticUsbJtagOff
         )
     }
 
@@ -164,43 +71,25 @@ impl ImageClass {
             Self::BluetoothGatt => "bluetooth-gatt",
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::BootSmoke => "boot-smoke",
-            Self::Performance => "performance",
-            Self::Correctness => "correctness",
-            Self::WifiBleCoex => "wifi-ble-coex",
-            Self::DiagnosticMacIrq => "diagnostic-mac-irq",
-            Self::DiagnosticTxWait => "diagnostic-tx-wait",
-            Self::DiagnosticRxClock => "diagnostic-rx-clock",
-            Self::DiagnosticTaskResidence => "diagnostic-task-residence",
-            Self::DiagnosticTxArchitecture => "diagnostic-tx-architecture",
-            Self::DiagnosticTaskPoll => "diagnostic-task-poll",
-            Self::DiagnosticCore0RxCoarse => "diagnostic-core0-rx-coarse",
-            Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
-            Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
-            Self::DiagnosticRxOwnership => "diagnostic-rx-ownership",
-            Self::DiagnosticStationExit => "diagnostic-station-exit",
             Self::DiagnosticBluetoothGattTrace => "diagnostic-bluetooth-gatt-trace",
-            Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
-            Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
-            Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
-            Self::DiagnosticIeee802154RadioTrace => "diagnostic-ieee802154-radio-trace",
-            Self::DiagnosticIeee802154Thread => "diagnostic-ieee802154-thread",
-            Self::DiagnosticIeee802154Route => "diagnostic-ieee802154-route",
-            Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
-            Self::DiagnosticPhyTrackingHold => "diagnostic-phy-tracking-hold",
-            Self::DiagnosticIeee802154TrackingHold => "diagnostic-ieee802154-tracking-hold",
-            Self::DiagnosticWifiBleCoexTrackingHold => "diagnostic-wifi-ble-coex-tracking-hold",
-            Self::DiagnosticInterruptLatency => "diagnostic-interrupt-latency",
             Self::DiagnosticUsbJtagOff => "diagnostic-usb-jtag-off",
         }
     }
 
     /// Whether the image compiles the program-counter sampler
-    /// (`pc-profile`), so a scenario can request a profile of it.
+    /// (`pc-profile`), so a scenario can request a profile of it. No class
+    /// does; each one is named so a new class decides.
     pub const fn samples_program_counter(self) -> bool {
-        matches!(
-            self,
-            Self::DiagnosticTaskResidence | Self::DiagnosticTxArchitecture
-        )
+        match self {
+            Self::SystemWatchdog
+            | Self::SystemPanicReset
+            | Self::BluetoothDtm
+            | Self::BluetoothGatt
+            | Self::BluetoothSecureGatt
+            | Self::BootSmoke
+            | Self::DiagnosticBluetoothGattTrace
+            | Self::DiagnosticUsbJtagOff => false,
+        }
     }
 
     pub const fn runtime_features(self) -> &'static str {
@@ -213,39 +102,6 @@ impl ImageClass {
             Self::DiagnosticUsbJtagOff => "system-watchdog,usb-jtag-off",
             Self::BluetoothDtm => "bluetooth-hil,phy-rx-hot-sram",
             Self::BootSmoke => "boot-smoke",
-            Self::Performance => "open-radio-hil,cpu-load",
-            Self::WifiBleCoex => "wifi-ble-coex",
-            Self::DiagnosticRxOwnership => "open-radio-hil,rx-ownership-telemetry",
-            Self::DiagnosticStationExit => "open-radio-hil,station-exit-evidence",
-            Self::Correctness => "open-radio-hil,driver-observation,cpu-load",
-            Self::DiagnosticMacIrq => "open-radio-hil,mac-irq-telemetry",
-            Self::DiagnosticTxWait => "open-radio-hil,tx-wait-probe,task-poll-telemetry",
-            Self::DiagnosticRxClock => "open-radio-hil,rx-clock-probe",
-            Self::DiagnosticTaskResidence => "open-radio-hil,task-residence-telemetry",
-            Self::DiagnosticTxArchitecture => "open-radio-hil,tx-architecture-probes",
-            Self::DiagnosticTaskPoll => "open-radio-hil,task-poll-telemetry",
-            Self::DiagnosticCore0RxCoarse => "open-radio-hil,core0-rx-coarse-telemetry",
-            Self::DiagnosticCore0RxCycles => "open-radio-hil,core0-rx-cycle-telemetry",
-            Self::DiagnosticRxDelivery => "open-radio-hil,rx-delivery-telemetry",
-            Self::DiagnosticIeee802154EventStatus => "open-radio-hil,ieee802154-event-status-probe",
-            Self::DiagnosticMemoryBenchmark => "open-radio-hil,memory-benchmark",
-            Self::DiagnosticPhyTrackingHold => {
-                "open-radio-hil,driver-observation,phy-tracking-hold"
-            }
-            Self::DiagnosticIeee802154TrackingHold => {
-                "open-radio-hil,ieee802154-radio,phy-tracking-hold"
-            }
-            Self::DiagnosticWifiBleCoexTrackingHold => "wifi-ble-coex,phy-tracking-hold",
-            Self::DiagnosticInterruptLatency => {
-                "open-radio-hil,driver-observation,interrupt-latency-probe"
-            }
-            Self::DiagnosticIeee802154EdEvent => "open-radio-hil,ieee802154-ed-event-probe",
-            Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio",
-            Self::DiagnosticIeee802154RadioTrace => {
-                "open-radio-hil,ieee802154-radio,ieee802154-trace"
-            }
-            Self::DiagnosticIeee802154Thread => "open-radio-hil,ieee802154-thread",
-            Self::DiagnosticIeee802154Route => "open-radio-hil,ieee802154-route-probe",
         }
     }
 
@@ -253,66 +109,6 @@ impl ImageClass {
     /// stacks in PSRAM, interrupt stacks in SRAM.
     pub const fn runtime_profile(self) -> &'static str {
         "psram-code-psram-data-psram-stack"
-    }
-
-    /// Whether the image promises typed driver-internal evidence.
-    ///
-    /// The task-residence image is deliberately production-like: its only
-    /// diagnostic boundary is executor residence, so it must use the same
-    /// transport/external-link acceptance path as the performance image.
-    pub const fn requires_driver_observation(self) -> bool {
-        !matches!(
-            self,
-            Self::SystemWatchdog
-                | Self::SystemPanicReset
-                | Self::DiagnosticUsbJtagOff
-                | Self::BluetoothGatt
-                | Self::DiagnosticBluetoothGattTrace
-                | Self::BluetoothSecureGatt
-                | Self::BluetoothDtm
-                | Self::BootSmoke
-                | Self::Performance
-                | Self::WifiBleCoex
-                | Self::DiagnosticWifiBleCoexTrackingHold
-                | Self::DiagnosticRxOwnership
-                | Self::DiagnosticStationExit
-                | Self::DiagnosticTaskResidence
-                | Self::DiagnosticTxArchitecture
-                | Self::DiagnosticCore0RxCoarse
-                | Self::DiagnosticMemoryBenchmark
-        )
-    }
-
-    /// Images that run the Wi-Fi station and AP stack.
-    pub const fn is_wifi(self) -> bool {
-        matches!(
-            self,
-            Self::Correctness
-                | Self::Performance
-                | Self::WifiBleCoex
-                | Self::DiagnosticPhyTrackingHold
-                | Self::DiagnosticWifiBleCoexTrackingHold
-                | Self::DiagnosticInterruptLatency
-                | Self::DiagnosticMacIrq
-                | Self::DiagnosticTxWait
-                | Self::DiagnosticRxClock
-                | Self::DiagnosticTaskResidence
-                | Self::DiagnosticTxArchitecture
-                | Self::DiagnosticTaskPoll
-                | Self::DiagnosticCore0RxCoarse
-                | Self::DiagnosticCore0RxCycles
-                | Self::DiagnosticRxDelivery
-                | Self::DiagnosticRxOwnership
-                | Self::DiagnosticStationExit
-        )
-    }
-
-    /// Images whose Core0 RX phase totals use u32 cycle accumulators.
-    pub const fn is_core0_rx_cycle_diagnostic(self) -> bool {
-        matches!(
-            self,
-            Self::DiagnosticCore0RxCoarse | Self::DiagnosticCore0RxCycles
-        )
     }
 }
 

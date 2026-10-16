@@ -724,7 +724,6 @@ pub struct AccessPointServiceStatus {
 /// Dropping this value clears the PMK and GTK through their zeroize-on-drop
 /// implementations. A chip runtime still must clear its typed hardware slots
 /// before it may classify the corresponding physical owner as stopped.
-// CAPABILITY: wifi-interfaces-and-operating-modes-softap
 pub struct AccessPointService<'peers, S: SppScope> {
     spp_scope: core::marker::PhantomData<S>,
     address: [u8; 6],

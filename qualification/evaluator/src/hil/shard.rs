@@ -824,7 +824,7 @@ mod tests {
     use oer_hil_run_bundle_format::build::BuildReproducibility;
     use serde_json::json;
 
-    /// A build provenance of the correctness image for `target` with
+    /// A build provenance of the bluetooth-gatt image for `target` with
     /// `features`, built under `environment`.
     fn provenance(target: &str, features: &str, environment: BuildEnvironment) -> BuildProvenance {
         BuildProvenance {
@@ -832,7 +832,7 @@ mod tests {
             build_id: String::from("build"),
             build_type: String::from("test"),
             parameters: BuildParameters {
-                image: oer_hil_schema::image::ImageClass::Correctness,
+                image: oer_hil_schema::image::ImageClass::BluetoothGatt,
                 network: None,
                 runtime_profile: String::from("profile"),
                 target: target.to_owned(),
@@ -890,7 +890,7 @@ mod tests {
             .unwrap();
         };
         inputs(
-            "correctness",
+            "bluetooth-gatt",
             json!([
                 "crates/radio/Cargo.toml",
                 "crates/radio/src/lib.rs",
@@ -914,7 +914,7 @@ mod tests {
         let radio = |_: &BuildProvenance| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
         let sources = recorded_sources(
             &run,
-            &[image("correctness", false)],
+            &[image("bluetooth-gatt", false)],
             Some(&observer),
             &radio,
         )
@@ -947,22 +947,24 @@ mod tests {
              packages: &dyn Fn(&BuildProvenance) -> Result<Option<BTreeSet<PathBuf>>>| {
                 recorded_sources(&run, images, None, packages).unwrap()
             };
-        assert!(recorded(&[image("correctness", false)], &more).is_none());
+        assert!(recorded(&[image("bluetooth-gatt", false)], &more).is_none());
         // A replay or an image without recorded inputs keeps the broad set.
-        assert!(recorded(&[image("correctness", true)], &radio).is_none());
-        assert!(recorded(&[image("performance", false)], &radio).is_none());
+        assert!(recorded(&[image("bluetooth-gatt", true)], &radio).is_none());
+        assert!(recorded(&[image("bluetooth-secure-gatt", false)], &radio).is_none());
         assert!(recorded(&[], &radio).is_none());
-        inputs("performance", json!(["../outside.rs"]));
-        assert!(recorded_sources(&run, &[image("performance", false)], None, &radio).is_err());
+        inputs("bluetooth-secure-gatt", json!(["../outside.rs"]));
+        assert!(
+            recorded_sources(&run, &[image("bluetooth-secure-gatt", false)], None, &radio).is_err()
+        );
         // A record of another schema is an error, not a weaker binding.
         fs::write(
-            run.join("firmware/correctness/source-inputs.json"),
+            run.join("firmware/bluetooth-gatt/source-inputs.json"),
             serde_json::to_vec(&json!({"schema": 1, "files": ["crates/radio/src/lib.rs"]}))
                 .unwrap(),
         )
         .unwrap();
         assert!(
-            recorded_sources(&run, &[image("correctness", false)], None, &radio)
+            recorded_sources(&run, &[image("bluetooth-gatt", false)], None, &radio)
                 .unwrap_err()
                 .to_string()
                 .contains("only schema 2")
@@ -1016,14 +1018,14 @@ mod tests {
     fn firmware_built_with_inherited_flags_is_never_recorded() {
         let run = std::env::temp_dir().join(format!("oer-shard-flags-{}", std::process::id()));
         let write = |environment: BuildEnvironment| {
-            fs::create_dir_all(run.join("firmware/correctness")).unwrap();
+            fs::create_dir_all(run.join("firmware/bluetooth-gatt")).unwrap();
             fs::write(
-                run.join("firmware/correctness/build-provenance.json"),
+                run.join("firmware/bluetooth-gatt/build-provenance.json"),
                 serde_json::to_vec(&provenance("t", "", environment)).unwrap(),
             )
             .unwrap();
         };
-        let images = [image("correctness", false)];
+        let images = [image("bluetooth-gatt", false)];
         write(environment(None, None));
         assert_eq!(images_inherited_flags(&run, &images).unwrap(), None);
         write(environment(Some("-Copt-level=0"), None));

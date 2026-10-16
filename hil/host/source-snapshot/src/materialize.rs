@@ -20,10 +20,7 @@ pub(super) fn materialize(
     let mut roles = BTreeSet::new();
     let mut paths = BTreeSet::new();
     for source in &manifest.sources {
-        if !matches!(
-            source.name.as_str(),
-            "repository" | "esp-hal" | "embassy" | "xarxa"
-        ) || !roles.insert(&source.name)
+        if !matches!(source.name.as_str(), "repository" | "esp-hal") || !roles.insert(&source.name)
         {
             return Err("invalid or duplicate snapshot source role".into());
         }

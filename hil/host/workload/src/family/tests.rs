@@ -21,7 +21,7 @@ impl ScenarioFamily for Quiet {
         oer_hil_scenario_catalog::bounded(self.boots, 1, 3, "boots")
     }
     fn plan(&self) -> Plan {
-        Plan::target_only(ImageClass::Correctness)
+        Plan::target_only(ImageClass::BluetoothGatt)
     }
     fn air_use(&self) -> Vec<AirUse> {
         Vec::new()
@@ -46,7 +46,7 @@ impl ScenarioFamily for Radio {
         Ok(())
     }
     fn plan(&self) -> Plan {
-        Plan::target_only(ImageClass::Correctness)
+        Plan::target_only(ImageClass::BluetoothGatt)
     }
     fn peer_image(&self) -> Option<PeerImage> {
         Some(PeerImage {
@@ -101,7 +101,7 @@ fn a_document_dispatches_to_the_family_it_names() {
         "no radio peer"
     );
     let output = std::env::temp_dir();
-    let context = Context::new(&lab, Default::default(), &output);
+    let context = Context::new(&lab, &output);
     let fixtures = Fixtures::default();
     quiet.family.run(&output, &context, &fixtures).unwrap();
     radio.family.run(&output, &context, &fixtures).unwrap();

@@ -176,12 +176,11 @@ loads; Git ignores them. `mdbook build docs` writes `target/book/`. The
 rewrites a guide's relative link to a file outside `docs/` into a GitHub link at
 the commit being built; links inside the book are unchanged.
 `cargo xtask doc` writes the standard Cargo documentation directories:
-`target/doc/` for host packages, `target/riscv32imafc-unknown-none-elf/doc/` for
-chip packages and the Wi-Fi composition workspace's own target directory.
+`target/doc/` for host packages and `target/riscv32imafc-unknown-none-elf/doc/` for
+chip packages.
 
 Every push runs the workflow's checks and packages one site: the
-book at the root and API documentation under `api/host/`, `api/esp32s31/` and
-`api/esp32s31-wifi/`. A manual run from `main` deploys it to the
+book at the root and API documentation under `api/host/` and `api/esp32s31/`. A manual run from `main` deploys it to the
 [Pages address](https://ermacv.github.io/open-esp-radio-rs/) with the official
 GitHub Pages actions.
 

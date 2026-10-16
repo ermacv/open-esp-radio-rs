@@ -675,7 +675,6 @@ impl OwnedInformationElements {
 
 /// An idle requester. Starting consumes it; only the terminal of that session
 /// returns it for another request. Numerical IDs are diagnostic, not authority.
-// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-802-11mc-ftm
 pub struct FtmRequester<const MAX_SAMPLES: usize> {
     config: FtmRequesterConfig,
     session_generation: u32,

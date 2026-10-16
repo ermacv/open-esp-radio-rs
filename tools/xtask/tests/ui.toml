@@ -112,16 +112,6 @@ cases = [
 ]
 
 [[suite]]
-name = "ap-replay-owner"
-packages = ["oer-esp32s31-ieee80211-ap", "oer-esp32s31-ieee80211-mac", "oer-ieee80211-mac"]
-features = []
-targets = ["host", "esp32s31"]
-cases = [
-    "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_reinstallation.rs",
-    "crates/roles/esp32s31/ieee80211/ap/tests/ui/replay_commit_once.rs",
-]
-
-[[suite]]
 name = "station-capacity"
 packages = ["oer-ieee80211-mac", "oer-ieee80211-sta", "oer-ieee80211-rsn", "oer-ieee80211-lower-mac", "oer-ieee80211-arbiter", "oer-radio-port"]
 features = []

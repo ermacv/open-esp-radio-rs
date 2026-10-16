@@ -8,9 +8,7 @@
 //! ([`oer_hil_image_keys::image_keys`]), so the host's
 //! expectation of a flashed image cannot drift from the firmware. A flashed
 //! image is the one class of its chip whose keys it reports.
-//! Linking a network stack does not advertise a traffic endpoint: only the
-//! handlers implemented by the image contribute keys. Wi-Fi traffic remains
-//! absent while its product orchestration is being rebuilt on the port.
+//! Only the handlers implemented by the image contribute keys.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -117,7 +115,7 @@ pub fn image_keys_on(class: ImageClass, chip: &str) -> Option<DeviceImageKeys> {
 
 /// The image keys `class`'s runtime on `chip` reports when an A/B
 /// experiment builds it with `delta` applied to its features: an arm
-/// without an instrument (`-cpu-load`) reports fewer keys than its class.
+/// without an instrument reports fewer keys than its class.
 pub fn image_keys_with(
     class: ImageClass,
     chip: &str,
@@ -141,7 +139,7 @@ pub fn classify_flashed(chip: &str, image_keys: &DeviceImageKeys) -> Option<Imag
 
 #[cfg(test)]
 mod tests {
-    use oer_hil_protocol::{Message, base, bluetooth, network, system, telemetry, wifi};
+    use oer_hil_protocol::{Message, base, bluetooth, network, phy, system};
 
     use super::*;
 
@@ -209,14 +207,14 @@ mod tests {
 
     #[test]
     fn a_key_set_no_class_builds_is_no_class() {
-        let performance = keys(ImageClass::Performance);
-        let mut foreign = performance.keys().clone();
+        let gatt = keys(ImageClass::BluetoothGatt);
+        let mut foreign = gatt.keys().clone();
         foreign.insert(<bluetooth::Dtm as Message>::KEY);
         assert_eq!(
             classify_flashed(full_agent(), &DeviceImageKeys::of_keys(foreign)),
             None
         );
-        let mut missing = performance.keys().clone();
+        let mut missing = gatt.keys().clone();
         assert!(missing.remove(&<base::Hello as Message>::KEY));
         assert_eq!(
             classify_flashed(full_agent(), &DeviceImageKeys::of_keys(missing)),
@@ -233,23 +231,16 @@ mod tests {
     }
 
     #[test]
-    fn the_classes_report_active_handlers_without_unimplemented_wifi_traffic() {
-        let performance = keys(ImageClass::Performance);
-        assert!(!performance.has::<network::Udp>());
-        assert!(!performance.has::<wifi::DriverObservation>());
-        assert!(keys(ImageClass::Correctness).has::<wifi::DriverObservation>());
-        let coex = keys(ImageClass::WifiBleCoex);
-        assert!(coex.has::<bluetooth::Gatt>());
-        assert!(!coex.has::<network::Udp>());
+    fn the_classes_report_their_active_handlers() {
+        let gatt = keys(ImageClass::BluetoothGatt);
+        assert!(gatt.has::<bluetooth::Gatt>() && !gatt.has::<bluetooth::Trace>());
+        assert!(keys(ImageClass::DiagnosticBluetoothGattTrace).has::<bluetooth::Trace>());
         let dtm = keys(ImageClass::BluetoothDtm);
         assert!(dtm.has::<bluetooth::Dtm>() && dtm.has::<bluetooth::Hci>());
         assert!(!dtm.has::<network::Udp>());
         let watchdog = keys(ImageClass::SystemWatchdog);
         assert!(watchdog.has::<system::WatchdogTest>());
         assert!(!watchdog.has::<network::Udp>());
-        assert!(keys(ImageClass::DiagnosticMemoryBenchmark).has::<system::MemoryBenchmark>());
-        assert!(keys(ImageClass::DiagnosticTaskResidence).has::<telemetry::PcProfile>());
-        assert!(!performance.has::<telemetry::PcProfile>());
     }
 
     #[test]
@@ -269,14 +260,14 @@ mod tests {
     #[test]
     fn an_arm_without_an_instrument_reports_its_class_s_keys_less_the_instrument_s() {
         let chip = full_agent();
-        let without: FeatureDelta = "-cpu-load".parse().unwrap();
-        let class = keys(ImageClass::Performance);
-        let arm = image_keys_with(ImageClass::Performance, chip, &without).unwrap();
-        assert!(class.has::<telemetry::CpuLoad>() && !arm.has::<telemetry::CpuLoad>());
+        let without: FeatureDelta = "-phy-rx-hot-sram".parse().unwrap();
+        let class = keys(ImageClass::BluetoothDtm);
+        let arm = image_keys_with(ImageClass::BluetoothDtm, chip, &without).unwrap();
+        assert!(class.has::<phy::RxHotSram>() && !arm.has::<phy::RxHotSram>());
         assert!(!class.has::<network::Udp>() && !arm.has::<network::Udp>());
         assert!(classify_flashed(chip, &arm).is_none());
         assert!(
-            image_keys_with(ImageClass::Performance, chip, &FeatureDelta::default())
+            image_keys_with(ImageClass::BluetoothDtm, chip, &FeatureDelta::default())
                 .unwrap()
                 .same_keys(&class)
         );

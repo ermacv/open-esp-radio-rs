@@ -1,6 +1,6 @@
 ---
 name: block-bluetooth
-description: Use when a task changes or investigates the Bluetooth LE block of this repository — HCI, the Link Layer, the LE Controller core, the LeRadioBackend contract, the in-process HCI transport and service loop, the ESP32-S31 Bluetooth driver, controller memory, radio role, runtime or composition, the Trouble GATT adapter, Bluetooth vendor comparison, or Bluetooth and Wi-Fi/BLE coexistence HIL scenarios. Maps the block's packages across layers, its shared contracts, traps and checks.
+description: Use when a task changes or investigates the Bluetooth LE block of this repository — HCI, the Link Layer, the LE Controller core, the LeRadioBackend contract, the in-process HCI transport and service loop, the ESP32-S31 Bluetooth driver, controller memory, radio role, runtime or composition, the Trouble GATT adapter, Bluetooth vendor comparison, or Bluetooth HIL scenarios. Maps the block's packages across layers, its shared contracts, traps and checks.
 ---
 
 # Bluetooth LE block
@@ -18,7 +18,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 - ESP32-S31: driver `crates/hardware/esp32s31/driver/bluetooth` (`oer-esp32s31-bluetooth`: controller HAL and time, BLE PHY, interrupts, scheduler) and its `memory` (`oer-esp32s31-bluetooth-memory`); HAL partition `crates/hardware/esp32s31/hal/src/bluetooth.rs` (`ColdOwner` → `PoweredOwner` → `ClockedOwner` → `TaskOwner`); PHY client `crates/hardware/esp32s31/phy/src/bluetooth_client.rs`; role `crates/roles/esp32s31/bluetooth/radio` (`BluetoothRadio`); runtime `crates/runtime/esp32s31/bluetooth` (`BluetoothRuntime`); composition `crates/composition/esp32s31/embassy/bluetooth` (`oer-esp32s31-bluetooth-system`: `BluetoothParked`, `start_bluetooth_hci`); esp-hal interrupt routes and handlers in `crates/adapters/esp-hal/esp32s31/radio` (`bluetooth_interrupt.rs`, `bluetooth_handlers.rs`).
 - Trace: `crates/protocols/bluetooth/trace` (`oer-bluetooth-trace`, events of `Domain::Bluetooth`, channel table in its README). The Controller, the S31 role and runtime record behind their own `trace` feature (the composition's `trace`, the agent's `bluetooth-trace`); host tests read the thread's records with `crate::trace::take`. Image `diagnostic-bluetooth-gatt-trace`, scenario `bluetooth-trouble-gatt-trace`.
 - Host binding: `crates/adapters/trouble/bluetooth/gatt` (`oer-bluetooth-gatt-trouble`, GATT over the Trouble Host, composed by the HIL firmware).
-- Facade: `crates/oer` features `bluetooth`, `esp32s31-bluetooth`. No example application. HIL: `hil/scenarios/bluetooth/`, workloads and the Linux fixture in `hil/host/family/bluetooth`, Wi-Fi/BLE load in `hil/host/family/coexistence`; agent features `bluetooth-*` and `wifi-ble-coex` in `hil/targets/esp32s31/agent`.
+- Facade: `crates/oer` features `bluetooth`, `esp32s31-bluetooth`. No example application. HIL: `hil/scenarios/bluetooth/`, workloads and the Linux fixture in `hil/host/family/bluetooth`; agent features `bluetooth-*` in `hil/targets/esp32s31/agent`. No Wi-Fi/BLE coexistence image or scenario exists. Tags: `legacy-wifi-2026-10-16` (`main` before #756 merged, with the old S31 Wi-Fi stack and every block's old HIL) and `legacy-radio-2026-10-16` (`main` after the merge, before #770) keep the old sources.
 
 ## Port
 
@@ -50,8 +50,8 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 ## Checks
 
 - `cargo test -p <package>` (the Trouble adapter with `--all-features`), then `cargo xtask check changed`.
-- `cargo hil images check --class bluetooth-gatt --type-check` for chip-side changes (also `bluetooth-dtm`, `bluetooth-secure-gatt`, `wifi-ble-coex`).
-- HIL smoke: `cargo hil run bluetooth-dtm-bidirectional bluetooth-trouble-gatt bluetooth-trouble-secure-gatt` (`hil-run` skill); coexistence `wifi-udp-rx-ble-echo`.
+- `cargo hil images check --class bluetooth-gatt --type-check` for chip-side changes (also `bluetooth-dtm`, `bluetooth-secure-gatt`).
+- HIL smoke: `cargo hil run bluetooth-dtm-bidirectional bluetooth-trouble-gatt bluetooth-trouble-secure-gatt` (`hil-run` skill).
 - Vendor comparison: the `bluetooth` scenario over the probes in `verification/esp32s31/probes/bluetooth` (`vendor-evidence` skill).
 
 Skills: `protocol-change`, `driver-or-hardware-change`, `hil-run`, `vendor-evidence`, `qualification-entry` (catalogs `qualification/catalog/esp32s31/bluetooth.toml` and `bluetooth-products.toml`; programs `bluetooth-le`, `bluetooth-peripheral-acl`, `bluetooth-secure-gatt`), `push-and-ci`.

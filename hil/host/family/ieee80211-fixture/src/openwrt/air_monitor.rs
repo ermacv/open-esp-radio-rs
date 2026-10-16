@@ -1,11 +1,11 @@
 //! Independent passive capture on a dedicated, initially idle OpenWrt PHY.
 //! Uses the same event-driven capture owner and air decoder as other fixtures.
 use crate::Result;
+use crate::air::{self, AirFrame, FrameKind, MacAddress};
 use crate::{
     local,
     openwrt::capture::{RemoteCapture, SnapshotLength},
 };
-use oer_hil_family_ieee80211_evidence::air::{self, AirFrame, FrameKind, MacAddress};
 use oer_hil_lab::config::{LabConfig, StationFixtureConfig};
 use oer_process::CommandExt as _;
 use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
@@ -224,8 +224,8 @@ impl ProtectionCapture {
     pub fn finish(
         mut self,
         peer: Option<MacAddress>,
-    ) -> Result<oer_hil_family_ieee80211_evidence::protection::ProtectionEvidence> {
-        use oer_hil_family_ieee80211_evidence::protection::{Flow, analyze};
+    ) -> Result<crate::protection::ProtectionEvidence> {
+        use crate::protection::{Flow, analyze};
         let (captured, dropped) = self.remote.finish_capture()?;
         if dropped != 0 {
             return Err(

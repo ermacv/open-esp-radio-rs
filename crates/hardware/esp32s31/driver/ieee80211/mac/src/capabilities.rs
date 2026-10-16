@@ -34,8 +34,8 @@ use crate::{
 /// [`crate::crypto::replace_sta_group_ccmp_with_rollback`] restores the old
 /// entry if a replacement write fails; it does not own replay state. The
 /// portable phase's replacement terminal defines that state transition.
-/// These capabilities describe hardware capacity, not completion of the
-/// S31 runtime's migration to that phase contract.
+/// These capabilities describe hardware capacity, not an S31 backend of
+/// that phase contract, which does not exist yet.
 ///
 /// [#747]: https://github.com/ermacv/open-esp-radio-rs/issues/747
 pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {

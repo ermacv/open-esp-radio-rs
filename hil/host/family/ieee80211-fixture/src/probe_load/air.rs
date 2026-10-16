@@ -1,7 +1,7 @@
 //! Pcap-based checks are independent of successful raw-socket send calls.
 use super::model;
 use crate::Result;
-use oer_hil_family_ieee80211_evidence::air::{self, AirFrame, FrameKind, MacAddress};
+use crate::air::{self, AirFrame, FrameKind, MacAddress};
 use serde::Serialize;
 use std::{collections::BTreeSet, fs, path::Path};
 

@@ -512,7 +512,7 @@ impl PmTraffic {
 
 /// Power management of one associated station (`g_pm`).
 #[derive(Clone, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-legacy-station-power-save, coex-coexistence-policy-and-scheduler-tbtt-anchored-periods
+// CAPABILITY: coex-coexistence-policy-and-scheduler-tbtt-anchored-periods
 pub struct ModemSleep {
     /// False only on the private arithmetic-validation copy. The committed
     /// transition emits every state edge, including intermediate wake states.

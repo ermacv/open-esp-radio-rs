@@ -1,6 +1,5 @@
 //! Independent RF observations with silence controls in both directions.
 
-pub mod coexistence;
 pub mod directed;
 pub mod dtm_peer;
 mod establish;

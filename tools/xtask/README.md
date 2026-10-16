@@ -309,8 +309,7 @@ selected host packages. Host packages are every package of the root
 workspace and host or portable packages of the others. When the change
 reaches a package that builds only for a chip, or a chip or family package
 whose chip-target `cfg` code the host skips, `images-type-check`
-type-checks the two final HIL images (`performance`, `correctness`) and
-every other image class whose runtime compiles such a package, by the
+type-checks every image class whose runtime compiles such a package, by the
 class's Cargo graph (`cargo tree` with its features for the chip target),
 since the host checks never compile that code. The gate names the full-tier
 checks the change selects and leaves them to CI. Both commands print the
@@ -359,10 +358,8 @@ performs no hardware operations.
 Every image is built by the one image pipeline,
 [`oer-image`](../image/pipeline/README.md): `build firmware` with the examples' spec,
 `check firmware` and `compare images` through `oer-hil-image`'s class specs.
-A full `check firmware` of `performance` or `correctness` then builds the
-Blobray audit host in `tools/blobray/target` and runs the final radio target
-audit on the class's runtime ELF: a call into the vendor radio ROM fails the
-class. Encoding uses the `espflash` library, so no build needs the `espflash`
+No image class is a final radio image, so no build runs Blobray's final radio
+target audit. Encoding uses the `espflash` library, so no build needs the `espflash`
 executable. This gate does not run on hardware or measure runtime stack
 high-water.
 
@@ -397,8 +394,7 @@ optional explicit local limit for vendor probe builds.
 
 Standalone firmware builds keep a Cargo cache per example and copy their ELFs
 and images into a unique `target/firmware/esp32s31-<example>/build-<id>/`
-bundle. Station and AP link the owned Xarxa/Embassy stack, their default
-feature; see the [implementation guide](../../docs/network-implementations.md).
+bundle.
 
 Firmware builds never modify a committed `Cargo.lock`. Each build copies the
 workspace catalog into its own cache and resolves through Cargo's
@@ -426,9 +422,8 @@ network state. Linux process ownership uses explicit process groups.
 Unsupported hosts return an error when the required ownership backend is
 unavailable.
 
-The full `images-correctness` job also builds `boot-smoke` for every staged HIL target,
+The full `images` job builds `boot-smoke` for every staged HIL target,
 including C5, through the same coverage, placement and stack gates as a run.
-Radio final images additionally receive Blobray's forbidden-ROM audit.
 
 ## Contract diagnostics
 

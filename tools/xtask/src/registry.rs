@@ -325,16 +325,6 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| fw(ctx, &["build", "--all", "--type-check"]),
     },
     Check {
-        id: "example-link",
-        tier: Tier::Full,
-        job: "example-link",
-        summary: "the station example built, audited and encoded into a bundle",
-        trigger: Some(|change| touches(change, &["platform/"])),
-        // The interrupt-stack gate fetches the pinned ROM it bounds the
-        // image with.
-        run: |ctx, _| fw(ctx, &["build", "station", "--check", "all"]),
-    },
-    Check {
         id: "firmware-host-tests",
         tier: Tier::Full,
         job: "firmware",
@@ -451,35 +441,14 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| checks::isa_conformance::run(ctx, std::path::Path::new("clang")),
     },
     // A change type-checks the classes it reaches instead.
-    // The final images build in jobs of their own: on one runner they wait
-    // for each other's shared build directory.
+    // The boot smoke image, the one image CI builds, builds in a job of its own.
     Check {
         id: "final-images",
         tier: Tier::Full,
         job: "images",
-        summary: "the final performance radio image built with every gate",
+        summary: "the staged boot smoke image built with every gate",
         trigger: None,
-        run: |ctx, _| hil(ctx, &["images", "check", "--class", "performance"]),
-    },
-    Check {
-        id: "final-images-correctness",
-        tier: Tier::Full,
-        job: "images-correctness",
-        summary: "the final correctness radio image and staged boot smoke built with every gate",
-        trigger: None,
-        run: |ctx, _| {
-            hil(
-                ctx,
-                &[
-                    "images",
-                    "check",
-                    "--class",
-                    "correctness",
-                    "--class",
-                    "boot-smoke",
-                ],
-            )
-        },
+        run: |ctx, _| hil(ctx, &["images", "check", "--class", "boot-smoke"]),
     },
     Check {
         id: "image-classes",
@@ -1049,10 +1018,8 @@ fn images_type_check(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
         .map(String::from)
         .to_vec();
     match scope {
-        // The final images CI builds on every pull request.
-        Scope::Tree => {
-            args.extend(["--class", "performance", "--class", "correctness"].map(String::from))
-        }
+        // The boot smoke image, which CI builds on every pull request.
+        Scope::Tree => args.extend(["--class", "boot-smoke"].map(String::from)),
         Scope::Change(change) => {
             // Chip-target code is invisible to the host checks: `cargo hil`
             // type-checks the final images and every class whose image

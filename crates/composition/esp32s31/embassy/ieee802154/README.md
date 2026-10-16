@@ -195,7 +195,7 @@ Next to Wi-Fi, as in a Thread border router,
 `Ieee802154System::enable_wifi_coexistence` enters IEEE 802.15.4 into
 coexistence (`esp_coex_wifi_i154_enable`: `coex_enable` and the schedule
 status bit) through `RadioGuard::enable_ieee802154_coex`; the image must
-run the radio system's coexistence schedule, as its Wi-Fi composition does.
+run the radio system's coexistence schedule.
 The system holds IEEE 802.15.4's common power proof and its coexistence
 state from the radio split (`CoexAbsent`, or `Coexisting` while it takes
 part); leaving power requires the `CoexAbsent`, so it cannot leave power

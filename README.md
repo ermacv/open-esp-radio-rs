@@ -3,9 +3,10 @@
 Source-only `no_std` radio drivers for Espressif chips, with typed hardware
 ownership, Embassy integration and independent verification tooling.
 
-The production implementation targets **ESP32-S31**. IEEE 802.11 has STA, AP,
-same-channel STA+AP and monitor compositions. Bluetooth LE and IEEE 802.15.4
-provide narrower implemented operations with explicit limits. A source API,
+The production implementation targets **ESP32-S31**. IEEE 802.11 has portable
+protocols and an ESP32-S31 driver core, but no ESP32-S31 composition yet.
+Bluetooth LE and IEEE 802.15.4 provide narrower implemented operations with
+explicit limits. A source API,
 host test or target build does not establish on-air readiness: the
 [qualification evaluator](qualification/README.md) derives that from accepted
 evidence. ESP32-C5 has investigation inputs, not a production radio backend.
@@ -21,10 +22,8 @@ documented behavior.
 
 | Your interest | A useful starting point | Requirements |
 | --- | --- | --- |
-| Radio drivers and embedded Rust | [Follow a real channel change](docs/channel-walkthrough.md) from reviewed hardware facts to STA | Source reading and host tests need no board; on-air work needs ESP32-S31 hardware |
 | Binary analysis and hardware research | [Blobray task map](tools/blobray/README.md#choose-a-task) and the synthetic exercise | Linux host; real research also needs your own identified vendor artifacts |
 | Portable Rust and resource ownership | [First host contribution](docs/first-contribution.md) | Rust basics and public build dependencies; no private inputs |
-| A station application | [Buildable station example](examples/esp32s31/station/README.md) and [capability limits](crates/hardware/esp32s31/driver/FEATURES.md) | Supported board, toolchain and network configuration |
 
 Start with the [documentation routes](docs/README.md) and
 [contribution guide](CONTRIBUTING.md). The [documentation build](docs/documentation.md#build-the-guides-and-api-documentation)
@@ -38,18 +37,13 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 
 | Task | Documentation |
 | --- | --- |
-| Understand the architecture | [From binary evidence to a Wi-Fi station](docs/binary-to-station.md) |
-| Trace one operation through the layers | [Channel change: evidence to STA](docs/channel-walkthrough.md) |
 | Make a first contribution | [Host tutorial](docs/first-contribution.md), [contribution guide](CONTRIBUTING.md) |
 | Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
-| Build and validate a station | [ESP32-S31 route](docs/station-hardware.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
-| Understand the network stack integration | [Network implementations](docs/network-implementations.md) |
-| Build a station application | [Station example](examples/esp32s31/station/README.md) |
-| Build another radio role | [AP](examples/esp32s31/access-point/README.md), [monitor](examples/esp32s31/monitor/README.md) and [Thread](examples/esp32s31/thread/README.md) |
+| Build a radio application | [Thread example](examples/esp32s31/thread/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
-| Assess a selected STA or BLE scope | [Qualification programs](qualification/README.md) |
+| Assess a selected BLE or IEEE 802.15.4 scope | [Qualification programs](qualification/README.md) |
 | Check source and dependency policy | [Repository tooling](tools/xtask/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
 | Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
@@ -142,9 +136,8 @@ cargo xtask check tier full --job firmware
 cargo xtask check tier full --job models
 ```
 
-They need the embedded target; the `images`, `images-correctness` and
-`example-link` jobs also need the toolchain's `llvm-tools` component and
-fetch the pinned ROM ELF themselves.
+They need the embedded target; the `images` job also needs the toolchain's
+`llvm-tools` component and fetches the pinned ROM ELF itself.
 Together they check dependency
 and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,
 integration, HIL and Blobray workspaces have their own build configuration; the

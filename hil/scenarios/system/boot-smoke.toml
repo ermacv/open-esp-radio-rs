@@ -1,7 +1,7 @@
 schema = 5
 id = "boot-smoke"
 description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
-role = "qualification"
+role = "investigation"
 tags = ["smoke", "psram-stack"]
 
 [system]

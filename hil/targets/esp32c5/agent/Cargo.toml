@@ -22,7 +22,6 @@ system-watchdog = [
     "dep:embassy-sync",
     "dep:oer-esp32c5-soc-esp-hal",
     "dep:oer-hil-protocol",
-    "oer-hil-protocol?/system",
     "dep:oer-hil-agent",
     "dep:oer-hil-image-keys",
 ]

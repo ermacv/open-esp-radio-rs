@@ -59,10 +59,6 @@ jobs:
       checks_images: ${{ steps.plan.outputs.checks_images }}
       run_verification: ${{ steps.plan.outputs.run_verification }}
       checks_verification: ${{ steps.plan.outputs.checks_verification }}
-      run_example_link: ${{ steps.plan.outputs.run_example_link }}
-      checks_example_link: ${{ steps.plan.outputs.checks_example_link }}
-      run_images_correctness: ${{ steps.plan.outputs.run_images_correctness }}
-      checks_images_correctness: ${{ steps.plan.outputs.checks_images_correctness }}
       run_architecture_clippy: ${{ steps.plan.outputs.run_architecture_clippy }}
       checks_architecture_clippy: ${{ steps.plan.outputs.checks_architecture_clippy }}
       run_host_lint: ${{ steps.plan.outputs.run_host_lint }}
@@ -290,10 +286,8 @@ jobs:
         run: cargo xtask ci check-environment --workflow ci --job isa-conformance
       - run: cargo xtask --verbose check tier full --job isa-conformance --checks "${{ needs.prepare.outputs.checks_isa_conformance }}"
 
-  # The final performance HIL image, built by the image pipeline with every
-  # gate and the Blobray target audit; the correctness image, the boot smoke
-  # and the station example have jobs of their own. Needs the toolchain's
-  # LLVM tools.
+  # The staged boot smoke HIL image, built by the image pipeline with every
+  # gate. Needs the toolchain's LLVM tools.
   images:
     needs: prepare
     if: needs.prepare.outputs.run_images == 'true'
@@ -323,69 +317,6 @@ jobs:
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job images
       - run: cargo xtask --verbose check tier full --job images --checks "${{ needs.prepare.outputs.checks_images }}"
-
-  # The final correctness image and the staged boot smoke, on a runner of
-  # their own: on one runner the image builds wait for each other.
-  images-correctness:
-    needs: prepare
-    if: needs.prepare.outputs.run_images_correctness == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    outputs:
-      reusable: ${{ steps.environment.outputs.reusable }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            tools/blobray/target
-          key: images-correctness-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: images-correctness-${{ runner.os }}-
-      - name: Put the toolchain's LLVM tools on PATH
-        run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
-      - name: Fetch every workspace
-        run: cargo tidy fetch
-      - id: environment
-        run: cargo xtask ci check-environment --workflow ci --job images-correctness
-      - run: cargo xtask --verbose check tier full --job images-correctness --checks "${{ needs.prepare.outputs.checks_images_correctness }}"
-
-  # The station example built, audited and encoded into a bundle.
-  example-link:
-    needs: prepare
-    if: needs.prepare.outputs.run_example_link == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    outputs:
-      reusable: ${{ steps.environment.outputs.reusable }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            tools/blobray/target
-          key: example-link-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: example-link-${{ runner.os }}-
-      - name: Put the toolchain's LLVM tools on PATH
-        run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
-      - name: Fetch every workspace
-        run: cargo tidy fetch
-      - id: environment
-        run: cargo xtask ci check-environment --workflow ci --job example-link
-      - run: cargo xtask --verbose check tier full --job example-link --checks "${{ needs.prepare.outputs.checks_example_link }}"
 
   # The provenance of every cited vendor function against the pinned vendor
   # artifacts, which the check fetches, and the vendor evidence index of every
@@ -465,7 +396,7 @@ jobs:
   # Every planned job passed or has explicit successful input coverage.
   ci-ok:
     if: always()
-    needs: [prepare, host, host-lint, architecture, architecture-clippy, firmware, models, isa-conformance, images, images-correctness, example-link, verification]
+    needs: [prepare, host, host-lint, architecture, architecture-clippy, firmware, models, isa-conformance, images, verification]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

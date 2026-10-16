@@ -94,7 +94,6 @@ enum StaSaePhase {
 
 /// One live SAE exchange. Its checked deadline includes waiting for TX credit
 /// and completion. Neither failure nor success leaves a usable exchange behind.
-// CAPABILITY: wifi-security-wpa3-personal-wpa3-enterprise
 #[must_use]
 pub struct StaSaeAuthentication {
     local: OwnAddress,

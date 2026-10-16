@@ -1787,12 +1787,6 @@ code = "dd98991236f101d0584239e2f460a658dfb0c35b26bbcea9c96d6d99cae1d1eb"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ht.o"
-symbol = "ieee80211_add_htcap_body"
-code = "6b05c7451821062bc2658b7262ea8589f45a6a015474b051ed9dbcd6f9313e35"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_ht.o"
 symbol = "ieee80211_ampdu_reorder"
 code = "c641c025704b4c86b99f1f113372a607dedf788a46ef9c5a61be976a39e60bf2"
 
@@ -1825,12 +1819,6 @@ artifact = "libnet80211"
 member = "ieee80211_input.o"
 symbol = "ieee80211_parse_rsn"
 code = "17e65359f373432d452f37db4ca9bb61c91192516aef214d3576d89925df6124"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_ioctl.o"
-symbol = "ieee80211_sta_disconnect"
-code = "521105c8611db38cf6a1e78da1caeb3003b3317dc2ba8f95c56ed253d1a424d4"
 
 [[function]]
 artifact = "libnet80211"
@@ -1879,12 +1867,6 @@ code = "ad1068c8ee57ba621df8763bacc122ab9db12e690481c3dc78f25eb2800b413a"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_output.o"
-symbol = "ieee80211_add_extcap"
-code = "4a514955cdd2d9b5409a55be47b49ace07d83f4db5bd59f66d46225d95e3d7ed"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
 symbol = "ieee80211_alloc_tx_buf"
 code = "ee053cdf63bdd7fba8ad8596fc9033ea5b3d4d81b5b2ac36ecac3fc02699970c"
 
@@ -1911,18 +1893,6 @@ artifact = "libnet80211"
 member = "ieee80211_output.o"
 symbol = "ieee80211_recycle_cache_eb"
 code = "e4c6e50229a6ce3261f3b8ce298c92b0c2130abea7bc8c7eea831c269143341d"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
-symbol = "ieee80211_send_mgmt"
-code = "f3eca92c93a3f454724dce591995005e307fb21114026b438fac511aa4f694c3"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
-symbol = "ieee80211_send_probereq"
-code = "eede7e4b6fda3aae1f51171ab540d9b6296070aa728957fffceb259e6c263c38"
 
 [[function]]
 artifact = "libnet80211"
@@ -1983,18 +1953,6 @@ artifact = "libnet80211"
 member = "ieee80211_sta.o"
 symbol = "sta_auth_sae"
 code = "379f571bf6dd69aff1d8d91f2bc94b0d7bcc1fa7e9f3acff9a0e3a699b13932e"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_sta.o"
-symbol = "sta_bip_check"
-code = "26c4fd6f526be163d9f728c54a14a74a30f9a84eefbd1ef5975d22d2854955da"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_sta.o"
-symbol = "sta_input"
-code = "920a9120e90b18155fd00f3e7d02862544f7560f88e1cb0cc0ff1f85768a1246"
 
 [[function]]
 artifact = "libnet80211"
@@ -4621,12 +4579,6 @@ code = "8be0e43fd3685bad58f42cbf74019557c360dac189bea64143d9cca642531864"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
-symbol = "rc11AXRate2SchedIdx"
-code = "a3c5568e6dcc7fe1aef082eaa8ad5b27f5422a73e18f175b41be1c2d20397716"
-
-[[function]]
-artifact = "libpp"
-member = "trc.o"
 symbol = "rc11GRate2SchedIdx"
 code = "bc891d5f2cf1761a6c4e8085e7bf4d3c5f5ed2a7548d398d34129034ec3e7118"
 
@@ -4728,12 +4680,6 @@ artifact = "libpp"
 member = "trc.o"
 symbol = "trc_set_bf_report_rate"
 code = "d553a697bc3647209b03a133425af8893b0680f34c0c57dbb64b7160687899ea"
-
-[[function]]
-artifact = "libpp"
-member = "trc.o"
-symbol = "trc_set_per_pkt_rate"
-code = "6261a05e42cc855772f92fb39982a8b579c55c1daf82ad35fcb5ae5a00d23e41"
 
 [[function]]
 artifact = "libpp"

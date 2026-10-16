@@ -5,11 +5,11 @@ fn catalog() -> crate::scenario::Catalog {
         .expect("load scenario catalog")
 }
 
-/// The chip whose agent builds the performance image (the full agent) and
-/// one whose agent does not.
+/// The chip whose agent builds the Bluetooth GATT image (the full agent)
+/// and one whose agent does not.
 fn chips() -> (String, String) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let full = oer_hil_image::chips_building(&root, &[ImageClass::Performance]).unwrap();
+    let full = oer_hil_image::chips_building(&root, &[ImageClass::BluetoothGatt]).unwrap();
     let partial = oer_chip_profile::supported(&root)
         .unwrap()
         .into_iter()
@@ -60,17 +60,11 @@ fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
 fn an_experiment_arm_s_image_is_its_class_with_the_arm_s_feature_delta() {
     let catalog = catalog();
     let (full, _) = chips();
-    let scenario = catalog.get("udp-rx-ht40-ceiling").unwrap();
-    let without: FeatureDelta = "-cpu-load".parse().unwrap();
+    let scenario = catalog.get("bluetooth-dtm-bidirectional").unwrap();
+    let without: FeatureDelta = "-phy-rx-hot-sram".parse().unwrap();
     let arm = oer_hil_image_class::image_keys_with(scenario.image(), &full, &without).unwrap();
-    // The arm's image is the class's with the delta; no Wi-Fi image serves
-    // a station while the roles return on the port (#563), so only the
-    // role check refuses it.
-    let error = check_flashed_image_keys(&full, scenario, &without, &arm).unwrap_err();
-    assert!(
-        error.to_string().contains("does not declare a role"),
-        "{error}"
-    );
+    // The arm's image is the class's with the delta.
+    check_flashed_image_keys(&full, scenario, &without, &arm).unwrap();
     // Without the run's delta the arm's image is no class's; and a class's
     // own image is not the arm's.
     assert!(check_flashed_image_keys(&full, scenario, &FeatureDelta::default(), &arm).is_err());
@@ -86,10 +80,10 @@ fn a_partial_agent_s_system_image_is_classified_by_its_chip() {
     let keys = oer_hil_image_class::image_keys_on(ImageClass::SystemWatchdog, &partial).unwrap();
     check_flashed_image_keys(&partial, scenario, &FeatureDelta::default(), &keys).unwrap();
     // The chip comes from the lab, the class from the keys: the partial
-    // agent builds no Wi-Fi image, so a Wi-Fi image's keys name none of its
-    // classes.
-    let wifi = oer_hil_image_class::image_keys_on(ImageClass::Performance, &full).unwrap();
-    assert!(check_flashed_image_keys(&partial, scenario, &FeatureDelta::default(), &wifi).is_err());
+    // agent builds no Bluetooth image, so a Bluetooth image's keys name none
+    // of its classes.
+    let gatt = oer_hil_image_class::image_keys_on(ImageClass::BluetoothGatt, &full).unwrap();
+    assert!(check_flashed_image_keys(&partial, scenario, &FeatureDelta::default(), &gatt).is_err());
 }
 
 #[test]

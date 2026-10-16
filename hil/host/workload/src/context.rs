@@ -1,15 +1,13 @@
-//! Immutable laboratory inputs, initialization policy and the result
-//! channels of one workload repetition.
+//! Immutable laboratory inputs and the result channels of one workload
+//! repetition.
 
 use crate::{Result, measurements::Recorder, results::Results};
 use oer_hil_lab::config::LabConfig;
-use oer_hil_link::{Dut, Profile, SerialCapture, Target};
-use oer_hil_protocol::wifi::TargetSettings;
+use oer_hil_link::{Dut, Profile, SerialCapture};
 use std::path::Path;
 
 pub struct Context<'a> {
     pub lab: &'a LabConfig,
-    pub settings: TargetSettings,
     /// The repetition's measurements: every capture's projection and the
     /// workload's own.
     pub measurements: Recorder,
@@ -48,10 +46,9 @@ pub trait BoardImages: Sync {
 type Opener<'a> = Box<dyn Fn(&Path) -> Result<SerialCapture> + 'a>;
 
 impl<'a> Context<'a> {
-    pub fn new(lab: &'a LabConfig, settings: TargetSettings, output: &'a Path) -> Self {
+    pub fn new(lab: &'a LabConfig, output: &'a Path) -> Self {
         Self {
             lab,
-            settings,
             output,
             measurements: Recorder::default(),
             results: Results::default(),
@@ -112,15 +109,6 @@ impl<'a> Context<'a> {
     /// The repetition's output directory.
     pub fn output(&self) -> &Path {
         self.output
-    }
-
-    /// The laboratory and initialization settings a target session uses.
-    pub fn target(&self) -> Target<'a> {
-        Target {
-            dut: self.lab,
-            station: &self.lab.station,
-            settings: self.settings,
-        }
     }
 
     /// Every workload family uses the same reset/capture/measurement lifetime.

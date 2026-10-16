@@ -56,6 +56,10 @@ const PHY_PACKAGES: &[&str] = &[
     // radio owners are typed over; plain value types, no runtime or driver.
     "oer-radio-port",
     "oer-time",
+    // The no-std waker cell `oer-radio-port` keeps for its lifecycle waits,
+    // and the drop guard it and `oer-ieee802154` use on cancellation paths.
+    "atomic-waker",
+    "scopeguard",
     // The chip-neutral modem clock planner behind the HAL's clock owners.
     "oer-radio-analog",
     "oer-radio-clock",

@@ -1,11 +1,12 @@
 # Radio port lifecycle and vocabulary
 
-`oer-radio-port` owns the lifecycle shared by Bluetooth LE and IEEE 802.15.4,
-and the capacity, error and clock vocabulary of all three radio blocks.
-The two lifecycle implementations had identical product code; each also
-exposed the same failing cases: a retirement waiter received no wake, and
-an untyped driver exit was accepted as a successful uninstall. Their common
-contract now lives here. Wi-Fi keeps its own lifecycle until integration.
+`oer-radio-port` owns the lifecycle shared by the three radio blocks'
+ports (Bluetooth LE, IEEE 802.15.4 and the IEEE 802.11 lower-MAC port) and
+their capacity, error and clock vocabulary. The first two lifecycle
+implementations had identical product code; each also exposed the same
+failing cases: a retirement waiter received no wake, and an untyped driver
+exit was accepted as a successful uninstall. Their common contract lives
+here.
 
 | Value | Meaning |
 | --- | --- |
@@ -153,7 +154,7 @@ inspect `Stopped` versus `Unconfirmed`; quarantine permits no backing reuse,
 and an unconfirmed stop requires chip reset.
 BLE's service returns `Served` through this output instead of a side channel.
 
-## Cost and Wi-Fi integration
+## Cost
 
 The RV32 measurement uses two concrete backends and the same enable,
 disable, retire, detach and cancellation workload in
@@ -182,7 +183,7 @@ keeps `Option<EventEnd<Fault>>` in `Local`; its size depends on the fault type.
 
 | Checks | Code size | RAM and CPU | Signatures | Breakage | Alternatives | Reversal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6844 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 432 bytes per backend (+248). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`, `disable` sink returning `ControlFlow<Terminal>`, `EventEnd<Fault>` for `next_event`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed`, borrow one phase, and retain terminals rejected by disable. Always-accepting sinks return `Continue(())`. Wi-Fi adopts the same core after coordinated integration; its current code is unchanged. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
+| Typestate and opaque affine call/retire/poison/detach proofs are compile-time checks. Hardware refusal, poisoning and bounded waits remain runtime outcomes; lifecycle code has no explicit panic. | Test ELF `.text`: 2282 → 6844 bytes. Backend/body futures remain concrete monomorphizations; retirement and signal machinery add code. | No allocation. The measured RV32 future grows from 184 to 432 bytes per backend (+248). Three atomic waiter slots per installation: retirement, driver abandonment and core abandonment. Wake registration uses atomic synchronization; consuming proof and call tokens are zero-sized. Hot radio operations acquire no new lifecycle lock. | `Installed<B>`, `InstallParts<'id, B>`, static `drive(DriverLoan, held, retire)`, `DriverExit`, `Call`, `Quarantine`/`Abandon`/`HardwareStopped`/`Detach`, `Retired<'id, (Driver, State)>`, `Detached<'id>`, `Quarantined<S>`, `PortEnd<B, Out>`, `disable` sink returning `ControlFlow<Terminal>`, `EventEnd<Fault>` for `next_event`; owner borrows `&mut B`, `Ended<'id, B, Out>` has no borrow lifetime. | Both migrated blocks consume `Installed`, borrow one phase, and retain terminals rejected by disable. Always-accepting sinks return `Continue(())`. The IEEE 802.11 lower-MAC port is built on the same core. | Keeping two identical owners duplicates fixes. Moving `B` into its owner loses the core's asynchronous abandonment authority. A receiver-based `drive` needs an empty driver slot. Flag-only retirement loses wakes. | Rework signal/future representation if the added code or installation RAM exceeds the target image budget; preserve proofs, wakes and asynchronous teardown. Re-measure this ELF and the affected firmware before accepting that rework. |
 
 Most code is the concrete async state machines: the linked ELF attributes
 2256 bytes to each backend's polling entry, 630 bytes to each body future,

@@ -67,7 +67,6 @@ impl StaBeaconLossConfig {
 }
 
 /// Finite beacon/TIM state owned by the connected executor task.
-// CAPABILITY: wifi-bounded-wait-owners
 pub struct StaBeaconMonitor {
     config: StaBeaconLossConfig,
     deadline: Option<Instant>,
@@ -195,7 +194,6 @@ pub enum StaLinkAction {
 /// under a [`StaLinkProbePolicy`] before it declares the link lost.
 ///
 /// Time enters as a value; the owner sends the probe and ends the link.
-// CAPABILITY: wifi-bounded-wait-owners
 pub struct StaLinkMonitor {
     beacons: StaBeaconMonitor,
     probe: StaLinkProbePolicy,

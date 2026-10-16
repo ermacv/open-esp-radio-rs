@@ -1,6 +1,6 @@
 ---
 name: protocol-change
-description: Use when changing or adding portable protocol logic or a radio port in this repository — crates/protocols/ (IEEE 802.11 MAC/STA/AP/RSN, lower/upper MAC, Bluetooth LE/HCI, IEEE 802.15.4), crates/services/, crates/radio/, crates/time/, or the Clock/Timer, LeRadioBackend, the IEEE 802.15.4 owner shape or Ieee80211LowerMacPort contracts. Not for chip register or driver work (driver-or-hardware-change).
+description: Use when changing or adding portable protocol logic or a radio port in this repository — crates/protocols/ (IEEE 802.11 MAC/STA/AP/RSN, lower/upper MAC, Bluetooth LE/HCI, IEEE 802.15.4), crates/services/, crates/radio/, crates/time/, or the Clock/Timer, LeRadioBackend, the IEEE 802.15.4 owner shape or LowerMacBackend contracts. Not for chip register or driver work (driver-or-hardware-change).
 ---
 
 # Change a protocol, service or radio port

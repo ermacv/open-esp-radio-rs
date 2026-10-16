@@ -13,8 +13,8 @@ use std::{
     time::Duration,
 };
 
+use crate::air::{self, AirFrame, FrameKind, MacAddress};
 use crate::{Result, openwrt::evidence::resolve_station_mac, openwrt::tx_monitor::MacFrameKey};
-use oer_hil_family_ieee80211_evidence::air::{self, AirFrame, FrameKind, MacAddress};
 use oer_hil_lab::config::OpenWrtConfig;
 use oer_hil_run_bundle_format::run::fixtures::{
     self, AirIntervalSummary, AirMonitor, TargetEgressAirTiming,

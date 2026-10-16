@@ -1,25 +1,5 @@
 #[cfg(feature = "wifi")]
 #[test]
-fn wifi_facade_preserves_implementation_type_identity() {
-    fn through_facade(value: oer::wifi::WifiConfig) -> radio::wifi::WifiConfig {
-        value
-    }
-    let _: fn(radio::wifi::WifiConfig) -> radio::wifi::WifiConfig = through_facade;
-}
-
-#[cfg(feature = "owned-xarxa")]
-#[test]
-fn runtime_radio_facade_preserves_supervisor_reexport_type_identity() {
-    let _: fn(
-        radio_supervisor::WifiSupervisorCommand,
-    ) -> oer::runtime::radio::WifiSupervisorCommand = |command| command;
-    let _: fn(
-        oer::runtime::radio::WifiSupervisorResponse<()>,
-    ) -> radio_supervisor::WifiSupervisorResponse<()> = |response| response;
-}
-
-#[cfg(feature = "wifi")]
-#[test]
 fn association_policy_and_wire_codec_share_the_same_types() {
     use oer::ieee80211::sta::association::{PhyMode, Preference, select_phy};
 
@@ -34,17 +14,6 @@ fn chip_namespace_preserves_hal_type_identity() {
     use oer::chips::esp32s31::hal;
 
     let _: fn(chip_hal::root::RadioHardware) -> hal::root::RadioHardware = |owner| owner;
-}
-
-#[cfg(feature = "esp32s31-wifi")]
-#[test]
-fn chip_wifi_namespace_preserves_backend_type_identity() {
-    use oer::chips::esp32s31::driver;
-
-    let _: fn(chip_ap::engine::ApEngineError) -> driver::ieee80211::ap::engine::ApEngineError =
-        |error| error;
-    let _: fn(chip_sta::profile::Selection) -> driver::ieee80211::sta::profile::Selection =
-        |selection| selection;
 }
 
 #[cfg(feature = "bluetooth")]

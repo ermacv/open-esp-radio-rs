@@ -2,8 +2,7 @@
 //! with enough repetitions to tell an effect from noise.
 //!
 //! A variant is a repository revision plus local checkouts that replace its
-//! pinned dependencies (the `ESP_HAL_ROOT`, `EMBASSY_ROOT` and
-//! `OPEN_RADIO_XARXA_ROOT` roots). Each arm's revision is checked out in the
+//! pinned dependencies (the `ESP_HAL_ROOT` root). Each arm's revision is checked out in the
 //! experiment's worktree below `target/hil/ab/<id>/` and captured with its
 //! overrides into a source snapshot, which the experiment's runner builds:
 //! both arms therefore need the checkout's HIL protocol version.
@@ -457,7 +456,7 @@ fn prepare(
 
 /// The runner's argument for a variant's feature delta, none for an empty
 /// one: one `--features=<delta>` word, since a delta that starts with a
-/// removal (`-cpu-load`) would otherwise parse as an option of its own.
+/// removal (`-phy-rx-hot-sram`) would otherwise parse as an option of its own.
 fn features_argument(features: &FeatureDelta) -> Option<String> {
     (!features.is_empty()).then(|| format!("--features={features}"))
 }

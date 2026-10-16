@@ -2,8 +2,6 @@
 
 use embassy_sync::once_lock::OnceLock;
 use oer_hil_image_keys::ImageKeys;
-#[cfg(feature = "open-radio-hil")]
-use oer_hil_protocol::Message;
 
 include!(concat!(env!("OUT_DIR"), "/enabled_features.rs"));
 
@@ -14,10 +12,4 @@ pub(crate) fn keys() -> &'static ImageKeys {
     KEYS.get_or_init(|| {
         oer_hil_image_keys::image_keys(&|feature| ENABLED_FEATURES.contains(&feature))
     })
-}
-
-/// Whether this image has message or property `M`.
-#[cfg(feature = "open-radio-hil")]
-pub(crate) fn has<M: Message>() -> bool {
-    keys().binary_search(&M::KEY).is_ok()
 }

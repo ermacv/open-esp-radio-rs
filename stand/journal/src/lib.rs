@@ -363,7 +363,7 @@ mod tests {
             checkout: Some("/src/wifi".into()),
             device: Some("30:ED:A0:F3:F6:D0".into()),
             kind: BoardEventKind::Flashed {
-                image: "correctness".into(),
+                image: "bluetooth-gatt".into(),
                 application_sha256: "0123456789abcdef".into(),
                 commit: Some("fedcba9876543210".into()),
                 dirty: Some(true),
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(serde_json::from_value::<BoardEvent>(json).unwrap(), event);
         assert_eq!(
             event.to_string(),
-            "wifi (/src/wifi) flashed correctness fedcba987654+dirty app 0123456789ab (run r1)"
+            "wifi (/src/wifi) flashed bluetooth-gatt fedcba987654+dirty app 0123456789ab (run r1)"
         );
         let artifact = BoardEvent {
             kind: BoardEventKind::StartupArtifactWritten {

@@ -2,8 +2,8 @@
 //! `cargo hil image build` does,
 //! with the link-time stack, placement and application audits, and report
 //! every class's outcome instead of stopping at the first failure. A built
-//! final image (`performance`, `correctness`) is also audited by Blobray:
-//! its runtime must make no call into the vendor radio ROM.
+//! final image (none is declared now) is also audited by Blobray: its
+//! runtime must make no call into the vendor radio ROM.
 
 use std::{
     collections::BTreeSet,
@@ -40,7 +40,7 @@ pub struct Outcome {
 
 /// The classes whose built image Blobray audits for calls into the ROM
 /// ranges the chip forbids: the images a product ships.
-const FINAL: [ImageClass; 2] = [ImageClass::Performance, ImageClass::Correctness];
+const FINAL: [ImageClass; 0] = [];
 
 /// The ROM ranges no final image of `profile`'s chip may call into, as
 /// Blobray's `--forbid` takes them: `<chip>-<name>=<start>..<end>`.
@@ -167,9 +167,9 @@ fn last_inputs(
     (inputs.schema == oer_image::source_inputs::SCHEMA).then(|| inputs.files.into_iter().collect())
 }
 
-/// The image classes CI builds on every pull request; a change of chip
-/// code type-checks them always.
-pub const FINAL_IMAGES: [ImageClass; 2] = FINAL;
+/// The final radio images, which a change of chip code always type-checks;
+/// no class is one now.
+pub const FINAL_IMAGES: [ImageClass; 0] = FINAL;
 
 /// The image classes to type-check for chip code in `changed` packages:
 /// the final images, and every class whose image's package graph (`graphs`)
@@ -500,11 +500,10 @@ mod tests {
     }
 
     #[test]
-    fn only_built_final_images_are_audited_and_a_failed_audit_fails_its_class() {
+    fn no_class_is_a_final_image_so_none_is_audited() {
         let mut outcomes = [
-            outcome(ImageClass::Performance, None),
-            outcome(ImageClass::Correctness, Some("link failed")),
-            outcome(ImageClass::SystemWatchdog, None),
+            outcome(ImageClass::BluetoothGatt, None),
+            outcome(ImageClass::SystemWatchdog, Some("link failed")),
         ];
         let mut audited = Vec::new();
         audit_final_images(&mut outcomes, |elf| {
@@ -512,16 +511,9 @@ mod tests {
             Err("calls the radio ROM".into())
         })
         .unwrap();
-        assert_eq!(audited, [PathBuf::from("/performance/runtime.elf")]);
-        assert!(
-            outcomes[0]
-                .failure
-                .as_deref()
-                .unwrap()
-                .contains("calls the radio ROM")
-        );
+        assert!(audited.is_empty());
+        assert!(outcomes[0].failure.is_none());
         assert_eq!(outcomes[1].failure.as_deref(), Some("link failed"));
-        assert!(outcomes[2].failure.is_none());
     }
 
     #[test]
@@ -547,7 +539,7 @@ mod tests {
         for class in ImageClass::ALL {
             record(class, &["crates/common/src/lib.rs"]);
         }
-        let [wifi, bluetooth] = [ImageClass::Performance, ImageClass::BluetoothGatt];
+        let [wifi, bluetooth] = [ImageClass::BluetoothSecureGatt, ImageClass::BluetoothGatt];
         record(
             wifi,
             &["crates/common/src/lib.rs", "crates/wifi/src/lib.rs"],
@@ -653,31 +645,27 @@ mod tests {
     }
 
     #[test]
-    fn chip_code_type_checks_the_final_images_and_each_class_that_compiles_it() {
+    fn chip_code_type_checks_each_class_that_compiles_it() {
         let graph = |packages: &[&str]| packages.iter().map(|p| (*p).to_owned()).collect();
         let graphs = vec![
             (
                 ImageClass::BluetoothGatt,
                 graph(&["agent", "oer-bluetooth-radio"]),
             ),
-            (ImageClass::Performance, graph(&["agent", "oer-wifi"])),
-            (ImageClass::Correctness, graph(&["agent", "oer-wifi"])),
+            (ImageClass::SystemWatchdog, graph(&["agent", "oer-system"])),
             (
-                ImageClass::DiagnosticIeee802154Thread,
-                graph(&["agent", "oer-ieee802154-radio"]),
+                ImageClass::BluetoothDtm,
+                graph(&["agent", "oer-bluetooth-radio"]),
             ),
         ];
         assert_eq!(
-            image_classes(&BTreeSet::from(["oer-ieee802154-radio"]), &graphs),
-            [
-                ImageClass::Performance,
-                ImageClass::Correctness,
-                ImageClass::DiagnosticIeee802154Thread
-            ]
+            image_classes(&BTreeSet::from(["oer-bluetooth-radio"]), &graphs),
+            [ImageClass::BluetoothGatt, ImageClass::BluetoothDtm]
         );
         assert_eq!(
-            image_classes(&BTreeSet::from(["oer-wifi"]), &graphs),
-            [ImageClass::Performance, ImageClass::Correctness]
+            image_classes(&BTreeSet::from(["oer-system"]), &graphs),
+            [ImageClass::SystemWatchdog]
         );
+        assert!(image_classes(&BTreeSet::from(["oer-other"]), &graphs).is_empty());
     }
 }

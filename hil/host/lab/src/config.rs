@@ -6,10 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_protocol::{
-    wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointSecurity,
-    wifi::WifiChannelWidth,
-};
+use crate::wifi::{NetworkIpv4Configuration, WifiChannelWidth};
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -844,39 +841,12 @@ impl StationConfig {
         self.ipv4
     }
 
-    pub fn protocol_credentials(&self) -> Result<NetworkCredentials> {
-        NetworkCredentials::try_new(self.ssid.as_bytes(), self.passphrase.as_bytes())
-            .map_err(|error| format!("invalid HIL network credentials: {error}").into())
-    }
-
     pub fn credentials(&self) -> (&str, &str) {
         (self.ssid.as_str(), self.passphrase.as_str())
     }
 }
 
 impl AccessPointConfig {
-    pub fn protocol_request(
-        &self,
-        security: WifiAccessPointSecurity,
-    ) -> Result<oer_hil_protocol::wifi::WifiAccessPointRequest> {
-        Ok(oer_hil_protocol::wifi::WifiAccessPointRequest {
-            credentials: NetworkCredentials::try_new(
-                self.ssid.as_bytes(),
-                self.passphrase.as_bytes(),
-            )
-            .map_err(|error| format!("invalid HIL AP credentials: {error}"))?,
-            security,
-            channel: self.channel,
-            channel_width: self.channel_width,
-            client_limit: self.client_limit,
-            ipv4: NetworkIpv4Configuration::Static {
-                address: self.target_address.octets(),
-                prefix_length: self.prefix_length,
-                gateway: None,
-            },
-        })
-    }
-
     pub fn credentials(&self) -> (&str, &str) {
         (self.ssid.as_str(), self.passphrase.as_str())
     }

@@ -42,7 +42,7 @@ fn run_in(store: &Path, id: &str, commit: &str, dirty: bool, values: &[u64]) -> 
         RunState::Completed,
         vec![ScenarioResult::from_repetitions(
             "udp-tx".into(),
-            ImageClass::Performance,
+            ImageClass::BluetoothSecureGatt,
             values.len() as u8,
             repetitions,
         )],
@@ -135,7 +135,7 @@ fn the_layout_seed_comes_from_each_flashed_image() {
     write_run(&directory, 1, RunState::Completed, Vec::new(), |manifest| {
         let mut firmware: oer_hil_run_bundle_format::run::FirmwareArtifact =
             serde_json::from_value(serde_json::json!({
-                "image": "performance",
+                "image": "bluetooth-secure-gatt",
                 "application_path": "firmware/performance/application.bin",
                 "application_size_bytes": 1,
                 "application_sha256": "00",
@@ -144,7 +144,7 @@ fn the_layout_seed_comes_from_each_flashed_image() {
             }))
             .unwrap();
         manifest.firmware.push(firmware.clone());
-        firmware.image = ImageClass::Correctness;
+        firmware.image = ImageClass::BluetoothGatt;
         firmware.layout_seed = None;
         manifest.firmware.push(firmware);
     });

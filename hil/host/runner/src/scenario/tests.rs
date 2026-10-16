@@ -228,16 +228,6 @@ fn a_document_names_exactly_one_known_family() {
 fn every_image_class_is_reached_by_a_family_plan() {
     let catalog = catalog();
     for class in ImageClass::ALL {
-        if matches!(
-            class,
-            ImageClass::DiagnosticMacIrq | ImageClass::DiagnosticTxWait
-        ) && !catalog
-            .all()
-            .iter()
-            .any(|scenario| scenario.image() == class)
-        {
-            continue;
-        }
         assert!(
             catalog
                 .all()
@@ -254,24 +244,21 @@ fn selection_requirements_union_every_family() {
     let catalog = catalog();
     let selected = [
         catalog.get("bluetooth-dtm-bidirectional").unwrap(),
-        catalog.get("station-ap-loss").unwrap(),
         catalog.get("boot-smoke").unwrap(),
     ];
     let required = requirements(&selected);
-    assert!(required.bluetooth_adapter && required.station_network && required.station_control);
+    assert!(required.bluetooth_adapter);
     assert!(requirements(&[catalog.get("boot-smoke").unwrap()]) == Requirements::default());
 }
 
 #[test]
 fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
     let root = oer_process::built_root();
-    // A chip whose agent builds the radio classes: it links the network.
+    // A chip whose agent builds the radio classes.
     let staged = oer_chip_profile::Profile::all(&root)
         .unwrap()
         .into_iter()
-        .find(|profile| {
-            oer_hil_image_class::declares(&profile.id, oer_hil_image_class::NETWORK_FEATURE)
-        })
+        .find(|profile| oer_hil_image_class::declares(&profile.id, "bluetooth-radio"))
         .unwrap();
     let manifest: toml::Table =
         toml::from_str(&std::fs::read_to_string(staged.hil_agent_manifest(&root)).unwrap())

@@ -5,10 +5,9 @@
 use std::{path::Path, time::Duration};
 
 use oer_devices::port::{Lines, Port, Settings};
-use oer_hil_link::{ConsoleOpener, Dut, DutEvent, SerialLine, StationNetwork, peer::SerialLink};
-use oer_hil_protocol::wifi::{NetworkCredentials, NetworkIpv4Configuration};
+use oer_hil_link::{ConsoleOpener, Dut, DutEvent, SerialLine, peer::SerialLink};
 
-use super::config::{LabConfig, StationConfig};
+use super::config::LabConfig;
 
 impl Dut for LabConfig {
     fn console(&self) -> &Path {
@@ -81,14 +80,4 @@ pub fn peer_console(path: &Path) -> crate::Result<SerialLink> {
     port.clear_input()
         .map_err(|error| failed("clear input", error))?;
     Ok(SerialLink::new(path, Box::new(port)))
-}
-
-impl StationNetwork for StationConfig {
-    fn ipv4(&self) -> NetworkIpv4Configuration {
-        StationConfig::ipv4(self)
-    }
-
-    fn credentials(&self) -> oer_hil_link::Result<NetworkCredentials> {
-        self.protocol_credentials()
-    }
 }

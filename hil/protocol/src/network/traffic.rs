@@ -3,8 +3,8 @@
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
+use super::WifiNetworkInterface;
 use super::{Direction, Transport};
-use crate::wifi::WifiNetworkInterface;
 
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.

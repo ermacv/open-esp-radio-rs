@@ -683,7 +683,7 @@ mod tests {
         }];
         let images = Images {
             started_unix_seconds: 1_790_467_200,
-            production_image: "diagnostic-ieee802154-radio".into(),
+            production_image: "bluetooth-dtm".into(),
             ..Images::default()
         };
         let summary = compare(

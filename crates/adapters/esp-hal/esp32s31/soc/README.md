@@ -39,8 +39,8 @@ These are engineering limits, not measured worst-case reset/RF-off bounds.
   `source_status` reads whether the TRNG's LP clock runs out of reset, sampling in the standard
   output mode and health-tested without a recorded failure. esp-hal enables
   it at startup with ESP-IDF's `rng_ll_enable` and keeps it running after a
-  `TrngSource` drops, because `Rng` (MAC sequence numbers, backoff, the Wi-Fi
-  supervisor) reads the same generator.
+  `TrngSource` drops, because `Rng` (MAC sequence numbers, backoff) reads the
+  same generator.
 - `dma/mem2mem/descriptor.rs`: descriptor images, burst sizing, chain construction,
   and descriptor validation; its host tests live in `descriptor/tests.rs`.
 - `dma/mem2mem/registers.rs`: typed upstream AXI-GDMA register operations,

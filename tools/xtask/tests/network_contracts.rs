@@ -64,52 +64,6 @@ owned-network = ["dep:owned"]
 }
 
 #[test]
-fn s31_composition_requires_both_network_stacks() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let chips = oer_repo::chips::Chips::at(&root).unwrap();
-    let profile = network::profiles(&chips)
-        .unwrap()
-        .into_iter()
-        .find(|profile| {
-            profile.manifest
-                == std::path::Path::new("crates/composition/esp32s31/embassy/ieee80211/Cargo.toml")
-        })
-        .unwrap();
-    for omitted in [&["api"][..], &["network"][..], &["api", "network"][..]] {
-        let fixture = product();
-        let manifest = std::fs::read_to_string(&fixture.manifest).unwrap();
-        fixture.write(
-            "adapter/Cargo.toml",
-            &manifest
-                .lines()
-                .filter(|line| {
-                    !omitted
-                        .iter()
-                        .any(|name| line.starts_with(&format!("{name} =")))
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
-        let mut metadata = fixture.metadata();
-        source(&mut metadata, "xarxa-driver", XARXA);
-        if !omitted.contains(&"api") {
-            source(&mut metadata, "embassy-net", EMBASSY);
-        }
-        if !omitted.contains(&"network") {
-            source(&mut metadata, "xarxa", XARXA);
-        }
-        let error = audit(&fixture, metadata, profile.boundary)
-            .expect_err("the configured S31 boundary must require both stacks")
-            .to_string();
-        assert!(
-            error.contains("missing owned Xarxa stack")
-                || error.contains("missing owned Embassy network stack"),
-            "{error}"
-        );
-    }
-}
-
-#[test]
 fn owned_product_requires_one_pinned_xarxa_contract_but_allows_platform_forks() {
     let fixture = product();
     let mut metadata = fixture.metadata();

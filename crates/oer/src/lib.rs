@@ -6,10 +6,7 @@
 //! The default Wi-Fi API builds on the host without a chip or executor.
 //! Firmware selects its chip and network composition through Cargo features.
 
-pub use {memory, network, radio};
-
-#[cfg(feature = "wifi")]
-pub use radio::wifi;
+pub use {memory, network};
 
 #[cfg(feature = "wifi")]
 pub mod ieee80211 {
@@ -53,32 +50,17 @@ pub mod chips {
             /// IEEE 802.15.4 MAC engine.
             #[cfg(feature = "esp32s31-ieee802154")]
             pub use chip_ieee802154 as ieee802154;
-
-            #[cfg(feature = "esp32s31-wifi")]
-            pub mod ieee80211 {
-                pub use {chip_ap as ap, chip_mac as mac, chip_sta as sta};
-            }
         }
     }
 }
 
-/// Executor-independent runtime of the portable service contracts.
-#[cfg(feature = "owned-xarxa")]
-pub mod runtime {
-    /// The radio service's supervisor mailbox and role-epoch actor.
-    pub use radio_supervisor as radio;
-}
-
-#[cfg(any(feature = "owned-xarxa", feature = "embassy-ieee802154"))]
+#[cfg(feature = "embassy-ieee802154")]
 pub mod systems {
     pub mod esp32s31 {
         pub mod embassy {
             /// The shared radio every protocol composition joins, brought
             /// up with its periodic tasks by one `start` call.
             pub use radio_system as radio;
-
-            #[cfg(feature = "owned-xarxa")]
-            pub use wifi_composition as wifi;
 
             /// The IEEE 802.15.4 client of the shared radio and, with
             /// `openthread`, its OpenThread radio.

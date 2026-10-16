@@ -1,20 +1,16 @@
 # HIL radio families
 
 Each directory is one radio family's crate, `oer-hil-family-<family>`. A
-family owns one scenario table (`[wifi]`, `[bluetooth]`, `[system]`,
-`[ieee802154]`, `[coexistence]` or `[phy]` in a scenario document) and everything that
+family owns one scenario table (`[bluetooth]` or `[system]` in a scenario
+document) and everything that
 interprets it; the runner core names no family type.
 
 | Crate | Owns |
 | --- | --- |
-| `ieee80211/` | The `[wifi]` table, the station, access point and monitor workloads, the station traffic workloads and the Wi-Fi target exchanges (`link::WifiCapture`) |
-| `ieee80211-fixture/` | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host routes, air monitors) and their `FixtureProvider` |
-| `ieee80211-evidence/` | Radio-evidence analysis: monitor captures, BSS protection, the RX delivery frontier |
+| `ieee80211-fixture/` | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host routes, air monitors), their `FixtureProvider`, and the air-capture and BSS-protection analyses |
 | `bluetooth/` | The `[bluetooth]` table, DTM, HCI, GATT and secure GATT workloads, the DTM peer and the Linux Bluetooth fixture |
-| `ieee802154/` | The `[ieee802154]` table, the 802.15.4 and Thread workloads and their reference peers |
-| `system/` | The `[system]` table: boot, timebase, watchdogs, interrupt tables, IPC and memory benchmarks |
-| `coexistence/` | The `[coexistence]` table: Wi-Fi and Bluetooth LE traffic at once on the joint image |
-| `phy/` | The `[phy]` table: the vendor-versus-production calibration cross-check, which alternates the vendor firmware and the scenario's image on the board through the run's `BoardImages` |
+| `system/` | The `[system]` table: boot smoke, watchdogs, panic reset and stand recovery |
+| `phy/`, `phy-esp32s31/` | Not a scenario family: the PHY cross-check's comparison port, its ESP32-S31 implementation and the vendor reference firmware driver |
 
 ## The family contract
 
@@ -39,8 +35,7 @@ another image onto the board under test asks `Context::images` for the run's
 on its own.
 
 A family depends on `oer-hil-workload`, the link, the scenario envelope and
-the network traffic crate, never on another family; `coexistence` is the one
-family composed of two others. A fixture provider implements
+the network traffic crate, never on another family. A fixture provider implements
 `oer_hil_workload::family::FixtureProvider` and inserts what it prepares into
 `Fixtures`, where a workload finds it by type.
 
@@ -51,14 +46,12 @@ family composed of two others. A fixture provider implements
 2. Its scenarios under `hil/scenarios/<family>/`.
 3. Its `FAMILY` in the runner's registry and its crate in the runner's
    dependencies and in its scope of `hil/schema/observer-inputs.json` (the
-   observer's workload identity). A family may reach
-   a crate of an excluded workspace (the PHY family reaches the target's
-   calibration artifact); the observer resolves its inherited dependencies
-   through that workspace's manifest.
+   observer's workload identity). A family may reach a crate of an excluded
+   workspace; the observer resolves its inherited dependencies through that
+   workspace's manifest.
 
 ```console
-cargo test -p oer-hil-family-ieee80211 -p oer-hil-family-bluetooth \
-  -p oer-hil-family-system -p oer-hil-family-ieee802154 \
-  -p oer-hil-family-coexistence -p oer-hil-family-phy \
+cargo test -p oer-hil-family-bluetooth -p oer-hil-family-system \
+  -p oer-hil-family-ieee80211-fixture -p oer-hil-family-phy \
   -p oer-hil-family-phy-esp32s31
 ```

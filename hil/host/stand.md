@@ -133,7 +133,7 @@ recorded as a `then-succeeded` or `then-failed` event, never as the run's
 outcome.
 
 ```console
-cargo hil run wifi-station-wpa3-restart --then 'python tools/read-rtc.py /dev/ttyACM0'
+cargo hil run system-watchdog --then 'python tools/read-rtc.py /dev/ttyACM0'
 ```
 
 `run` accepts several scenarios: it builds every needed image class before

@@ -272,7 +272,7 @@ The execution limits have different scopes:
 | [Calibration executor](src/target_port/calibration.rs) | Root operation accounting and finite gain-state loops | Operation counts do not bound IRQ interference or a stalled bus access |
 | [RFPLL search](src/tracking/rfpll/search.rs) | Both search directions terminate after finite samples, including unrecognized status values | Its finite state graph still invokes synchronous bus and settle operations |
 
-The BLE and Wi-Fi compositions arm the independent SoC deadline service around
+The BLE composition arms the independent SoC deadline service around
 physical lifecycle transactions and retain its lease until checked restoration.
 The board/application supplies explicit engineering budgets; PHY owns no timer
 or reset peripheral. Hardware reset does not by itself establish a qualified
@@ -320,7 +320,7 @@ separate measurement scopes.
 
 ## Measured RF hold of a tracking tick
 
-The vendor admission tracks with the protocols live (see [Concurrent clients](#concurrent-clients)). How long one tick takes the air from them was measured on the ESP32-S31 (#591):
+The vendor admission tracks with the protocols live (see [Concurrent clients](#concurrent-clients)). How long one tick takes the air from them was measured on the ESP32-S31 (#591), on HIL images deleted since (#762, tag `legacy-wifi-2026-10-16`):
 - tracking branches forced with the vendor's debug policy and a zero threshold, so every due tick runs them: the worst case, not the ordinary tick;
 - timed on the device by the HIL `phy/tracking/hold` probe (`diagnostic-*-tracking-hold` images);
 - each grant-protect bracket and the Wi-Fi baseband-off window are wall-time intervals;

@@ -42,8 +42,6 @@ pub fn build(
         (layout_seed, features),
         Overrides {
             esp_hal: frozen.source_root("esp-hal"),
-            embassy: frozen.source_root("embassy"),
-            xarxa: frozen.source_root("xarxa"),
         },
         output.clone(),
     )?;

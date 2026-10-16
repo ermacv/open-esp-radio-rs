@@ -43,7 +43,7 @@ pub(crate) fn suite(values: &[u64]) -> SuiteResult {
         RunState::Completed,
         vec![ScenarioResult::from_repetitions(
             "udp-tx".into(),
-            ImageClass::Performance,
+            ImageClass::BluetoothSecureGatt,
             values.len() as u8,
             repetitions,
         )],
@@ -261,7 +261,7 @@ fn suite_of(repetitions: Vec<oer_hil_run_bundle_format::run::RepetitionResult>) 
         RunState::Completed,
         vec![ScenarioResult::from_repetitions(
             "udp-tx".into(),
-            ImageClass::Performance,
+            ImageClass::BluetoothSecureGatt,
             count,
             repetitions,
         )],

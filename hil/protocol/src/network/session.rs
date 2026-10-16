@@ -1,9 +1,15 @@
 //! Network traffic session configuration.
 
 use super::SESSION_FLOW_CAPACITY;
-use crate::wifi::WifiNetworkInterface;
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
+
+/// Logical network endpoint backed by the shared physical Wi-Fi owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub enum WifiNetworkInterface {
+    Station,
+    AccessPoint,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub enum Transport {

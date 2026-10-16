@@ -1,11 +1,7 @@
-//! What a session needs from its cell, and the per-scenario initialization
-//! the target protocol applies.
+//! What a session needs from its cell: the board under test and the serial
+//! line the stand opens for it.
 
 use std::path::Path;
-
-use oer_hil_protocol::wifi::{NetworkCredentials, NetworkIpv4Configuration};
-
-use crate::Result;
 
 /// A serial line the stand opened for the link. The stand's board I/O
 /// (`oer_devices::port::Port`) is the one opener of every serial line;
@@ -57,21 +53,4 @@ pub enum DutEvent {
         sha256: String,
         disposition: String,
     },
-}
-
-/// The network a station-mode target joins. The stand implements it from its
-/// laboratory configuration.
-pub trait StationNetwork {
-    fn ipv4(&self) -> NetworkIpv4Configuration;
-
-    fn credentials(&self) -> Result<NetworkCredentials>;
-}
-
-/// What a session needs from its repetition: the board, the station network
-/// and the selected scenario's target initialization settings.
-#[derive(Clone, Copy)]
-pub struct Target<'a> {
-    pub dut: &'a dyn Dut,
-    pub station: &'a dyn StationNetwork,
-    pub settings: oer_hil_protocol::wifi::TargetSettings,
 }

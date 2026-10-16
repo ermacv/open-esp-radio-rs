@@ -1,10 +1,6 @@
 //! Platform observations and diagnostics, independent of radio protocols.
 #[cfg(feature = "system-watchdog")]
 pub(super) mod console;
-#[cfg(feature = "interrupt-latency-probe")]
-pub(crate) mod interrupt_latency;
-#[cfg(feature = "open-radio-hil")]
-pub(crate) mod ipc_call;
 #[cfg(feature = "system-panic-reset")]
 pub(super) mod panic_reset;
 pub(crate) mod postmortem;

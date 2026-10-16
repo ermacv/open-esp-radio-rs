@@ -116,9 +116,8 @@ the pinned ESP-IDF, with its PHY, coexistence, Wi-Fi and Bluetooth library
 submodules replaced by the pinned archives, and the
 [calibration cross-check](../hil/phy/esp32s31/calibration/README.md) compares
 its cold calibration with production's on the same board through the
-tracking scenario's reviewed relation: the HIL `phy` family's
-`vendor-calibration` scenarios (`hil/scenarios/phy/`) capture both sides and
-record the comparison as the typed result of their run bundle. A qualifying
+tracking scenario's reviewed relation. No HIL scenario captures both sides
+now; the scenarios return with the HIL architecture of #761. A qualifying
 observation is recorded as a tracked shard bound to its firmware and observer
 sources. The only path from
 comparison or HIL evidence to product readiness is the independent

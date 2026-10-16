@@ -169,7 +169,6 @@ pub struct EspNowLongRangeUnsupported {
 
 /// Bounded publication policy for one ESP-NOW Action MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-esp-now-v1-v2-plaintext
 pub struct EspNowTxConfig {
     unicast_publication_limit: u8,
     publication_timeout: u64,
@@ -259,7 +258,6 @@ impl EspNowKeyOwner {
         Err(EspNowCryptoError::KeySelectorOwnershipUnproven)
     }
 
-    // CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-esp-now-encrypted-peers
     fn reject_encrypted_tx(&mut self) {
         self.diagnostics.encrypted_tx_rejections =
             self.diagnostics.encrypted_tx_rejections.saturating_add(1);

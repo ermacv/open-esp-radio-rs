@@ -4,9 +4,6 @@ This document defines the boundaries between production code, hardware
 descriptions, analysis tools, experiments and qualification. Detailed APIs and
 commands belong to each component's README and Rust documentation.
 
-Start with [the binary-to-station explanation](binary-to-station.md) for a
-reading route through these boundaries.
-
 ## Owners
 
 | Owner | Responsibility | Boundary |
@@ -19,7 +16,7 @@ reading route through these boundaries.
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
 | [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
-| [Examples](../examples/esp32s31/station/README.md) | Board/application composition and API usage | Own credentials, stack and sockets; do not depend on the HIL harness |
+| [Examples](../examples/esp32s31/thread/README.md) | Board/application composition and API usage | Own credentials, stack and sockets; do not depend on the HIL harness |
 
 A directory identifies an owner. A Cargo workspace identifies a joint build
 and lockfile boundary. They need not coincide, and a logical module does not
@@ -254,9 +251,9 @@ The domains in the code:
 | Domain | Counted by | Type | Relation (`ClockRelation`) | New generation |
 | --- | --- | --- | --- | --- |
 | Monotonic CPU time | the system timer through `oer-time-embassy` | `oer_time::Instant` | itself | — |
-| ESP32-S31 Wi-Fi MAC local time | `WIFI_MAC_LOCAL_TIME` (`MacLocalTime`), widened by `MacTimeline`, related by `MacClockStorage`/`MacClockHandle` | `Ieee80211Instant`, `Ieee80211Stamp` | affine to monotonic time (`MAC_CLOCK_RELATION`, 1 ppm) | a jump of the storage's `GenerationSource` (`Ieee80211ClockGeneration`): every radio start (`MacClockStorage::start`, never a generation an earlier start used), every RF wake, a counter break |
+| ESP32-S31 Wi-Fi MAC local time | `WIFI_MAC_LOCAL_TIME` (`MacLocalTime`), widened by `MacTimeline` | `Ieee80211Instant`, `Ieee80211Stamp` | affine to monotonic time; no relation owner exists until an S31 backend implements the lower-MAC port | `Ieee80211ClockGeneration`, from that relation owner's `GenerationSource` |
 | IEEE 802.11 lower-MAC host model | the test (`set_now`) | `Ieee80211Instant` | identical to monotonic time | — |
-| An interface's TSF | the MAC's TSF of that interface | `TsfInstant` of `Ieee80211Tsf`, as `VifTsf` with its interface | affine to the port's radio clock (`TSF_RELATION`, `TSF_DRIFT_PPM` = 200 ppm: the access point's timer and the station's crystal), sampled by `TsfSample` | a `TsfGeneration` (`Generation<TsfInstant, Ieee80211Instant>`): the epoch each relation's owner takes from the radio start's storage (`MacClockHandle::tsf_epoch`) when created, so owners never share one, and the jumps within it: a channel change, an interface (re)configuration, an access-point TSF restart, a station TSF set beyond the relation's bound, a TSF crossing 2^64 (the TSF is never modular). A sample of another generation does not convert (`TsfProjectionError::StaleSample`) |
+| An interface's TSF | the MAC's TSF of that interface | `TsfInstant` of `Ieee80211Tsf`, as `VifTsf` with its interface | affine to the port's radio clock (`TSF_RELATION`, `TSF_DRIFT_PPM` = 200 ppm: the access point's timer and the station's crystal), sampled by `TsfSample` | a `TsfGeneration` (`Generation<TsfInstant, Ieee80211Instant>`): the epoch each relation's owner is created with (`LowerMacConfig::tsf_epoch` for the S31 core), so owners never share one, and the jumps within it: a channel change, an interface (re)configuration, an access-point TSF restart, a station TSF set beyond the relation's bound, a TSF crossing 2^64 (the TSF is never modular). A sample of another generation does not convert (`TsfProjectionError::StaleSample`) |
 | BLE controller | the controller clock, extended from its 32-bit latch | `LeInstant`; inside the driver `SchedulerInstant` | none to monotonic time | — |
 | BLE modem LP timer | the modem LP timer | `BluetoothModemLpTimerInstant` (wrapping, no claimed unit) | none | — |
 | IEEE 802.15.4 | the runtime's monotonic clock | `Ieee802154Instant` | identical to monotonic time | — |
@@ -510,9 +507,7 @@ backends return `Unconfirmed`; they do not prove hardware stopping.
 Explicit `fail_stop` invokes `abandon` immediately and returns an affine proof. Retirement progresses while the
 body waits; final detach follows the body's return. Cancellation of the
 whole `run_port` future repeats synchronous quarantine. No owner transition
-or abandonment requires a panic. Wi-Fi retains its separate lifecycle until
-integration; its abandoned installation returns `None`
-([refinement](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6133179528)).
+or abandonment requires a panic.
 Everything the hardware touches is `'static` and owned by the resource, so
 forgetting a future cannot release hardware-reachable storage. Composition
 crates disallow `core::future::pending` in their own `clippy.toml`, so a
@@ -571,7 +566,7 @@ binding (`embassy`, `esp-hal`, `embassy-net-owned`). The
 directory repeats the same tokens under its layer directory; grouping
 directories such as `driver/`, `security/`, `le/` or the binding directory of
 an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
-directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
+directory names alike; the facade feature `wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
 `open-esp-radio` (library `oer`) is the only branded name.
 `oer-tidy` (`cargo tidy check`) enforces the prefix. The Blobray
@@ -650,9 +645,9 @@ owner once every permit is back. A client's submission returns its admitted
 work as a token the backend mints, holding the client that admitted it;
 the work ends only through that client (`work.cancel()`). No call refuses for a state the caller controls
 ([Ownership and refusals](#ownership-and-refusals)). The Bluetooth LE
-backend (`LeRadioBackend`) is built on `Owner` and `PortBody`; the IEEE
-802.11 and IEEE 802.15.4 ports still implement the base `RadioPort` with
-its own `lifecycle` and `cancel`.
+backend (`LeRadioBackend`), the IEEE 802.11 lower-MAC port
+(`LowerMacBackend`) and the IEEE 802.15.4 owner shape are built on `Owner`
+and `PortBody`.
 
 **Correlation identities.** Each port keeps its own 32-bit identity type
 (`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be
@@ -734,7 +729,7 @@ interpreting it.
 
 | Port | Lifecycle and cancellation | Clock relation to monotonic time (ESP32-S31) |
 | --- | --- | --- |
-| IEEE 802.11 lower-MAC owner shape | the owner's `enable` (with the retune a channel change needs) / `disable(sink)` transitions and a client's `Work::cancel`; the queue and buffer permits return with their attempt's terminal | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
+| IEEE 802.11 lower-MAC owner shape | the owner's `enable` (with the retune a channel change needs) / `disable(sink)` transitions and a client's `Work::cancel`; the queue and buffer permits return with their attempt's terminal | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock; no ESP32-S31 backend implements the port yet |
 | IEEE 802.15.4 owner shape | the owner's `enable` / `disable(sink)` transitions and the interface client's `Work::cancel`; the one operation permit returns with its terminal | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
 | `LeRadioBackend` | the owner's bounded `enable` / `disable(sink)` transitions and the phase client's `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
 
@@ -781,21 +776,18 @@ their dependencies back through `oer`.
 
 ```mermaid
 flowchart TD
-    Composition["ESP32-S31 Wi-Fi composition"] --> Runtime["Concrete Embassy radio runtime"]
-    Composition --> Chip["Chip STA backend"]
-    Runtime --> Chip
-    Runtime --> STA["Portable STA policy"]
-    Chip --> STA
+    Chip["ESP32-S31 Wi-Fi driver core"] --> LowerMac["Portable lower-MAC port"]
+    Chip --> MAC["Portable IEEE 802.11 contracts"]
+    LowerMac --> MAC
     Chip --> PHY["PHY algorithms and state"]
     Chip --> HAL["Radio HAL"]
-    STA --> MAC["Portable IEEE 802.11 contracts"]
     PHY --> HAL
     HAL --> PAC["Restricted radio PAC"]
     PAC --> Raw["Raw radio PAC"]
 ```
 
 Here each arrow points from a consumer to a production dependency; the diagram
-selects the Wi-Fi station layers and omits other dependencies and feature
+selects the Wi-Fi driver layers and omits other dependencies and feature
 profiles. This differs from the knowledge-flow diagrams: Blobray, register
 publication and qualification do not enter the production dependency graph.
 Calls can pass through a portable port implemented by a higher composition
@@ -809,9 +801,8 @@ diagnostic and register-authority checks remain separate from these general
 rules; adding a chip does not make those hardware checks applicable to it.
 
 `open-esp-radio` provides the `oer` library. Its public modules reexport existing
-types; `oer-radio` owns the portable radio control lifecycle. The facade may
-depend on a selected composition, which depends on `oer-radio`, never on the
-facade. PAC access remains an explicit restricted dependency.
+types; `oer-radio-port` owns the radio port lifecycle. The facade may depend on
+a selected composition, never the reverse. PAC access remains an explicit restricted dependency.
 
 `composition/` names the source ownership layer; `oer::systems` is its public
 namespace. Facade features select portable protocols, concrete chip backends
@@ -919,7 +910,7 @@ live link to the device under test (`oer-hil-link`), host network traffic
 (`oer-hil-net-traffic`), fixtures, target
 firmware and evidence. Orchestration packages drive runs and may use the
 stand: the runner, the workload contract (`oer-hil-workload`), the
-`oer-hil-family-*` crates with the Wi-Fi fixtures and evidence, image
+`oer-hil-family-*` crates with the Wi-Fi fixtures, image
 builds (`oer-hil-image`), arbitration and its spectrum claims
 (`oer-stand-arbiter`) and the stand library (`oer-hil-lab`); their code
 shapes what a run observes. Operation packages only operate the stand —

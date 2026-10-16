@@ -20,7 +20,7 @@ fn failed_suite() -> SuiteResult {
     let failure = Failure::new(FailureKind::Scenario, "bad <frame> & timeout");
     let scenarios = vec![ScenarioResult::from_repetitions(
         String::from("udp-rx"),
-        ImageClass::Correctness,
+        ImageClass::BluetoothGatt,
         1,
         vec![RepetitionResult {
             schema: RUN_SCHEMA,

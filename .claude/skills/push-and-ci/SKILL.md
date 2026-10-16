@@ -91,7 +91,6 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 - Examples: `cargo fw build <example> --type-check`.
 - Image classes: `cargo hil images check --list`, then
   `cargo hil images check --class <class> --type-check`; without
-  `--type-check` the class's image bundle is built with every gate, and
-  `performance`/`correctness` also pass Blobray's final radio target audit.
+  `--type-check` the class's image bundle is built with every gate.
 - Blobray: `--manifest-path tools/blobray/Cargo.toml`.
 - `cargo hil sweep` lists rebuildable caches when the disk runs low.

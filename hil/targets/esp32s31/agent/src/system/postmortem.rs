@@ -57,34 +57,7 @@ fn hart() -> u8 {
 /// Take what the previous boot left and start this boot's record.
 pub(crate) fn begin() {
     let previous = with_record(Record::begin_boot);
-    // The hang watchdog formats nothing in its interrupt: its report is this
-    // boot's, from the record.
-    if let Some(oer_hil_protocol::base::Fault::Hang(hang)) = previous
-        .as_ref()
-        .and_then(|previous| previous.fault.as_ref())
-    {
-        let [core0, core1] = &hang.harts;
-        // SAFETY: the format names as many arguments as it is given.
-        #[allow(unsafe_code, reason = "the ROM's printf is a C variadic")]
-        unsafe {
-            ets_printf(
-                c"hil-postmortem: hang boot=previous stalled=%02x core0 mepc=%08x ra=%08x sp=%08x core1 responded=%u mepc=%08x ra=%08x sp=%08x\r\n".as_ptr(),
-                u32::from(hang.stalled_executors),
-                core0.mepc,
-                core0.ra,
-                core0.sp,
-                u32::from(core1.responded),
-                core1.mepc,
-                core1.ra,
-                core1.sp,
-            );
-        }
-    }
     critical_section::with(|cs| *PREVIOUS.borrow_ref_mut(cs) = previous);
-}
-
-unsafe extern "C" {
-    fn ets_printf(format: *const core::ffi::c_char, ...) -> i32;
 }
 
 /// The previous boot's record, as boot evidence reports it.
@@ -99,22 +72,7 @@ pub(crate) fn checkpoint(name: &str, arg: u32) {
     let now = uptime_ms();
     with_record(|record| record.checkpoint(name, arg, now, hart()));
     let excess = critical_section::with(|cs| RATE.borrow_ref_mut(cs).record(now));
-    #[cfg(all(debug_assertions, feature = "open-radio-hil"))]
-    if let Some(count) = excess {
-        log::warn!("hil-postmortem: {count} checkpoints in one second; not for hot loops");
-    }
-    #[cfg(not(all(debug_assertions, feature = "open-radio-hil")))]
     let _ = excess;
-}
-
-/// Record the hang the watchdog found. The stalled hart may hold the
-/// critical section, so, as for a panic, the record is written without it.
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-pub(crate) fn record_hang(hang: &oer_hil_protocol::base::HangFault) {
-    // SAFETY: see `record_panic`; the chip resets right after.
-    #[allow(unsafe_code, reason = "a hang cannot wait for the critical section")]
-    let record = unsafe { &mut *RECORD.0.get() };
-    record.record_hang(hang);
 }
 
 /// Record the panic being handled. The other hart may hold the critical

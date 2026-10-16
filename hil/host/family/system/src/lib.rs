@@ -1,4 +1,4 @@
-//! System HIL workloads: boot, timebase, watchdog and memory benchmarks.
+//! System HIL workloads: boot smoke, watchdog, panic reset and stand recovery.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 pub mod scenario;

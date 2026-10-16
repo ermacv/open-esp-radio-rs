@@ -10,7 +10,6 @@ pub mod spp;
 /// exactly; there is no downgrade or mixed WPA/Open fallback. How the keys
 /// were established (PSK or SAE) is not part of the link protection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: wifi-security-open-bss
 pub enum LinkProtection {
     /// IEEE 802.11 Open System with plaintext data and no RSN element.
     Open,

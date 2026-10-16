@@ -10,8 +10,7 @@ deadline renewal command. `Cancelled` means the actual child future was dropped,
 not merely that the Host stopped waiting. A fresh boot must report `Idle` and
 MWDT1 reset; RF-off timing is not represented by that observation.
 
-Wi-Fi runs no PHY maintenance of its own: the shared radio's periodic tracking
-maintains the PHY, so no Wi-Fi command enters PHY calibration.
+The shared radio's periodic tracking maintains the PHY.
 
 ## Placement diagnostic
 

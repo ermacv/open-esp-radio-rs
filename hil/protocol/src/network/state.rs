@@ -3,11 +3,11 @@
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "wifi")]
+#[cfg(feature = "network")]
 use super::*;
-#[cfg(feature = "wifi")]
+#[cfg(feature = "network")]
 use crate::base::LinkHealth;
-#[cfg(feature = "wifi")]
+#[cfg(feature = "network")]
 use crate::system::StackUsage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
@@ -49,7 +49,7 @@ pub enum FailureCode {
 }
 
 /// One record of a session's evidence.
-#[cfg(feature = "wifi")]
+#[cfg(feature = "network")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
@@ -71,7 +71,7 @@ pub enum EvidenceRecord {
 /// slice length. Both the target and host use this helper so missing, reordered
 /// or mismatched evidence cannot satisfy a `Finished` event. Session identity
 /// is checked separately from the surrounding [`crate::Envelope`].
-#[cfg(feature = "wifi")]
+#[cfg(feature = "network")]
 pub fn evidence_crc32c(evidence: &[EvidenceRecord]) -> Result<u32, crate::EncodeError> {
     let mut encoded = [0_u8; crate::MAX_POSTCARD_BYTES];
     let payload =

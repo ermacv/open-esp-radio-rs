@@ -103,7 +103,6 @@ struct Agreement {
 }
 
 /// One peer's TX Block Ack agreements, at most `TIDS`.
-// CAPABILITY: wifi-legacy-and-ht-mac-behavior-immediate-block-ack
 pub struct TxBlockAckOriginator<const TIDS: usize> {
     agreements: [Option<Agreement>; TIDS],
     /// How long a failed negotiation waits before the next is due.

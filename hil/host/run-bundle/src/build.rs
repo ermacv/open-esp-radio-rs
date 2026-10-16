@@ -377,11 +377,7 @@ fn capture_git_source_state(root: &Path) -> Result<Option<GitSourceState>> {
 fn external_source_override_paths() -> Result<Vec<(String, PathBuf)>> {
     let current_directory = env::current_dir()?;
     let mut overrides = Vec::new();
-    for (name, variable) in [
-        ("esp-hal", "ESP_HAL_ROOT"),
-        ("embassy", "EMBASSY_ROOT"),
-        ("xarxa", "OPEN_RADIO_XARXA_ROOT"),
-    ] {
+    for (name, variable) in [("esp-hal", "ESP_HAL_ROOT")] {
         let Some(path) = env::var_os(variable).map(PathBuf::from) else {
             continue;
         };

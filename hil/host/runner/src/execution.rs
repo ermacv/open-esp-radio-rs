@@ -53,7 +53,7 @@ pub(crate) fn execute_workload(
 ) -> Result<ExecutionEvidence> {
     // The board's MAC outlives its port name, which a reset can change.
     let mac = lab.dut.mac.as_str();
-    let context = oer_hil_workload::context::Context::new(lab, selected.plan().settings, output)
+    let context = oer_hil_workload::context::Context::new(lab, output)
         .with_profile(selected.header.profile)
         .with_images(images)
         .with_device(device);

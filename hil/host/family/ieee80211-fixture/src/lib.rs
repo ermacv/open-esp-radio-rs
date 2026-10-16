@@ -7,10 +7,11 @@
 //! between them and `prepared` owns a scenario's AP lifetime. `host_network`
 //! proves the host's route to a station target, `probe_load` drives the
 //! probe-request load, and `hostapd` builds the pinned hostapd the Linux
-//! fixture installs. The radio evidence they produce is analyzed by
-//! `oer-hil-family-ieee80211-evidence`.
+//! fixture installs. `air` types the frames of a monitor capture and
+//! `protection` judges how a station follows BSS protection on the air.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
+pub mod air;
 mod capture_process;
 mod channel;
 pub mod controlled_ap;
@@ -19,6 +20,7 @@ pub mod local;
 pub mod openwrt;
 pub mod prepared;
 pub mod probe_load;
+pub mod protection;
 pub mod provider;
 pub mod station_fixture;
 #[cfg(all(test, unix))]

@@ -19,7 +19,7 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI and the run core: selection, lease, images, repetitions and seal. It names the family crates once, in its family registry (`scenario.rs`), and reaches every family, fixture provider and preflight through it. Its one extension point is `run --then` ([stand guide](stand.md)), a shell command inside the run's lease after the scenarios that is recorded as events and never changes the outcome |
 | `workload/` (`oer-hil-workload`) | none | What a workload runs against: the repetition `Context`, its one result writer (`results`, sealed as `observations.json`), `for_each_boot`, `require_keys`, failure classification, per-repetition cleanup evidence, the measurements recorder, the type-erased `Fixtures`, `BoardImages` (the run's writer of the board under test's images, through the flash operation), and the family registry contract (`family::{Workload, Kind, Registry, FixtureProvider}`) |
 | `lab/` (`oer-hil-lab`) | none | A run's stand operation: its laboratory configuration, the fixture lock it holds, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` port. It actuates no hardware and writes no flash record |
-| `link/` (`oer-hil-link`) | none | The host/target link: one DUT session (`SerialCapture`) with the generic exchange (`call`, `request`, `command`, `wait_command`), reboots and the startup artifact; reaches the board only through its `Dut` port; and the reference peers' `PeerConsole` with the whole `@` line grammar (`peer`) |
+| `link/` (`oer-hil-link`) | none | The host/target link: one DUT session (`SerialCapture`) with the generic exchange (`call`, `request`, `command`, `wait_command`) and reboots; reaches the board only through its `Dut` port; and the reference peers' `PeerConsole` with the whole `@` line grammar (`peer`) |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `run-bundle/` (`oer-hil-run-bundle`) | none | The run bundle: its typed documents, the one writer and its seal, the one typed reader (`RunBundle`) every consumer uses, the qualification evaluator included, integrity verification, the run store with its sidecars and pending evidence (`RunStore`), the run receipt, build provenance and the content-addressed object store, offline verification against the image builder's recipe, and the experiment and laboratory records a run keeps |
 | `analysis/` (`oer-hil-analysis`) | none | Analyses of run bundles: the one measurement aggregation and comparison, run queries, retention, performance baselines, A/B arm comparison, the dashboard's runs and the JUnit/HTML views a run seals |
@@ -457,8 +457,7 @@ The host packages follow the roles of the
 - `oer-hil-link` owns one UART capture and its protocol/readiness/validation
   state, the host traffic transports and `measurements`, which projects
   decoded messages into measurements. It reaches the board as a `Dut`
-  (console, application reset, startup artifact, journal of the changes the
-  link makes), which the stand implements.
+  (console and application reset), which the stand implements.
 - `context` gives one workload repetition its laboratory, target settings,
   capture lifecycle and measurements; workloads that control the AP receive
   the prepared fixture explicitly.

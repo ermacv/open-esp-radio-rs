@@ -34,10 +34,11 @@ table's `boots` rounds the workload takes these steps:
    `register-image`), read through the ESP-IDF analog-I2C driver.
 2. Write the scenario's production image back and boot it with a fresh
    startup artifact path, so the boot calibrates fully and publishes its
-   retained calibration. Then read the radio-PHY register image (HIL
-   `PhyRegisterImage`) at the indices the vendor boot of the round read,
-   and the whole analog image (HIL `PhyAnalogImage`, one production
-   analog-I2C read per register).
+   retained calibration. Then read the radio-PHY register image at the
+   indices the vendor boot of the round read, and the whole analog image
+   (one production analog-I2C read per register). The former HIL messages
+   `PhyRegisterImage` and `PhyAnalogImage` (tag `legacy-wifi-2026-10-16`) carried these reads;
+   no current image serves them.
 
 `lifecycle = "ieee802154"` and `"ieee802154-restart"` read the registers
 with the IEEE 802.15.4 radio instead of Wi-Fi holding the PHY. The vendor

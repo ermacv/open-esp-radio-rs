@@ -55,19 +55,10 @@ without a trace reports `installed: false`.
 
 ## Program-counter profile
 
-No image builds the `pc-profile` diagnostic feature now. An image with it
-samples the interrupted
-program counter and return address of each selected hart at a fixed period.
-`ProfileControl::Arm { harts, period_us }` discards the previous profile and
-arms the next one; `Disarm` stops it and `Status` reports `ProfileStatus`.
-Sampling records only while the profile is armed and the workload's measured
-window is open: the workload opens and closes it around its measured phase,
-and opening it again starts over. `ProfileStatus` reports whether the window
-is open, its length, the per-hart capacity the image chose, and each hart's
-retained and dropped samples. `telemetry::GetProfileSamples { hart, first }` returns up
-to 48 raw `(pc, ra)` pairs of a closed window; an open window has no pages,
-so the host never reads half a window. The samples are not folded on the
-target; the host symbolizes them against the run's ELF.
+No image samples the program counter: the sampler (`pc-profile`) and its
+agent modules were deleted (#762, tag `legacy-wifi-2026-10-16`). The `telemetry` profile
+messages (`ProfileControl`, `ProfileStatus`, `GetProfileSamples`) remain in
+the protocol with no producer.
 
 Sampling perturbs timing: a profiled run is diagnostic evidence, never a
 throughput or timing measurement.

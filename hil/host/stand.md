@@ -395,10 +395,10 @@ journals it only when the leased command succeeds: name the board with
 On every grant the arbiter prints the last flashed firmware of every board
 (image, commit, application hash, owner) and lists the flashes other owners
 made since this owner's previous lease. It only reports this state; it never
-erases or restores it. The startup artifact, which carries the PHY calibration
-cache, is a host file uploaded at every boot; a relative path belongs to each
-checkout, so another owner's cache never reaches a run. `cargo stand queue` lists
-the newest upload or write of every such file. The queue, history, journal and jobs live in the arbiter directory of the
+erases or restores it. A board's startup artifact (the PHY calibration cache)
+is a host file the stand file still names, but no current image uploads or
+writes it: the exchange went with the images that used it (#762, tag `legacy-wifi-2026-10-16`). `cargo stand queue` still lists the
+newest recorded upload or write of every such file. The queue, history, journal and jobs live in the arbiter directory of the
 user's host cache, so every checkout of the repository shares them. The
 arbiter's last exclusion layer is a lock file per board (named by its MAC)
 and per fixture resource in `open-esp-radio/leases` of the XDG cache

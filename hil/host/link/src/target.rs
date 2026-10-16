@@ -34,23 +34,4 @@ pub trait Dut {
     /// Open the board's console and restart its application through it, so
     /// a capture sees the boot from its first byte.
     fn console_with_reset(&self) -> ConsoleOpener;
-
-    /// Where the board keeps its startup artifact between runs, if it has one.
-    fn startup_artifact(&self) -> Option<&Path>;
-
-    /// Journal a change the link made to the board.
-    fn journal(&self, event: DutEvent);
-}
-
-/// A change the link makes to a board, which the stand journals.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DutEvent {
-    /// The host handed the board its stored startup artifact.
-    StartupArtifactUploaded { path: String, sha256: String },
-    /// The board returned a startup artifact the host stored.
-    StartupArtifactWritten {
-        path: String,
-        sha256: String,
-        disposition: String,
-    },
 }

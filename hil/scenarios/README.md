@@ -123,9 +123,9 @@ Both readers' tests use them; they are not part of this catalog.
 
 An optional top-level `[profile]` table (`harts = "both" | "core0" |
 "core1"`, `period-us` in 100..=100000) samples the program counter of the
-image's harts during the workload's measured window. No image class compiles
-the sampler (`pc-profile`), so the runner refuses every profile request; when
-a class does, only
+image's harts during the workload's measured window. The sampler (`pc-profile`)
+was deleted (#762, tag `legacy-wifi-2026-10-16`), so the runner refuses every profile request;
+when a class samples again, only
 an `investigation` scenario without the `performance` tag may request it:
 sampling perturbs timing. The table is part of the procedure, so a profiled scenario
 is a different scenario from its unprofiled copy, and its evidence never

@@ -31,7 +31,7 @@ use oer_hil_protocol::{
 use zeroize::Zeroizing;
 
 mod target;
-pub use target::{ConsoleOpener, Dut, DutEvent, SerialLine};
+pub use target::{ConsoleOpener, Dut, SerialLine};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 mod received;

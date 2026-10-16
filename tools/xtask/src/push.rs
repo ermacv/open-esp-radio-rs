@@ -15,18 +15,19 @@
 //!    draft is checked the same way.
 //! 4. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
 //!    commits change against `origin/main`, their merge base.
-//! 5. Unless the pull request is a draft, the local Claude review
-//!    ([`crate::review`]) of the same diff has no blocking finding: it is the
+//! 5. The local Claude review ([`crate::review`]) of the same diff has no
+//!    blocking finding, a draft's included ([`reviewed`]): it is the
 //!    only review that blocks; the one in CI reviews the pull request once
 //!    and only files its findings as issues. Its wording findings do not
 //!    block: once the pull request exists, they are filed as `review: …`
 //!    issues of the branch before auto-merge is enabled, and a failed filing
-//!    fails the push. `--skip-review REASON` pushes
+//!    fails the push. `--skip-review REASON` is the only way to push
 //!    without it and records the reason on the pull request, so nothing
 //!    reviewed the push before it merges.
 //! 6. Push the branch, open its pull request when it has none, and enable
-//!    auto-merge: GitHub rebases it onto `main` once CI passes. With
-//!    `--draft` the pull request is a draft and nothing merges it.
+//!    auto-merge: GitHub rebases it onto `main` once CI passes. `--draft`
+//!    changes only this step: the pull request is a draft, auto-merge is
+//!    not enabled and a person merges it.
 //!
 //! The push never waits for CI and never rebases: the developer rebases a
 //! branch that `main` outran and pushes again. Since the gate and the
@@ -38,7 +39,7 @@
 //! there by anyone else in the meantime refuses the push instead of being
 //! lost.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use oer_process::{self as process, git};
 
@@ -207,6 +208,37 @@ fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
+/// The local review's verdict on a push that `review` reviews, or `None`
+/// for one pushed with `--skip-review`; a blocking finding refuses it. A
+/// draft is reviewed like any push: `--draft` changes only merging.
+fn reviewed(
+    skip_review: Option<&str>,
+    review: impl FnOnce() -> Result<(review::Verdict, PathBuf)>,
+) -> Result<Option<review::Verdict>> {
+    if skip_review.is_some() {
+        return Ok(None);
+    }
+    let (verdict, path) = review().map_err(|error| {
+        format!(
+            "push: the local review did not complete; nothing pushed: {error}\n\
+             Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
+             unreviewed; CI's review only files findings as issues and blocks nothing"
+        )
+    })?;
+    print!("{}", review::render(&verdict));
+    let blocking = verdict.blocking();
+    if blocking > 0 {
+        return Err(format!(
+            "push: the local review found {blocking} blocking finding(s); nothing pushed. \
+             Fix each one and every place with the same defect, commit and push again \
+             (report: {})",
+            path.display()
+        )
+        .into());
+    }
+    Ok(Some(verdict))
+}
+
 /// Gate, push, open the pull request; see the module documentation.
 pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()> {
     // Porcelain lines start with their status columns: never trim them.
@@ -240,28 +272,7 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
         );
         registry::run_change(ctx, &change)
             .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
-        if draft || skip_review.is_some() {
-            return Ok(None);
-        }
-        let (verdict, path) = review::verdict(ctx, &branch, base, head).map_err(|error| {
-            format!(
-                "push: the local review did not complete; nothing pushed: {error}\n\
-                 Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
-                 unreviewed; CI's review only files findings as issues and blocks nothing"
-            )
-        })?;
-        print!("{}", review::render(&verdict));
-        let blocking = verdict.blocking();
-        if blocking > 0 {
-            return Err(format!(
-                "push: the local review found {blocking} blocking finding(s); nothing pushed. \
-                 Fix each one and every place with the same defect, commit and push again \
-                 (report: {})",
-                path.display()
-            )
-            .into());
-        }
-        Ok(Some(verdict))
+        reviewed(skip_review, || review::verdict(ctx, &branch, base, head))
     })?;
     let Some(Checked {
         head,
@@ -348,7 +359,7 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
             println!("push: wording finding {}", line.trim_start_matches("- "));
         }
     }
-    if let (Some(reason), false) = (skip_review, draft) {
+    if let Some(reason) = skip_review {
         let body = format!("The local Claude review was skipped for this push: {reason}");
         gh(ctx, &["pr", "comment", &branch, "--body", &body]).map_err(|error| {
             format!("push: recording the skipped review on {url} failed: {error}")
@@ -394,6 +405,53 @@ mod tests {
         );
         assert!(!reason.contains("notes.txt"), "{reason}");
         assert!(build_input("Cargo.lock") && !build_input("README.md"));
+    }
+
+    fn verdict(severity: &str) -> review::Verdict {
+        review::Verdict {
+            branch: String::from("fix/a"),
+            head: String::from("0123456789abcdef"),
+            base: String::from("fedcba9876543210"),
+            identity: String::from("id"),
+            report: review::Report {
+                summary: String::from("Checked the push."),
+                findings: vec![review::Finding {
+                    severity: severity.to_owned(),
+                    path: String::from("tools/xtask/src/push.rs"),
+                    line: 1,
+                    title: String::from("A finding"),
+                    body: String::from("Its body."),
+                    rest: serde_json::Map::new(),
+                }],
+            },
+            cost_usd: 0.0,
+        }
+    }
+
+    /// `reviewed` takes no draft flag, so a draft push is reviewed as any
+    /// push: the review runs, a blocking finding refuses it and a wording
+    /// finding lets it through; only `--skip-review` skips the review.
+    #[test]
+    fn a_draft_push_is_reviewed_and_a_blocking_finding_refuses_it() {
+        let mut ran = false;
+        let error = reviewed(None, || {
+            ran = true;
+            Ok((verdict("nit"), PathBuf::from("report.json")))
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(ran);
+        assert!(
+            error.contains("1 blocking finding(s); nothing pushed"),
+            "{error}"
+        );
+        let passed = reviewed(None, || Ok((verdict("wording"), PathBuf::new()))).unwrap();
+        assert_eq!(passed.map(|verdict| verdict.blocking()), Some(0));
+        let skipped = reviewed(Some("Claude Code is down"), || {
+            unreachable!("--skip-review runs no review")
+        })
+        .unwrap();
+        assert!(skipped.is_none());
     }
 
     #[test]

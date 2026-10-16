@@ -27,8 +27,8 @@ enum Task {
     /// committed tree, push this branch, open its pull request when it has
     /// none, and let it merge itself once CI passes. Refused on main.
     Push {
-        /// Open the pull request as a draft and leave merging to a person;
-        /// a draft skips the local review.
+        /// Open the pull request as a draft and leave merging to a person:
+        /// auto-merge is not enabled. The local review runs as on any push.
         #[arg(long)]
         draft: bool,
         /// Push without the local review, recording REASON on the pull

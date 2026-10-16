@@ -14,8 +14,6 @@ crate::messages! {
     topic PanicInjected = "system/panic/injected";
     endpoint DisableUsb = "system/usb/disable" => crate::system::UsbDisabled;
     topic UsbDisabled = "system/usb/disabled";
-    endpoint GetStacks = "system/stacks/get" => crate::system::Stacks;
-    topic Stacks = "system/stacks";
     endpoint GetInterruptStacks = "system/interrupt-stacks/get" => crate::system::InterruptStacks;
     topic InterruptStacks = "system/interrupt-stacks";
 }
@@ -61,15 +59,6 @@ pub struct DisableUsb;
 /// The USB Serial/JTAG leaves its pads after this acknowledgement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct UsbDisabled;
-
-/// Return the boot-lifetime CPU stack high-water marks. This diagnostic
-/// query is valid only outside an active traffic session.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct GetStacks;
-
-/// Correlated response to its request.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct Stacks(pub crate::system::StackUsage);
 
 /// Sample dedicated IRQ stacks on their own harts in thread mode.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]

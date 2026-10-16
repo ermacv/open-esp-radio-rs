@@ -55,8 +55,6 @@ pub(super) fn observations(
             message.decode()
         {
             link(&mut records, &session, value);
-        } else if let Some(oer_hil_protocol::system::Stacks(value)) = message.decode() {
-            stack(&mut records, &request, value);
         } else if let Some(oer_hil_protocol::system::InterruptStacks { cpu0, cpu1 }) =
             message.decode()
         {

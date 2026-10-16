@@ -81,16 +81,6 @@ fn observation_discovers_a_running_boot_without_initializing_or_clearing_results
             oer_hil_protocol::network::Status(status),
         );
         sequence += 1;
-        let (request, oer_hil_protocol::system::GetStacks) = receive(&commands);
-        assert_eq!((request.boot_id, request.session_id), (7, 0));
-        let refused = oer_hil_protocol::base::RejectReason::InvalidState;
-        reply(
-            &input,
-            &request,
-            sequence,
-            oer_hil_protocol::base::Rejected(refused),
-        );
-        sequence += 1;
         for _ in 0..2 {
             let request = receive_request(&commands);
             assert!(request.is::<oer_hil_protocol::base::GetLinkHealth>());

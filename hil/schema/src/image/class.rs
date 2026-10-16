@@ -76,22 +76,6 @@ impl ImageClass {
         }
     }
 
-    /// Whether the image compiles the program-counter sampler
-    /// (`pc-profile`), so a scenario can request a profile of it. No class
-    /// does; each one is named so a new class decides.
-    pub const fn samples_program_counter(self) -> bool {
-        match self {
-            Self::SystemWatchdog
-            | Self::SystemPanicReset
-            | Self::BluetoothDtm
-            | Self::BluetoothGatt
-            | Self::BluetoothSecureGatt
-            | Self::BootSmoke
-            | Self::DiagnosticBluetoothGattTrace
-            | Self::DiagnosticUsbJtagOff => false,
-        }
-    }
-
     pub const fn runtime_features(self) -> &'static str {
         match self {
             Self::BluetoothGatt => "bluetooth-gatt",

@@ -26,7 +26,7 @@ use std::{
 
 use oer_hil_protocol::{
     DecodeCounters, Envelope, FrameDecoder, FrameEncoder, base::LinkHealth,
-    network::OperationStatus, network::WifiNetworkInterface, system::StackUsage,
+    network::OperationStatus, network::WifiNetworkInterface,
 };
 use zeroize::Zeroizing;
 
@@ -370,8 +370,6 @@ mod protocol;
 pub use protocol::latest_boot_id_in;
 #[cfg(test)]
 mod tests;
-
-pub mod startup_artifact;
 
 pub mod peer;
 pub mod transport;

@@ -1,6 +1,5 @@
 use super::*;
 use crate::network::evidence_crc32c;
-use crate::phy::startup_artifact_crc32c;
 
 #[test]
 fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
@@ -60,8 +59,7 @@ use crate::{
     ieee802154::Ieee802154ValidationEventEnableState,
     ieee802154::Ieee802154ValidationRxAbortEnableState, network::Completion, network::Direction,
     network::FlowConfig, network::Ipv4Endpoint, network::SessionConfig,
-    network::SessionLinkRequirements, network::Transport, phy::StartupArtifactChunk,
-    system::StackUsage, system::StackWatermark,
+    network::SessionLinkRequirements, network::Transport, system::StackWatermark,
 };
 
 fn command(sequence: u32) -> Envelope<InjectPanic> {
@@ -509,42 +507,6 @@ fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
 }
 
 #[test]
-fn stack_usage_query_and_correlated_response_round_trip() {
-    let command = Envelope::new(7, 2, 0, 9, crate::system::GetStacks);
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&command).unwrap();
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(command));
-
-    let response = Envelope::new(
-        7,
-        3,
-        0,
-        9,
-        crate::system::Stacks(StackUsage {
-            cpu0_irq: None,
-            cpu1_irq: None,
-            cpu0: StackWatermark {
-                capacity_bytes: 100,
-                free_bytes: 50,
-                used_bytes: 50,
-                minimum_free_bytes: 25,
-            },
-            cpu1: StackWatermark {
-                capacity_bytes: 80,
-                free_bytes: 40,
-                used_bytes: 40,
-                minimum_free_bytes: 20,
-            },
-        }),
-    );
-    let frame = encoder.encode(&response).unwrap();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(response));
-}
-
-#[test]
 fn dedicated_irq_stacks_round_trip_with_explicit_inactive_hart() {
     let watermark = StackWatermark {
         capacity_bytes: 32768,
@@ -569,27 +531,6 @@ fn dedicated_irq_stacks_round_trip_with_explicit_inactive_hart() {
             receive(&mut decoder, encoder.encode(&response).unwrap()).map(Result::unwrap);
         assert_eq!(observed, Some(response));
     }
-}
-
-#[test]
-fn maximum_startup_artifact_chunk_fits_and_round_trips() {
-    let bytes = [0x5a; crate::phy::STARTUP_ARTIFACT_CHUNK_MAX_LEN];
-    let checksum = startup_artifact_crc32c(&bytes);
-    let chunk = StartupArtifactChunk::try_new(
-        crate::phy::STARTUP_ARTIFACT_CHUNK_MAX_LEN as u16,
-        0,
-        checksum,
-        &bytes,
-    )
-    .unwrap();
-    let expected = Envelope::new(7, 2, 0, 2, crate::phy::UploadStartupArtifact(chunk));
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
-
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
 }
 
 #[test]
@@ -916,13 +857,6 @@ fn maximum_flow_transport_evidence_fits_and_round_trips() {
     let mut decoder = FrameDecoder::new();
     let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
-}
-
-#[test]
-fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
-    assert!(StartupArtifactChunk::try_new(0, 0, 0, &[1]).is_err());
-    assert!(StartupArtifactChunk::try_new(1, 0, 0, &[]).is_err());
-    assert!(StartupArtifactChunk::try_new(4, 3, 0, &[1, 2]).is_err());
 }
 
 #[test]

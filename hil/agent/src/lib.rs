@@ -9,10 +9,7 @@ pub mod base;
 #[cfg(feature = "secure-gatt")]
 pub mod bluetooth_gatt;
 pub mod console;
-pub mod liveness;
 pub mod postmortem;
-pub mod profile;
-pub mod sample_request;
 
 #[doc(hidden)]
 pub use oer_hil_protocol as __protocol;

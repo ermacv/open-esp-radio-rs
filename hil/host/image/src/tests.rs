@@ -38,47 +38,6 @@ fn agent(bluetooth: bool) -> oer_chip_profile::Profile {
 }
 
 #[test]
-fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_it() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let staged = agent(true);
-    let manifest: toml::Table =
-        toml::from_str(&std::fs::read_to_string(staged.hil_agent_manifest(&root)).unwrap())
-            .unwrap();
-    let features = manifest["features"].as_table().unwrap();
-    let enables = |class: ImageClass| {
-        let mut pending = class
-            .runtime_features()
-            .split(',')
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        let mut seen = std::collections::BTreeSet::new();
-        while let Some(feature) = pending.pop() {
-            if !seen.insert(feature.clone()) {
-                continue;
-            }
-            if let Some(implied) = features.get(&feature).and_then(toml::Value::as_array) {
-                pending.extend(
-                    implied
-                        .iter()
-                        .filter_map(toml::Value::as_str)
-                        .filter(|name| !name.starts_with("dep:") && !name.contains('/'))
-                        .map(str::to_owned),
-                );
-            }
-        }
-        seen.contains("pc-profile")
-    };
-    for class in ImageClass::ALL {
-        assert_eq!(
-            class.samples_program_counter(),
-            enables(class),
-            "{}",
-            class.id()
-        );
-    }
-}
-
-#[test]
 fn a_seeded_build_has_artifacts_of_its_own() {
     assert_eq!(super::seed_suffix(None), "");
     let seven = super::seed_suffix(std::num::NonZeroU32::new(7));

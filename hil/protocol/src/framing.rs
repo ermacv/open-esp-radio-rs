@@ -26,7 +26,8 @@ pub const MAX_WIRE_FRAME_BYTES: usize = 2 + MAX_COBS_FRAME_BYTES + 1;
 
 const CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
-/// The CRC-32C every frame and every module digest uses.
+/// The CRC-32C of a network session's evidence digest.
+#[cfg(feature = "network")]
 pub(crate) fn crc32c(bytes: &[u8]) -> u32 {
     CRC32C.checksum(bytes)
 }

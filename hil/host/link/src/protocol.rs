@@ -13,8 +13,6 @@ pub struct Observation {
     boot_id: u64,
     capabilities: DeviceImageKeys,
     operation: OperationStatus,
-    /// None means the current target state cannot safely snapshot the stacks.
-    stack: Option<StackUsage>,
     link: LinkHealth,
 }
 
@@ -26,13 +24,11 @@ impl SerialCapture {
             .ok_or("discovery omitted the target boot identity")?;
         let oer_hil_protocol::network::Status(operation) =
             self.request(0, oer_hil_protocol::network::GetStatus, timeout)?;
-        let stack = self.inspect_stack_usage(timeout)?;
         let link = self.query_link_health(timeout)?;
         Ok(Observation {
             boot_id,
             capabilities,
             operation,
-            stack,
             link,
         })
     }
@@ -125,14 +121,6 @@ impl SerialCapture {
             pages.push(page);
         }
         Ok(DeviceImageKeys::assemble(hello, &pages)?)
-    }
-
-    fn inspect_stack_usage(&self, timeout: Duration) -> Result<Option<StackUsage>> {
-        match self.call(0, oer_hil_protocol::system::GetStacks, timeout)? {
-            Ok(oer_hil_protocol::system::Stacks(stack)) => Ok(Some(stack)),
-            Err(oer_hil_protocol::base::RejectReason::InvalidState) => Ok(None),
-            Err(reason) => Err(format!("device rejected stack observation: {reason:?}").into()),
-        }
     }
 
     /// The current image's capabilities, from its boot's Hello.

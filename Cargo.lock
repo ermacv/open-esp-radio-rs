@@ -2956,7 +2956,6 @@ name = "oer-hil-agent"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "bytemuck",
  "crc",
  "critical-section",
  "embassy-futures",
@@ -3021,7 +3020,6 @@ dependencies = [
  "oer-stand-claims",
  "oer-stand-fixtures",
  "oer-stand-owners",
- "oer-toolchain",
  "rustix",
  "serde",
  "serde_json",

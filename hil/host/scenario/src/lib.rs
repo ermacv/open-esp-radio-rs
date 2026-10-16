@@ -174,7 +174,8 @@ impl<F: ScenarioFamily> Scenario<F> {
     pub fn validate(&self) -> Result<()> {
         self.header.validate()?;
         self.family.validate()?;
-        if self.header.profile.is_some() && !self.image().samples_program_counter() {
+        // No image class compiles the program-counter sampler.
+        if self.header.profile.is_some() {
             return Err(format!(
                 "scenario {} requests a profile, but its image {} does not sample the program \
                  counter",

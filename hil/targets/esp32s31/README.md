@@ -56,8 +56,8 @@ core, `system` module included.
 
 Every Bluetooth image keeps one `oer-trace` trace in RTC fast
 memory beside the post-mortem record (`agent/src/trace.rs`, the agent's
-`trace-journal` feature, `cfg(trace_journal)` in `build.rs`): 512 entries, and two 1024-word
-snapshot slots only with the `trace-snapshots` feature. The agent's panic
+`trace-journal` feature, `cfg(trace_journal)` in `build.rs`): 512 entries and no
+snapshot slots. The agent's panic
 hook, which the platform's panic entry calls through its
 `panic-hook` feature, freeze it before the reset; every image but
 `system-panic-reset` has that hook (the agent's `panic-hook` feature, which

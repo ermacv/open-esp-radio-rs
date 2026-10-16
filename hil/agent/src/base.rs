@@ -234,9 +234,9 @@ fn serve(frame: &Frame<'_>, boot_id: u64, hello: Hello) -> Option<Served> {
 /// oer_hil_agent::requests! {
 ///     /// The requests this image serves.
 ///     pub enum Request (sessions = false) {
-///         Stacks(oer_hil_protocol::system::GetStacks),
-///         #[cfg(feature = "pc-profile")]
-///         Profile(oer_hil_protocol::telemetry::ControlProfile),
+///         Stacks(oer_hil_protocol::system::GetInterruptStacks),
+///         #[cfg(feature = "secure-gatt")]
+///         Panic(oer_hil_protocol::system::InjectPanic),
 ///     }
 /// }
 /// ```

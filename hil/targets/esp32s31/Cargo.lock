@@ -1698,7 +1698,6 @@ name = "oer-hil-agent"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "bytemuck",
  "crc",
  "embassy-futures",
  "embassy-sync 0.8.0",

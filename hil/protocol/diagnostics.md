@@ -75,12 +75,12 @@ throughput or timing measurement.
 ## Stack measurements
 
 `StackUsage` carries task watermarks and optional dedicated IRQ watermarks for
-both harts. A hart that runs no executor reports `None`. A missing response
-fails rather than publishing a cached measurement. Images with shared
-task/IRQ stacks report `None` for both dedicated IRQ fields.
+both harts; a network session's evidence reports it. A hart that runs no
+executor reports `None`. Images with shared task/IRQ stacks report `None` for
+both dedicated IRQ fields.
 
-`system::GetInterruptStacks` provides a separate short response without enlarging
-the wire-frame limit. Bluetooth reports its CPU0 dedicated IRQ watermark and
+`system::GetInterruptStacks` reports the dedicated IRQ watermarks in a short
+response. Bluetooth reports its CPU0 dedicated IRQ watermark and
 `None` for its inactive CPU1. The secure GATT workload checks this response at
 its boundaries.
 

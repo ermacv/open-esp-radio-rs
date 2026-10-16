@@ -237,6 +237,21 @@ mod tests {
     }
 
     #[test]
+    fn an_instance_clones_and_prints_although_its_marker_does_neither() {
+        // `Toy` derives neither `Clone` nor `Debug`.
+        let instance = Instance::<Toy>::new(name!(InstanceName, "x"), Params { b: 2, a: vec![1] });
+        let copy = instance.clone();
+        assert_eq!(copy.name, instance.name);
+        assert_eq!(copy.params.a, instance.params.a);
+        let printed = format!("{instance:?}");
+        assert!(
+            printed.starts_with("Instance { name: InstanceName(")
+                && printed.contains("params: Params { b: 2"),
+            "{printed}"
+        );
+    }
+
+    #[test]
     fn non_finite_criteria_have_no_identity() {
         let instance = Instance::<Toy>::new(
             name!(InstanceName, "x"),

@@ -29,16 +29,32 @@ pub const CONFIDENCE: Confidence = match Confidence::new(0.95) {
 pub struct RunId(String);
 
 impl RunId {
-    pub fn parse(text: &str) -> Option<Self> {
-        let (millis, suffix) = text.split_once('-')?;
+    pub fn parse(text: &str) -> Result<Self, InvalidRunId> {
+        let (millis, suffix) = text.split_once('-').ok_or(InvalidRunId)?;
         let digits = !millis.is_empty() && millis.bytes().all(|b| b.is_ascii_digit());
         let hex = !suffix.is_empty()
             && suffix
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-        (digits && hex).then(|| Self(text.to_owned()))
+        if digits && hex {
+            Ok(Self(text.to_owned()))
+        } else {
+            Err(InvalidRunId)
+        }
     }
 }
+
+/// A run ID that is not `<millis>-<hex>`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidRunId;
+
+impl fmt::Display for InvalidRunId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a run ID is `<millis>-<hex>`")
+    }
+}
+
+impl std::error::Error for InvalidRunId {}
 
 impl fmt::Display for RunId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -55,7 +71,7 @@ impl Serialize for RunId {
 impl<'de> Deserialize<'de> for RunId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        Self::parse(&text).ok_or_else(|| D::Error::custom("a run ID is `<millis>-<hex>`"))
+        Self::parse(&text).map_err(D::Error::custom)
     }
 }
 
@@ -345,7 +361,7 @@ pub(crate) mod tests {
 
     #[test]
     fn only_store_run_ids_parse() {
-        assert!(RunId::parse("1788729094522-000d170b").is_some());
+        assert!(RunId::parse("1788729094522-000d170b").is_ok());
         for text in [
             "",
             "1788729094522",
@@ -355,7 +371,7 @@ pub(crate) mod tests {
             "1788729094522-000D170B",
             "a-b",
         ] {
-            assert!(RunId::parse(text).is_none(), "{text:?}");
+            assert_eq!(RunId::parse(text), Err(InvalidRunId), "{text:?}");
         }
     }
 }

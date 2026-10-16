@@ -1,6 +1,6 @@
 //! Validated names: kebab-case scenario, instance, chip, fixture and
-//! composition names, the dotted names of bounds, spans, measurements,
-//! operations, clocks and capabilities, and the contract path.
+//! composition names, the dotted names of spans, measurements, operations
+//! and capabilities, and the contract path.
 
 use core::fmt;
 use std::borrow::Cow;
@@ -206,9 +206,6 @@ names! {
     ScenarioId: Kebab;
     /// One parameterised instance of a scenario.
     InstanceName: Kebab;
-    /// A contract bound or backend parameter an image reports, such as
-    /// `lower-mac.drain`.
-    BoundName: Dotted;
     /// A span measured on the stand, such as `boot-to-hello`.
     SpanName: Dotted;
     /// A measurement a run records, such as `connect.attempts`.
@@ -224,8 +221,6 @@ names! {
     /// The contract a scenario exercises, by its path:
     /// `oer-ieee80211-lower-mac::LowerMacPort`.
     ContractName: Path;
-    /// A clock that trace times are on, such as `esp32s31.systimer`.
-    ClockName: Dotted;
     /// A capability the HIL agent serves, by its `hil/protocol` module and
     /// name, such as `conformance.lower-mac`; the image keys derive from
     /// these through `oer-hil-image-keys`.
@@ -291,23 +286,23 @@ mod tests {
         assert!(InstanceName::parse(&"a".repeat(64)).is_ok());
         assert!(InstanceName::parse(&"a".repeat(65)).is_err());
         let segment = "a".repeat(47);
-        assert!(BoundName::parse(&format!("{segment}.{}", "b".repeat(48))).is_ok());
-        assert!(BoundName::parse(&format!("{segment}.{}", "b".repeat(49))).is_err());
+        assert!(SpanName::parse(&format!("{segment}.{}", "b".repeat(48))).is_ok());
+        assert!(SpanName::parse(&format!("{segment}.{}", "b".repeat(49))).is_err());
     }
 
     #[test]
     fn a_dotted_segment_is_at_most_64_bytes() {
-        assert!(BoundName::parse(&"a".repeat(64)).is_ok());
-        assert!(BoundName::parse(&"a".repeat(65)).is_err());
-        assert!(BoundName::parse(&format!("{}.b", "a".repeat(65))).is_err());
+        assert!(SpanName::parse(&"a".repeat(64)).is_ok());
+        assert!(SpanName::parse(&"a".repeat(65)).is_err());
+        assert!(SpanName::parse(&format!("{}.b", "a".repeat(65))).is_err());
     }
 
     #[test]
     fn dotted_names_join_kebab_segments() {
-        assert!(BoundName::parse("lower-mac.drain").is_ok());
+        assert!(SpanName::parse("lower-mac.drain").is_ok());
         assert!(SpanName::parse("boot-to-hello").is_ok());
         for name in ["", ".a", "a.", "a..b", "a.B", "a.-b"] {
-            assert!(BoundName::parse(name).is_err(), "{name:?}");
+            assert!(SpanName::parse(name).is_err(), "{name:?}");
         }
     }
 

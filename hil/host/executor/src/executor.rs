@@ -82,11 +82,9 @@ impl StandSession<'static> {
 pub trait ModelDriver {}
 
 /// A driver of the stand, such as the proxy that asks the target to
-/// exercise a case: it holds the session of its lease, so only a driver
-/// made under a granted lease can run as the stand.
-pub trait StandDriver<'g> {
-    fn session(&self) -> &StandSession<'g>;
-}
+/// exercise a case. Only [`Stand::open`], which takes the session of a
+/// granted lease, runs one as the stand.
+pub trait StandDriver {}
 
 /// Something that executes scenarios: its kind, and the driver a scenario
 /// uses (for a conformance scenario, its port's harness). It is sealed:
@@ -107,23 +105,24 @@ impl<D: ModelDriver> Model<D> {
     }
 }
 
-/// The stand executor around a stand driver.
-pub struct Stand<'g, D: StandDriver<'g>> {
+/// The stand executor: a stand driver under the session of a granted
+/// lease, which it holds for as long as it runs.
+pub struct Stand<'g, D: StandDriver> {
+    _session: StandSession<'g>,
     driver: D,
-    _lease: PhantomData<&'g ()>,
 }
 
-impl<'g, D: StandDriver<'g>> Stand<'g, D> {
-    pub const fn new(driver: D) -> Self {
+impl<'g, D: StandDriver> Stand<'g, D> {
+    pub const fn open(session: StandSession<'g>, driver: D) -> Self {
         Self {
+            _session: session,
             driver,
-            _lease: PhantomData,
         }
     }
 }
 
 impl<D: ModelDriver> sealed::Sealed for Model<D> {}
-impl<'g, D: StandDriver<'g>> sealed::Sealed for Stand<'g, D> {}
+impl<D: StandDriver> sealed::Sealed for Stand<'_, D> {}
 
 impl<D: ModelDriver> Executor for Model<D> {
     type Kind = OnModel;
@@ -134,7 +133,7 @@ impl<D: ModelDriver> Executor for Model<D> {
     }
 }
 
-impl<'g, D: StandDriver<'g>> Executor for Stand<'g, D> {
+impl<D: StandDriver> Executor for Stand<'_, D> {
     type Kind = OnStand;
     type Driver = D;
 

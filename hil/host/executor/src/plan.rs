@@ -12,27 +12,24 @@
 //! lane-isolation result.
 //!
 //! Every instance's waits are sized by its contract's ceilings, which no
-//! backend may exceed (#761, owner decision 6221891573 on contract
-//! ceilings), and the plan adds each instance's boot to Hello from the
+//! backend may exceed (#761, owner decisions 6221891573 and 6223045367), and the plan adds each instance's boot to Hello from the
 //! stand profile, so no scenario can leave it out. The plan labels every
 //! provisional stand span it used.
 
 use core::fmt;
 
 use oer_hil_model::{
-    Estimate, Factor, Instance, Overflow, Provisional, ReportedBounds, Resources, ScenarioInstance,
-    SpanName, Spec, StandOffer, StandProfile, Subject, TargetCapabilities, Tier, Unmet, WaitError,
-    sum,
+    Estimate, Factor, Instance, Overflow, Provisional, Resources, ScenarioInstance, SpanName, Spec,
+    StandOffer, StandProfile, TargetCapabilities, Tier, Unmet, WaitError, sum,
 };
 
-type EstimateFn = dyn Fn(&ReportedBounds, &StandProfile) -> Result<Estimate, WaitError>;
+type EstimateFn = dyn Fn(&StandProfile) -> Result<Estimate, WaitError>;
 
 /// One scenario instance in the plan.
 pub struct Planned {
     pub id: ScenarioInstance,
     pub image: TargetCapabilities,
     pub resources: Resources,
-    ceilings: ReportedBounds,
     estimate: Box<EstimateFn>,
 }
 
@@ -46,8 +43,7 @@ impl Planned {
             id: instance.id(),
             image: S::target(&instance.params),
             resources: S::resources(&instance.params),
-            ceilings: <S::Subject as Subject>::ceilings(),
-            estimate: Box::new(move |ceilings, profile| S::estimate(&params, ceilings, profile)),
+            estimate: Box::new(move |profile| S::estimate(&params, profile)),
         }
     }
 }
@@ -255,13 +251,10 @@ pub fn plan(tier: Tier, scenarios: &[Planned], stand: &Stand<'_>) -> Result<Plan
         for planned in members {
             let id = || Some(planned.id.clone());
             let overflow = |_| PlanError::Overflow { scenario: id() };
-            let estimate =
-                (planned.estimate)(&planned.ceilings, stand.profile).map_err(|error| {
-                    PlanError::Wait {
-                        scenario: id(),
-                        error,
-                    }
-                })?;
+            let estimate = (planned.estimate)(stand.profile).map_err(|error| PlanError::Wait {
+                scenario: id(),
+                error,
+            })?;
             let own =
                 sum([boot_micros, estimate.total_micros().map_err(overflow)?]).map_err(overflow)?;
             provisional.extend(estimate.provisional().iter().cloned());
@@ -352,7 +345,7 @@ mod tests {
     use oer_hil_model::{
         BoardCapability, BoardNeed, BoardOffer, BoardRole, ChipId, Composition, CompositionName,
         Conformance, ContractName, InstanceName, LpClockSource, MeasuredSpan, RawStandProfile,
-        RunId, RunRef, ScenarioId, Sha256, Support, Verdict, Wait, name,
+        RunId, RunRef, ScenarioId, Sha256, Subject, Support, Verdict, Wait, name,
     };
     use serde::{Deserialize, Serialize};
 
@@ -365,11 +358,15 @@ mod tests {
 
     impl Subject for Port {
         const CONTRACT: ContractName = name!(ContractName, "toy::Port");
-
-        fn ceilings() -> ReportedBounds {
-            ReportedBounds::default().with(name!(BoundName, "toy.terminal"), 2 * SECOND)
-        }
     }
+
+    /// The toy port's terminal ceiling, as its conformance crate's
+    /// `CEILINGS` would hold it.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "stands for a port's CEILINGS constant"
+    )]
+    const TERMINAL_CEILING: oer_time::Duration = oer_time::Duration::from_secs(2);
 
     /// A scenario whose one repetition waits for the measured span `span`
     /// and once for the port's terminal ceiling.
@@ -419,17 +416,12 @@ mod tests {
             }
         }
 
-        fn estimate(
-            params: &Params,
-            ceilings: &ReportedBounds,
-            profile: &StandProfile,
-        ) -> Result<Estimate, WaitError> {
-            let terminal = Wait::contract(name!(BoundName, "toy.terminal"), Factor::ONE);
+        fn estimate(params: &Params, profile: &StandProfile) -> Result<Estimate, WaitError> {
+            let terminal = Wait::contract(TERMINAL_CEILING, Factor::ONE);
             Estimate::from_waits(
                 &[],
                 &[Wait::measured(params.span.clone()), terminal],
                 1,
-                ceilings,
                 profile,
             )
         }
@@ -440,8 +432,12 @@ mod tests {
     }
 
     fn measured(seconds: u64) -> MeasuredSpan {
+        measured_micros(seconds * SECOND)
+    }
+
+    fn measured_micros(maximum_micros: u64) -> MeasuredSpan {
         MeasuredSpan {
-            maximum_micros: seconds * SECOND,
+            maximum_micros,
             samples: 3_000,
             margin: Factor::ONE,
             margin_reason: "test".into(),
@@ -698,13 +694,16 @@ mod tests {
 
     #[test]
     fn an_overflowing_scenario_is_named() {
-        let profile = profile(&[("toy.case", 10)]);
-        let mut huge = fixed("a", "toy.case", None);
-        // The instance's own work just fits in 64 bits; its boot does not.
-        huge.ceilings = ReportedBounds::default()
-            .with(name!(BoundName, "toy.terminal"), u64::MAX - 10 * SECOND);
+        // The instance's own work (the span and the 2 s ceiling) just fits
+        // in 64 bits; its boot does not.
+        let mut raw = raw(&[]);
+        raw.spans.insert(
+            name!(SpanName, "toy.huge"),
+            measured_micros(u64::MAX - 2 * SECOND),
+        );
+        let profile = StandProfile::try_from(raw).unwrap();
         assert_eq!(
-            run(Tier::Full, &[huge], &profile, 3_600),
+            run(Tier::Full, &[fixed("a", "toy.huge", None)], &profile, 3_600),
             Err(PlanError::Overflow {
                 scenario: Some(ScenarioInstance {
                     scenario: name!(ScenarioId, "fixed"),

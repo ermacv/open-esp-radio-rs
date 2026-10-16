@@ -5,23 +5,20 @@ use core::fmt::{self, Debug};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    ContractName, Estimate, InstanceName, PurposeKind, ReportedBounds, Resources, ScenarioId,
-    ScenarioInstance, Sha256, StandProfile, TargetCapabilities, Verdict, WaitError,
+    ContractName, Estimate, InstanceName, PurposeKind, Resources, ScenarioId, ScenarioInstance,
+    Sha256, StandProfile, TargetCapabilities, Verdict, WaitError,
     digest::canonical_json,
     finite::{self, NonFinite},
 };
 
 /// The contract a scenario exercises. A qualification proof is accepted
 /// only when its scenario's subject is the capability's contract, so an
-/// incidental scenario cannot stand in for the minimal one.
+/// incidental scenario cannot stand in for the minimal one. The contract's
+/// bound ceilings are its port conformance crate's typed `CEILINGS`
+/// constant, which the scenario's waits and verdict use directly (#761,
+/// owner decision 6223045367).
 pub trait Subject {
     const CONTRACT: ContractName;
-
-    /// The contract's bound ceilings: no backend may report a bound above
-    /// its ceiling (a backend checks it at compile time against its own
-    /// constant), the plan sizes waits by them, and a trace whose header
-    /// reports more is a finding (#761, owner decision 6221891573).
-    fn ceilings() -> ReportedBounds;
 }
 
 /// Everything about a scenario but its execution: identity, purpose,
@@ -55,11 +52,7 @@ pub trait Spec {
 
     /// One instance's own work: its waits, sized by the contract's ceilings
     /// and the stand profile, and its repetitions.
-    fn estimate(
-        params: &Self::Params,
-        ceilings: &ReportedBounds,
-        profile: &StandProfile,
-    ) -> Result<Estimate, WaitError>;
+    fn estimate(params: &Self::Params, profile: &StandProfile) -> Result<Estimate, WaitError>;
 
     /// The verdict: a pure function of the recorded trace and the criteria.
     fn verdict(trace: &Self::Trace, criteria: &Self::Criteria) -> Verdict<Self::Finding>;
@@ -155,10 +148,6 @@ mod tests {
 
     impl Subject for Port {
         const CONTRACT: ContractName = name!(ContractName, "toy::Port");
-
-        fn ceilings() -> ReportedBounds {
-            ReportedBounds::default()
-        }
     }
 
     struct Toy;
@@ -204,12 +193,8 @@ mod tests {
                     }
                 }
 
-                fn estimate(
-                    _: &$params,
-                    ceilings: &ReportedBounds,
-                    profile: &StandProfile,
-                ) -> Result<Estimate, WaitError> {
-                    Estimate::from_waits(&[], &[], 0, ceilings, profile)
+                fn estimate(_: &$params, profile: &StandProfile) -> Result<Estimate, WaitError> {
+                    Estimate::from_waits(&[], &[], 0, profile)
                 }
 
                 fn verdict((): &(), _: &Criteria) -> Verdict<()> {

@@ -72,6 +72,7 @@ vendor-anchors = [
   "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 gaps = [
+  { axis = "implementation", id = "controller-timebase-production-composition-missing" },
   { axis = "implementation", id = "source-127-expiration-consumer-and-controller-phy-tracking-integration-missing" },
   { axis = "vendor", id = "effective-counter-width-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
@@ -88,7 +89,7 @@ security = [
 composition = "controller-timebase"
 level = "composed-product"
 activation-boundary = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone post-enable timing projection without an RF-readiness claim exact initial current-before-post-enable recurring-RX post-enable-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness. Its production composition, the removed Controller runtime, core and HCI service, went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[capabilities]]
 id = "common-phy-baseband"
@@ -116,7 +117,7 @@ source-fact-refs = [
 [[capabilities.source-contracts]]
 id = "bluetooth-phy-demand-and-release"
 composition = "production"
-scope = "Enter and leave the shared PHY domain and BTBB as the Bluetooth client of the radio arbiter; the arbiter's domain turns due or periodic evaluation into the exact pending tracking request, and the release reports the last-client fact that lets the arbiter's owner close RF (the radio system that did went in #770, tag `legacy-radio-2026-10-16`; #771 brings it back)"
+scope = "Enter and leave the shared PHY domain and BTBB as the Bluetooth client of the radio arbiter; the arbiter's domain turns due or periodic evaluation into the exact pending tracking request, and the release reports the last-client fact that lets the shared radio's owner close RF (the radio system that did so went in #770, tag `legacy-radio-2026-10-16`; #771 brings it back)"
 limits = "These lower transitions acquire no Controller or shared-RF permission. The idle and periodic maintenance facts are implemented lower primitives that no composition runs since #770 (tag `legacy-radio-2026-10-16`); the powered-release fact went with the Bluetooth composition, and #771 brings a composer back"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
@@ -527,6 +528,7 @@ depends-on = [
   "scheduler-finished-list-drain",
 ]
 gaps = [
+  { axis = "implementation", id = "packet-dataplane-production-composition-missing" },
   { axis = "implementation", id = "unrelated-list-dispatch-and-live-radio-role-composition-missing" },
   { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-open-vendor-test-end-semantics-diverge" },
@@ -544,7 +546,7 @@ security = [
 composition = "packet-dataplane"
 level = "composed-product"
 activation-boundary = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm active-owner recovery role-specific bounded recurrence back to hardware RUN and HCI-backpressure-independent active-session progression"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness. Its production composition, the removed Controller runtime, core and HCI service, went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[capabilities]]
 id = "portable-legacy-advertising"
@@ -628,6 +630,7 @@ depends-on = [
   "packet-dataplane",
 ]
 gaps = [
+  { axis = "implementation", id = "legacy-passive-scanning-production-composition-missing" },
   { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
   { axis = "vendor", id = "scanner-descriptor-engine-physical-contract-missing" },
   { axis = "hil", id = "passive-scanning-on-air-cell-missing" },
@@ -643,7 +646,7 @@ security = [
 composition = "legacy-passive-scanning"
 level = "composed-product"
 activation-boundary = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness. Its production composition, the removed Controller runtime, core and HCI service, went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[capabilities]]
 id = "le-link-layer"
@@ -664,6 +667,7 @@ depends-on = [
   "legacy-passive-scanning",
 ]
 gaps = [
+  { axis = "implementation", id = "le-link-layer-production-composition-missing" },
   { axis = "implementation", id = "initial-establishment-window-policy-and-other-procedure-timers-missing" },
   { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
@@ -681,7 +685,7 @@ security = [
 composition = "le-link-layer"
 level = "composed-product"
 activation-boundary = "Production legacy advertising scanning and one peripheral connection from portable admission and channel selection through causal captured-packet timestamp projection initialized LE 1M PHY normalization absolute first transmit-window derivation S31 event scheduling packet reliability supervision and minimum LL control procedures"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness. Its production composition, the removed Controller runtime, core and HCI service, went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[capabilities]]
 id = "typed-hci-controller"
@@ -695,6 +699,7 @@ depends-on = [
   "le-link-layer",
 ]
 gaps = [
+  { axis = "implementation", id = "typed-hci-controller-production-composition-missing" },
   { axis = "implementation", id = "remaining-connected-llcp-and-powered-lifecycle-missing" },
   { axis = "host", id = "hardware-radio-axis-and-full-controller-task-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
@@ -712,7 +717,7 @@ security = [
 composition = "typed-hci-controller"
 level = "composed-product"
 activation-boundary = "HCI command event ACL credit and error semantics plus full endpoint-bound idle and active-peripheral classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection portable opaque deferred DTM completion active Disconnect Reset LE Read Remote Features Read Remote Version Information and Long Term Key reply transitions masked encryption events bounded bidirectional ACL fragmentation retransmission packet completion and Controller-to-Host Host Buffer Size and Host Number Of Completed Packets credit enforcement plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified recovery and whose neutral shutdown cancellation owners expose no HCI completion edge"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness. Its production composition, the removed Controller runtime, core and HCI service, went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[capabilities]]
 id = "async-controller-runtime"
@@ -729,6 +734,7 @@ depends-on = [
   "packet-dataplane",
 ]
 gaps = [
+  { axis = "implementation", id = "async-controller-runtime-production-composition-missing" },
   { axis = "implementation", id = "initial-establishment-window-runtime-missing" },
   { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
   { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
@@ -746,7 +752,7 @@ security = [
 composition = "async-controller-runtime"
 level = "composed-product"
 activation-boundary = "Sole affine hardware owner bounded ISR handoff timer events run-to-quiescence and cancellation-safe shutdown"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness. Its production composition, the removed Controller runtime, core and HCI service, went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[capabilities]]
 id = "coexistence"
@@ -2373,8 +2379,8 @@ id = "bluetooth-le-privacy-1-2"
 section = "bluetooth-security-privacy"
 title = "LE Privacy 1.2"
 status = "fail-closed"
-level = "composed-product"
-scope-and-limitations = "The production [scanner image](memory/src/legacy_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle."
+level = "lower-primitive"
+scope-and-limitations = "The [scanner image](memory/src/legacy_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle. The Controller composition that scanned with this image went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[items]]
 id = "bluetooth-resolving-list"
@@ -2461,8 +2467,8 @@ id = "bluetooth-constant-tone-extension-activation"
 section = "bluetooth-extended-periodic-direction-finding"
 title = "Constant Tone Extension activation"
 status = "fail-closed"
-level = "composed-product"
-scope-and-limitations = "Normal initialization publishes a [disabled CTE workspace](memory/src/direction_finding_workspace.rs). Recovered CTE controls do not activate Direction Finding."
+level = "lower-primitive"
+scope-and-limitations = "Controller memory initialization publishes a [disabled CTE workspace](memory/src/direction_finding_workspace.rs). Recovered CTE controls do not activate Direction Finding. The Controller composition that ran this initialization went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[items]]
 id = "bluetooth-aoa-aod"
@@ -2589,8 +2595,8 @@ id = "bluetooth-optional-le-capability-advertisement"
 section = "bluetooth-hci-host-boundary"
 title = "Optional LE capability advertisement"
 status = "fail-closed"
-level = "composed-product"
-scope-and-limitations = "Unsupported optional LE feature bits remain clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement."
+level = "lower-primitive"
+scope-and-limitations = "The HCI bootstrap state keeps unsupported optional LE feature bits clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement. The HCI command service that answered with it went in #770 (tag `legacy-radio-2026-10-16`); #773 brings it back."
 
 [[items]]
 id = "bluetooth-le-read-filter-accept-list-size"

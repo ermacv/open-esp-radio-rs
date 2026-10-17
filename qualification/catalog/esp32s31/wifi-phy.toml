@@ -136,13 +136,13 @@ source-paths = [
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
-role = "station"
+role = "shared-phy"
 phy = "wifi-2g4"
 security = ["independent-of-link-security"]
 composition = "cold-station-registration"
-level = "composed-product"
+level = "lower-primitive"
 activation-boundary = "One cold register_chipv7_phy composition through the typed target port"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "The typed PHY target-port registration (`target_port/concurrent.rs`) remains; the Wi-Fi composition that ran it at station start went in #762 (tag `legacy-wifi-2026-10-16`), and S31-2 (#760) brings it back. The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
 
 [[capabilities]]
 id = "runtime-phy-calibration"
@@ -250,13 +250,13 @@ gaps = [
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
-role = "station"
+role = "shared-radio"
 phy = "wifi-2g4"
 security = ["independent-of-link-security"]
 composition = "radio-cold-start"
-level = "composed-product"
+level = "lower-primitive"
 activation-boundary = "Clock reset and power-up handoff of the unique radio owner; station sleep and wake are outside the supported profile"
-limitations = "The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "The HAL clock reset and power-up handoff (`root.rs`, `power.rs`) remain; the Wi-Fi composition that ran them (`start_esp32s31_radio`, `power_up_esp32s31_wifi`) went in #762 (tag `legacy-wifi-2026-10-16`), and S31-2 (#760) brings it back. The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
 
 [[sections]]
 id = "phy-overview"

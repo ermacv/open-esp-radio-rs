@@ -143,18 +143,6 @@ platform/espressif/linker/runtime/link.x repeats its PROVIDE(interruptN =
 DefaultHandler) symbol interface.
 
 
-9. Wireshark test capture (pending replacement)
------------------------------------------------
-
-Source:    https://github.com/wireshark/wireshark at 009a1634,
-           test/captures/wpa2-psk-mfp.pcapng.gz (the capture states no
-           license)
-
-crates/protocols/ieee80211/security/rsn/src/frames/captured_m3.rs keeps 187
-EAPOL bytes of its Message 3 until a capture from hostapd on the stand
-replaces them.
-
-
 Not derived
 -----------
 

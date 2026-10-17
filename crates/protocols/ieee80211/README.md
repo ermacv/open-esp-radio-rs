@@ -98,9 +98,6 @@ derivation (`crypto`), packet views and MIC handling (`eapol`), wire formats
 (`frames/{security_ies,key_data,transmit}`) and the complete handshake owners
 (`state/{supplicant,authenticator}`).
 
-`trace` holds the station's trace points and their `StationTrace` event set,
-which a host decodes without linking the chip stack.
-
 Portable AP `service` retains one peer storage owner and separates `peer`,
 `security`, `block_ack` and `power_save` operations into child modules.
 Chip AP `engine` retains the hardware/service/key/beacon owner and separates

@@ -544,13 +544,6 @@ impl<T> SharedRadioLease<'_, T> {
         self.state().power.holds(client)
     }
 
-    /// The platform clock references the radio holds: common power, the
-    /// modem clock dependencies (also while poisoned) and the Bluetooth
-    /// low-power timer gate.
-    pub fn platform_clock_holds(&self) -> PlatformClockHolds {
-        self.state().platform_clock_holds()
-    }
-
     /// Enter common radio power as the protocol that owns `owner`.
     ///
     /// Only the first client runs the modem/PHY power sequence; it pulses the

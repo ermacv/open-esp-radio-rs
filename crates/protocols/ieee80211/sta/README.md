@@ -192,9 +192,8 @@ intervals and TBTT periods keep their full `u64` value. Monotonic arithmetic
 is checked: a short slice emits `Due`, and a future slice or preemption uses
 an absolute `ArmAt` deadline, so delayed execution cannot extend it. Fallible
 clock inputs return `PmScheduleError` without changing state or publishing
-effects. It validates a transition on a value-only copy before committing it
-and emitting all its state-trace edges. Both passes have the same finite
-effect bound; there is no extra trace queue or allocation. Relative
+effects. It validates a transition on a value-only copy and commits that
+copy; the transition has a finite effect bound and no allocation. Relative
 timers are validated against one captured clock before a consumer applies the
 batch; a backend must also reject intervals its hardware cannot represent.
 Only the activity presence counter retains intentional modular rollover.

@@ -12,7 +12,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Packages (path → role)
 
-- Protocols, portable sans-IO: `crates/protocols/ieee80211/` — `mac` (frames, scan, fragmentation), `lower-mac` (the port), `upper-mac`, `softmac`, `sta`, `ap`, `datapath`, `security/rsn`, `trace`.
+- Protocols, portable sans-IO: `crates/protocols/ieee80211/` — `mac` (frames, scan, fragmentation), `lower-mac` (the port), `upper-mac`, `softmac`, `sta`, `ap`, `datapath`, `security/rsn`.
 - Family policy: `crates/protocols/espressif/ieee80211/policy` (Espressif TX policy data).
 - Services, portable: `crates/services/ieee80211/rsn`; the station service and lower-MAC owner glue live in `crates/runtime/ieee80211`.
 - ESP32-S31: driver core `crates/hardware/esp32s31/driver/ieee80211` with `{mac,dma}`, esp-hal adapter `crates/adapters/esp-hal/esp32s31/ieee80211`. No S31 Wi-Fi role, runtime, composition, example or HIL scenario exists: #762 deleted the old stack and its verification. Tag `legacy-wifi-2026-10-16` (`main` before #756 merged) keeps its sources; `legacy-radio-2026-10-16` marks `main` after the merge, before the Bluetooth LE, IEEE 802.15.4 and shared-radio orchestration was deleted (#770).

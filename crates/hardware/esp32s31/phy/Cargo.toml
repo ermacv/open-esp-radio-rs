@@ -17,14 +17,10 @@ registration-diagnostics = []
 # Let a diagnostic image set the vendor's temperature-tracking debug policy,
 # which forces the RFPLL and calibration tracking branches.
 tracking-diagnostics = []
-# Record the PHY trace points and the poison snapshot into `oer-trace`.
-trace = ["oer-trace/record"]
 
 [dependencies]
 oer-radio-analog = { path = "../../radio/analog" }
-oer-phy-trace = { path = "../../radio/trace" }
 oer-time = { path = "../../../time" }
-oer-trace = { path = "../../../trace" }
 oer-esp32s31-hal = { path = "../hal" }
 
 [dev-dependencies]

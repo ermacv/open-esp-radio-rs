@@ -27,11 +27,6 @@ const PHY_PACKAGES: &[&str] = &[
     "bytemuck",
     "critical-section",
     "oer-memory",
-    // Portable PHY trace events and the typed trace ring they are recorded
-    // in. The graph is audited with default features, so `oer-trace` brings
-    // no timer: `embassy-time` comes only with the opt-in PHY `trace` feature.
-    "oer-phy-trace",
-    "oer-trace",
     // Shared register layouts and reviewed transactions of the Wi-Fi MAC that
     // the chip PAC places; closed register PACs, no vendor code.
     "oer-ieee80211-pac",

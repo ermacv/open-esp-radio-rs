@@ -8,7 +8,7 @@ helpers), ported once for every supported chip.
 | --- | --- |
 | `engine` | Operation state machine, interrupt handler, receive ring and DMA frame buffers, statistics |
 | `pib` | The driver's PIB and its publication to the MAC |
-| `ll` | The `Ieee802154LowLevel` interface (the driver's `ieee802154_ll_*` accessors, modem ETM steps and timer commands) and the hardware helpers generic over it; `ll::model` is a register model for host tests (feature `model`) |
+| `ll` | The `Ieee802154LowLevel` interface (the driver's `ieee802154_ll_*` accessors, modem ETM steps and timer commands) and the hardware helpers generic over it; `ll::model` is a register model for the crate's own tests (`cfg(test)`) |
 | `capabilities` | The portable capabilities a radio over the engine reports (ESP-IDF's OpenThread port defaults) and the table a chip builds from its transmit-power level set |
 | `types`, `channel`, `coex`, `tx_power` | The chip-neutral values the interface exchanges, the 2.4 GHz channel/frequency-code map, the software-coexistence priorities and the vendor transmit-power resolution |
 

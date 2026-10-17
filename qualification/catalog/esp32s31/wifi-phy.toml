@@ -684,7 +684,7 @@ section = "phy-protocol-consumer-composition"
 title = "Cold registration/calibration entry — Wi-Fi"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "a composition registers the shared domain once, before Wi-Fi joins it (the radio system that did went in #770, tag `legacy-radio-2026-10-16`); the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
+scope-and-limitations = "the shared domain is registered once, before Wi-Fi joins it; no composition runs this since the radio system went in #770 (tag `legacy-radio-2026-10-16`), and #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-cold-registration-calibration-entry-bluetooth"

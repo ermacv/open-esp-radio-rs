@@ -57,7 +57,7 @@ pub const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "fw",
-        heavy: &["build", "flash", "monitor", "compare"],
+        heavy: &["flash", "monitor", "compare"],
         pairs: &[],
         deferred: &[],
     },

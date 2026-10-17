@@ -11,8 +11,6 @@ description = "Ownership and async HAL boundaries for the ESP32-S31 radio"
 # Synthetic Wi-Fi observations and DMA bindings for explicit test builds.
 test-support = ["oer-esp32s31-pac/test-support"]
 validation-probes = ["oer-esp32s31-pac/validation-probes"]
-# A register model of the LL backend for host tests of the engine's users.
-ll-model = []
 
 [dependencies]
 oer-radio-analog = { path = "../../radio/analog" }

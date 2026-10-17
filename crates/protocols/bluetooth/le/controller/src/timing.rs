@@ -25,12 +25,8 @@ use PlanningCalculation as C;
 pub enum PlanningRole {
     /// Legacy advertising.
     Advertising,
-    /// Scanning.
-    Scanning,
     /// A peripheral connection.
     Peripheral,
-    /// Direct Test Mode.
-    DirectTest,
 }
 
 /// The operation being prepared, before any new request is published.
@@ -38,34 +34,21 @@ pub enum PlanningRole {
 pub enum PlanningOperation {
     /// One event.
     Event,
-    /// A reservation of a future event.
-    FutureReservation,
-    /// The connection indication's first event.
-    ConnectionIndication,
 }
 
 /// The failing calculation within that operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(missing_docs, reason = "each variant names the calculation it fails")]
 pub enum PlanningCalculation {
-    Admission,
+    /// One advertising channel's air time plus the preparation lead.
     ChannelSpacing,
+    /// A whole advertising event over its channels.
     EventDuration,
-    LatestAnchor,
-    Reservation,
+    /// The next connection anchor after the elapsed intervals.
     Recurrence,
-    Expiry,
-    IntervalEnd,
-    MinimumWindow,
-    WindowClipping,
-    FirstAnchor,
+    /// A connection event's receive window around its anchor.
     WindowGeometry,
+    /// The window widening from the combined sleep-clock drift.
     Widening,
-    SlotAlignment,
-    /// The earliest recurring DTM transmitter point reachable now.
-    ReachableAnchor,
-    /// The next point on the DTM transmitter's interval grid.
-    NextAnchor,
 }
 
 /// A required continuation of a schedule lies outside the radio epoch: no
@@ -348,20 +331,20 @@ pub fn advertising_channel_spacing(
         .ok_or(advertising_error(C::ChannelSpacing))
 }
 
-/// The whole event over `channels` channels: every channel but the last one
-/// takes a spacing; the last one needs no lead after it.
+/// The whole event over `channels` channels, at least one: every channel
+/// but the last one takes a spacing; the last one needs no lead after it.
 ///
 /// # Errors
 ///
 /// The duration lies outside the radio epoch.
 pub fn advertising_event_duration(
     channel_air: NonZeroRadioDuration<LeRadio>,
-    channels: u64,
+    channels: NonZeroU64,
     timing: RadioTiming,
 ) -> Result<NonZeroRadioDuration<LeRadio>, EpochExhausted> {
     let spacing = advertising_channel_spacing(channel_air, timing)?;
     spacing
-        .checked_mul(channels.saturating_sub(1))
+        .checked_mul(channels.get() - 1)
         .and_then(|prefix| channel_air.checked_add(prefix))
         .ok_or(advertising_error(C::EventDuration))
 }
@@ -602,8 +585,14 @@ mod advertising_tests {
             Ok(RadioDuration::from_micros(376 + 137))
         );
         assert_eq!(
-            advertising_event_duration(air, 3, TIMING).map(|duration| duration.get()),
+            advertising_event_duration(air, NonZeroU64::new(3).unwrap(), TIMING)
+                .map(|duration| duration.get()),
             Ok(RadioDuration::from_micros(2 * (376 + 137) + 376))
+        );
+        // One channel takes only its own air time: no spacing, no lead.
+        assert_eq!(
+            advertising_event_duration(air, NonZeroU64::MIN, TIMING).map(|duration| duration.get()),
+            Ok(RadioDuration::from_micros(376))
         );
     }
 }

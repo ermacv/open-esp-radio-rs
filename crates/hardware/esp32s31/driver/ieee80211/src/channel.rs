@@ -38,7 +38,7 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> PhyChannel {
 /// stopped and therefore owns no asynchronous access to these registers.
 ///
 /// The shared PHY domain is retuned under the arbiter lease; `platform` is
-/// the shared radio owner's PHY platform token.
+/// the PHY platform token of the shared radio's owner.
 #[cfg(target_arch = "riscv32")]
 pub async fn switch_esp32s31_wifi_channel<D: PhyShortDelay, P, O: PhyTargetObserver>(
     timer: &impl oer_time::Timer,

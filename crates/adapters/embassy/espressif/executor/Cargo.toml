@@ -10,8 +10,9 @@ description = "Scheduler-free Embassy executor and time driver for Espressif sta
 [features]
 default = []
 timer-observation = ["chip"]
-# Count each executor's cycles in its idle wait (`idle_accounting`): the
-# per-core CPU load of a measured window.
+# Count each executor's cycles in its idle wait (`idle_accounting`), from which
+# a per-core CPU load follows. No image enables it since #770; #761's core-1
+# sampling brings a consumer back.
 idle-accounting = ["chip"]
 # The chip of esp-hal; an image selects exactly one.
 esp32s31 = [

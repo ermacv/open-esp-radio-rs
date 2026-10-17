@@ -1,5 +1,6 @@
-//! Each executor's cycles in its idle wait over an explicit window: the
-//! per-core CPU load a performance run reports.
+//! Each executor's cycles in its idle wait over an explicit window, from
+//! which a per-core CPU load follows. No image enables it and nothing reports
+//! the load since #770; it returns with #761's core-1 sampling.
 //!
 //! With `idle-accounting`, an executor's run loop reads the 64-bit `mcycle`
 //! of its core before and after its `wfi`, with interrupts masked, and adds

@@ -1,11 +1,11 @@
 //! Bluetooth membership in the shared PHY domain and BTBB baseband.
 //!
 //! The Controller enable runs `esp_phy_enable(PHY_MODEM_BT)` and
-//! `esp_btbb_enable` after the controller HAL, scheduler and low-power
-//! hardware are initialized and before the BLE base stack is enabled. The
-//! arbiter's owner must register or wake the shared domain first; this module
-//! only enters and leaves it. The BTBB gain byte is projected by the PHY client
-//! from the registration that describes the lease.
+//! `esp_btbb_enable` after the controller HAL, scheduler and low-power hardware
+//! are initialized and before the BLE base stack is enabled. The shared radio's
+//! owner must register or wake the shared domain first; this module only enters
+//! and leaves it. The BTBB gain byte is projected by the PHY client from the
+//! registration that describes the lease.
 
 use oer_esp32s31_hal::shared_radio::SharedRadioLease;
 use oer_esp32s31_phy::{
@@ -111,7 +111,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
     ControllerLowPowerHardwareInitialized<'cells, MODEM_TIMER_CAPACITY>
 {
     /// Enter the shared PHY domain and BTBB as the Bluetooth client, with
-    /// the shared radio owner's proof that it prepared the domain.
+    /// the proof that the shared radio's owner prepared the domain.
     ///
     /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
     /// tracking before the Controller uses RF.

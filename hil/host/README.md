@@ -152,7 +152,7 @@ reports), and records the transcript of every exchange.
 configuration or device: each scenario's procedure digest, image, repetitions,
 requirements and the named checks it supplies. `--proof <check>` filters the selected scenarios by an actually implemented
 named check. No current scenario supplies one: the Wi-Fi and Bluetooth
-families whose scenarios did went in #762 and #770. Repeated `--proof`
+families whose scenarios went in #762 and #770. Repeated `--proof`
 arguments require all named checks, and `--tag` can restrict the profile:
 
 ```console

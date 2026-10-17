@@ -4,7 +4,7 @@
 regeneration of Blobray observations and vendor artifact updates.
 
 The crate deliberately does not know about specific chips, register names, ABI
-catalogs, SVD, ELF, qualification policy or output paths. Consumers interpret
+catalogs, SVD, ELF or output paths. Consumers interpret
 the consumer-owned `kind` and `value`, while the generic layer owns canonical
 typed semantic subjects and blob-local occurrence identities. It validates:
 

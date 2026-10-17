@@ -18,7 +18,7 @@ pub enum Scope {
     Production,
     /// Experimental code no production package depends on.
     Experimental,
-    /// Tools, HIL, qualification, verification and applications.
+    /// Tools, HIL, verification and applications.
     Development,
 }
 
@@ -37,7 +37,6 @@ pub enum Layer {
     Experiment,
     Tool,
     Hil,
-    Qualification,
     Verification,
     Application,
     Platform,
@@ -45,7 +44,7 @@ pub enum Layer {
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 15] = [
         Self::Contract,
         Self::Protocol,
         Self::Hardware,
@@ -58,7 +57,6 @@ impl Layer {
         Self::Experiment,
         Self::Tool,
         Self::Hil,
-        Self::Qualification,
         Self::Verification,
         Self::Application,
         Self::Platform,
@@ -79,7 +77,6 @@ impl Layer {
             Self::Experiment => "experiment",
             Self::Tool => "tool",
             Self::Hil => "hil",
-            Self::Qualification => "qualification",
             Self::Verification => "verification",
             Self::Application => "application",
             Self::Platform => "platform",
@@ -99,12 +96,9 @@ impl Layer {
             | Self::Composition
             | Self::Facade => Scope::Production,
             Self::Experiment => Scope::Experimental,
-            Self::Tool
-            | Self::Hil
-            | Self::Qualification
-            | Self::Verification
-            | Self::Application
-            | Self::Platform => Scope::Development,
+            Self::Tool | Self::Hil | Self::Verification | Self::Application | Self::Platform => {
+                Scope::Development
+            }
         }
     }
 }
@@ -161,15 +155,14 @@ pub enum Hil {
     Operation,
 }
 
-/// The layer of a host tool, HIL, qualification or verification package in
+/// The layer of a host tool, HIL or verification package in
 /// the host architecture ([host layers](../../../docs/architecture.md#host-layers)):
 /// a package depends only on its own host layer and the layers below it.
 /// Listed top-down.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum HostLayer {
     /// A command line: argument parsing and calls (`cargo xtask`, `cargo
-    /// hil`, the runner, `cargo qualification`, `cargo tidy`, `cargo
-    /// registers`, Blobray's CLI). Only entry crates spawn `cargo hil` or
+    /// hil`, the runner, `cargo tidy`, `cargo registers`, Blobray's CLI). Only entry crates spawn `cargo hil` or
     /// `cargo xtask`.
     Entry,
     /// Selection, experiments, analysis and HIL image orchestration.
@@ -231,7 +224,6 @@ pub enum HostApp {
     Verification,
     Blobray,
     Registers,
-    Qualification,
     Foundation,
     Devices,
     Images,
@@ -240,7 +232,7 @@ pub enum HostApp {
 }
 
 impl HostApp {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 12] = [
         Self::Gate,
         Self::Fw,
         Self::Stand,
@@ -248,7 +240,6 @@ impl HostApp {
         Self::Verification,
         Self::Blobray,
         Self::Registers,
-        Self::Qualification,
         Self::Foundation,
         Self::Devices,
         Self::Images,
@@ -265,7 +256,6 @@ impl HostApp {
             Self::Verification => "verification",
             Self::Blobray => "blobray",
             Self::Registers => "registers",
-            Self::Qualification => "qualification",
             Self::Foundation => "foundation",
             Self::Devices => "devices",
             Self::Images => "images",
@@ -708,15 +698,12 @@ mod tests {
 
     #[test]
     fn input_patterns_match_prefixes_and_globs() {
-        assert!(input_matches(
-            "qualification",
-            "qualification/catalog/a.toml"
-        ));
+        assert!(input_matches("registers", "registers/esp32s31/a.toml"));
         assert!(input_matches(
             ".github/workflows/",
             ".github/workflows/ci.yml"
         ));
-        assert!(!input_matches("qualification", "qualifications/a.toml"));
+        assert!(!input_matches("registers", "registersx/a.toml"));
         let manifests = "hil/targets/**/Cargo.toml";
         assert!(input_matches(
             manifests,

@@ -2,8 +2,7 @@
 //!
 //! - [`run`]: the bundle's typed documents, their structural validation, the
 //!   integrity seal and the scenario seals;
-//! - [`read`]: [`read::RunBundle`], the typed reader every consumer uses,
-//!   the qualification evaluator included;
+//! - [`read`]: [`read::RunBundle`], the typed reader every consumer uses;
 //! - [`build`]: the build provenance of a run's images;
 //! - [`experiment`], [`lab`]: the A/B experiment and the laboratory cell a
 //!   run records;

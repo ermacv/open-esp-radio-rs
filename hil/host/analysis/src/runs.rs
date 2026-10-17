@@ -2,8 +2,7 @@
 //!
 //! These queries read typed bundles through [`Run`]; a value outside this
 //! build's vocabulary makes a bundle unreadable here instead of silently
-//! matching nothing. They never decide qualification, which remains the
-//! independent evaluator's.
+//! matching nothing. They never decide qualification.
 
 use std::{
     collections::{BTreeMap, BTreeSet},

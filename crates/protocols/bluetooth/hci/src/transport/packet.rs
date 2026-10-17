@@ -17,7 +17,6 @@ fn decode_complete_packet(
     }
 }
 
-// CAPABILITY: bluetooth-acl-sco-iso-packet-framing
 fn validate_declared_length(
     kind: PacketKind,
     bytes: &[u8],

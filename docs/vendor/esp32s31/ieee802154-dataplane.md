@@ -4,7 +4,7 @@ This reference describes public ESP-IDF source contracts pinned at commit
 `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`. Source order, software state and
 hardware readiness are distinct claims. Reviewed register semantics belong to
 [the register model](../../../registers/esp32s31/README.md); production
-implementation and qualification retain their own authority.
+implementation retains its own authority.
 
 ## Source ledger
 
@@ -186,4 +186,4 @@ authorizes reclamation. The IRQ owner alone samples and acknowledges status;
 the bounded async handoff carries values, not PAC capabilities or raw DMA
 addresses. Queue overflow fails closed. `STOP` is not synchronous completion
 evidence. Whole-radio readiness belongs to composed PHY/BTBB/coexistence,
-platform and MAC owners and to the qualification specification.
+platform and MAC owners.

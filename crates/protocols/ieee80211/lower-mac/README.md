@@ -299,7 +299,7 @@ Parametric limits of what a backend has are its capabilities
 (`LowerMacCapabilities`), and a value outside them has no checked type. Why
 a backend lacks a feature or a value (hardware absent, glue not written,
 vendor knowledge not recovered, policy decision pending) is recorded in its
-qualification catalog, not in code.
+documentation, not in code.
 
 The PHY and channel values come from
 [`oer-ieee80211-mac`](../mac/src/phy.rs): `Channel` (2.4 GHz and 5 GHz with

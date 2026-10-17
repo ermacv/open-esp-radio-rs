@@ -80,7 +80,6 @@ pub enum Ieee802154PhyClientError {
 /// Every check runs before the client set or BTBB changes: IEEE 802.15.4 already
 /// holds BTBB, or the client set rejects the client. The lease comes back
 /// either way.
-// CAPABILITY: ieee802154-registered-timing-entry, phy-protocol-consumer-protocol-client-ownership-ieee802154
 pub fn join_ieee802154<'l, 'r>(
     ready: PhyReady<'l, 'r>,
     clocked: &Ieee802154Clocked,

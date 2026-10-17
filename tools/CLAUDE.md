@@ -18,7 +18,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `fw/` | `oer-fw`, `cargo fw`: the dev kit (flash, monitor, devices, compare); links images, devices, chip profiles and the foundation only |
 | `device/` | `devices/` (`oer-devices`): discovery, port, console, reset and OpenOCD modules, plus flash, receipted image writes and the held-board facade with feature `image`; `mac/`, `lock/` and `peer-line/` retain their independent dependency boundaries |
 | `esp-idf/` | ESP-IDF build environment and pinned catalog projects |
-| `vendor-pins/`, `markers/`, `stats/` | Vendor pin reader, the `SOURCE`/`CAPABILITY` marker recognisers and host statistics |
+| `vendor-pins/`, `markers/`, `stats/` | Vendor pin reader, the `SOURCE` citation recogniser and host statistics |
 | `vendor-artifacts/` | `oer-vendor-artifacts`: the only reader of `verification/<chip>/artifacts.toml`, the store and fetch, and the layout of a chip's verification project (`project::Project`); depends only on toml, serde and the foundation so build scripts and Blobray use it |
 
 ## Rules
@@ -36,7 +36,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
   Flash offsets and the start policy come from `platform/<chip>/chip.toml`'s
   `[flash]` map.
 - Files, manifests, workspaces, chips, classification, the dependency rules
-  and closures have one owner, `oer-repo`; tidy, xtask, the evaluator, the
+  and closures have one owner, `oer-repo`; tidy, xtask, the
   HIL source snapshot and the vendor harness read them through it instead
   of listing files, parsing manifests or running `cargo metadata`.
 - Blobray needs `--manifest-path tools/blobray/Cargo.toml` for every Cargo

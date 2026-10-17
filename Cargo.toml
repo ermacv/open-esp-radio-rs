@@ -132,7 +132,6 @@ members = [
     "hil/host/family/phy",
     "hil/host/family/phy-esp32s31",
     "hil/host/family/system",
-    "qualification/evaluator",
     "qualification/evidence-shard",
     "tools/riscv/analysis",
     "tools/riscv/decode",
@@ -189,16 +188,6 @@ debug = "line-tables-only"
 opt-level = 3
 
 [profile.blobray]
-inherits = "dev"
-opt-level = 3
-debug = 1
-incremental = true
-codegen-units = 16
-
-# Qualification authenticates complete HIL bundles, which can include large
-# packet captures. Keep its SHA-256 and JSON traversal optimized without
-# changing firmware build profiles.
-[profile.qualification]
 inherits = "dev"
 opt-level = 3
 debug = 1

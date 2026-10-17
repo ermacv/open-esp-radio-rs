@@ -88,7 +88,6 @@ impl CoexPti {
 /// The vendor coexistence scheduler changes entries at run time; the table
 /// is therefore shared state of the arbiter, not a constant of any protocol.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-48-event-pti-lookup
 pub struct CoexPtiTable([u8; COEX_EVENT_COUNT]);
 
 impl CoexPtiTable {
@@ -109,7 +108,6 @@ impl CoexPtiTable {
     }
 
     /// The priority of an IEEE 802.15.4 coexistence level.
-    // CAPABILITY: coex-coexistence-policy-and-scheduler-ieee-802-15-4-operation-priorities
     pub const fn ieee802154_pti(&self, level: Ieee802154CoexLevel) -> CoexPti {
         self.pti(level.event())
     }

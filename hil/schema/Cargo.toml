@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The HIL evidence contract with qualification: run vocabulary, canonical scenarios and source-snapshot manifests"
+description = "The HIL evidence contract: run vocabulary, canonical scenarios and source-snapshot manifests"
 
 [dependencies]
 oer-durable = { path = "../../tools/durable" }
@@ -23,5 +23,5 @@ host-layer = "foundation"
 host-app = "formats"
 host-boundary = "format"
 hil = "observation"
-# A contract and format leaf: the DTOs evidence and qualification share; no
+# A contract and format leaf: the DTOs evidence readers share; no
 # execution code.

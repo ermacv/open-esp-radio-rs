@@ -1,7 +1,7 @@
 //! The HIL scenario catalog format: the family-independent header of a
 //! scenario document, its schema, the role and profile request, the
 //! laboratory requirements, the Wi-Fi link vocabulary ([`link`]), and the one discovery of a catalog's documents.
-//! Readers that do not run scenarios (qualification) read it alone.
+//! Readers that do not run scenarios read it alone.
 #![forbid(unsafe_code)]
 
 use std::{
@@ -20,8 +20,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub const SCENARIO_SCHEMA: u16 = 5;
 
 /// What a scenario is for. A scenario is a qualification scenario because a
-/// qualification program references it; the evaluator checks the declared
-/// role against the programs, so the role is derived, never chosen.
+/// qualification program references it.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Role {

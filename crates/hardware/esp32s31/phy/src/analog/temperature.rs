@@ -162,7 +162,6 @@ const fn selected_dac(temperature: i16, current: TemperatureAttribute) -> u8 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: phy-rf-and-analog-primitives-temperature-read-conversion
 pub struct PhyTemperatureTransition {
     step: PhyTemperatureStep,
 }

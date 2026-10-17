@@ -157,7 +157,6 @@ and which apparent Rust integrations still terminate in closed firmware.
 | Upper Link Layer | Advertising/scanning/connection policy, retry, supervision and LL control procedures |
 | HCI Controller | Supported command/event surface, transport backpressure and ACL credits |
 | Host | L2CAP, ATT/GATT, GAP/SMP and application policy above HCI |
-| Qualification | Independent protocol, RF, concurrency and teardown evidence requirements |
 
 The open Controller composes these layers without the vendor's software
 container. The source tables below classify the vendor lifecycle; they do not

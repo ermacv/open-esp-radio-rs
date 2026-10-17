@@ -34,7 +34,6 @@ pub enum CoexError {
 
 /// The policy timer a vendor core request for `event` programs, or `None`
 /// for an event without a timer and for the arbiter's grant-protect event 48.
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-event-to-timer-mapping
 pub const fn timer_index(event: CoexEventId) -> Option<CoexTimerIndex> {
     let value = event.value();
     if value == 0 || value as usize > REVIEWED_TIMER_MAP.len() {
@@ -51,7 +50,6 @@ pub const fn timer_index(event: CoexEventId) -> Option<CoexTimerIndex> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-event-duration-lookup
 pub struct CoexEventDurations([u32; 5]);
 
 impl CoexEventDurations {
@@ -115,7 +113,6 @@ impl CoexTimerIndex {
 /// request kind (`coex_bt_request` passes 0, `coex_wifi_request` 1).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-hardware-pti
 pub enum CoexClient {
     Bluetooth = 0,
     Wifi = 1,
@@ -174,7 +171,6 @@ impl From<CoexClient> for RadioClient {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-shared-rf-arbitration
 pub struct CoexClientRequest {
     pub event: CoexEventId,
     /// Source latency parameter converted into the secondary timer target.

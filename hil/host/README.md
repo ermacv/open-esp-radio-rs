@@ -2,14 +2,14 @@
 
 Run commands in this guide from the repository root. HIL executes the
 production driver on real hardware and records typed evidence; it is not an
-alternative radio implementation or the qualification evaluator. Read the
+alternative radio implementation. Read the
 [execution and evidence architecture](architecture.md) before interpreting a
 bundle.
 
 ```text
 hil/
 ├── protocol/          host/target command and telemetry wire protocol
-├── schema/            evidence contract shared with qualification
+├── schema/            evidence contract
 ├── model/             the typed scenario model: spec, purpose, verdict, names, derived waits, stand profile
 ├── trace-header/      the no_std header of conformance traces: typed bounds and clock domain
 ├── observer/          the observer's build identity, content store and receipts
@@ -47,9 +47,8 @@ hil/
 
 Target firmware lives under `hil/targets/<chip>`. Runs are immutable bundles
 in the run store (`target/hil/runs`). Evidence is only the runs of the pinned
-evidence archive version, which the qualification evaluator checks
-independently in a verified copy (`cargo hil archive fetch`, then `cargo
-qualification evaluate --archive DIR`); Markdown is not proof input.
+evidence archive version, checked in a verified copy (`cargo hil archive
+fetch`); Markdown is not proof input.
 
 Vendor-linked oracles remain isolated under `verification`; they are
 not HIL scenarios or runner commands.
@@ -75,9 +74,7 @@ Prepare the same observer descriptor without running HIL with:
 cargo hil observer
 ```
 
-Qualification reads this descriptor once per evaluation, or the invocation's
-receipt selected by `OER_OBSERVER_RECEIPT`. It never builds or executes the
-observer. The descriptor selects the required compiler, features and profile;
+The descriptor selects the required compiler, features and profile;
 prepare it again to select a different build configuration. Current normal/build manifests, lock identities and Cargo configuration are
 checked once before use. Changes in any domain's normal/build declarations
 require explicit preparation because they may alter shared feature unification;
@@ -205,13 +202,11 @@ packages an image build reads, or inside the HIL host packages and scenarios
 unresolved files block capture with their names and the `--source-include`
 arguments that add them all, ready to paste, before content is archived. The manifest lists every archived untracked
 file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run with any
-option is still a sealed run: `cargo qualification verdict --run PATH`
-judges it, and evidence cites it only once it is in a pinned archive
-version. Directory selections and ignored files are not accepted.
+option is still a sealed run, and evidence cites it only once it is in a
+pinned archive version. Directory selections and ignored files are not accepted.
 For the configured local override, qualify each new file with `esp-hal:`. Agent instructions (`AGENTS.md` at any depth and
 every `.agents/` directory) are excluded from tracked and untracked inputs
 in every source checkout: they configure coding agents, not firmware or HIL.
-Qualification applies the same exclusion when checking source currency.
 No symlink or submodule content in the remaining source inputs is silently followed;
 such inputs require review and are rejected by this capture interface.
 
@@ -280,9 +275,9 @@ carry a deterministic integrity inventory covering every retained file.
 
 The manifest records `runner.observer`, including the SHA-256 of the running
 executable and its embedded build/source identity. Firmware capture does not
-replace this identity. The qualification evaluator uses
-[`observer-inputs.json`](../schema/observer-inputs.json) to select relevant
-observer inputs; it does not require equality of the entire runner binary.
+replace this identity.
+[`observer-inputs.json`](../schema/observer-inputs.json) selects the relevant
+observer inputs; equality of the entire runner binary is not required.
 Its schema-4 registry identifies a workload as `<family>/<kind>` (for example
 `system/boot-smoke`), classifies its timing sensitivity, and scopes its inputs by
 the `common` group plus the scenario family's group (`system`),
@@ -300,7 +295,7 @@ run plan and lab provenance. Firmware bytes are referenced in place, not copied
 per scenario. A bound firmware class cannot be replaced within that invocation.
 The seal is published atomically and cannot be overwritten by the runner.
 
-Qualification can consume a closed attempt even if a later scenario or the
+A closed attempt remains usable even if a later scenario or the
 campaign process is interrupted before the final suite seal. Unpublished
 temporary seals and unfinished repetition sets supply no completion proof.
 Sealing an attempt does not release or recover fixture resources, resume a
@@ -316,12 +311,3 @@ derived history file to rebuild. Trends are scenario aggregates, not a proof
 of comparable firmware or fixture conditions. Verify the structure and content digests of one bundle with
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
 also runs without a DUT or private stand file.
-
-Qualification independently reads the sealed bundles instead of trusting a
-handwritten HIL status. A capability is HIL-qualified only when its declared
-scenario and repetition requirement is satisfied by a completed bundle or a
-separately sealed attempt bound to the current source composition. A verified snapshot matching the current
-source inputs the observation depends on is directly applicable even when dirty, provided the executed
-procedure and relevant host observer inputs also match. Its existence alone does
-not establish this match or a passing observation. Scenario IDs and achievable repetition counts are checked against the
-versioned catalog in `hil/scenarios`.

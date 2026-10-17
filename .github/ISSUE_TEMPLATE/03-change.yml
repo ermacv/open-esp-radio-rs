@@ -25,7 +25,7 @@ body:
     attributes:
       label: "Primary area"
       description: "The owner of the result."
-      options: ["area:wifi","area:bluetooth","area:ieee802154","area:radio","area:registers","area:platform","area:tooling","area:hil","area:qualification"]
+      options: ["area:wifi","area:bluetooth","area:ieee802154","area:radio","area:registers","area:platform","area:tooling","area:hil"]
     validations:
       required: true
   - type: dropdown

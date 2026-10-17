@@ -46,13 +46,13 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 ## Traps
 
 - The LE radio clock is the controller clock extended from its 32-bit latch, with no relation to the monotonic clock: never convert an `LeInstant` through monotonic time. The modem LP timer is an alarm of its own domain, never an `oer_time::Timer`.
-- Controller time has two raw ticks per microsecond; fractional ticks round down, and scheduler positions wrap only inside the driver (`driver/bluetooth/README.md`, "Controller time"). A raw captured anchor is not a packet-start timestamp (catalog section `bluetooth-peripheral-timing-limits`). The long recurring receive wait counts two-microsecond units, so a backend rounds an odd wait up.
+- Controller time has two raw ticks per microsecond; fractional ticks round down, and scheduler positions wrap only inside the driver (`driver/bluetooth/README.md`, "Controller time"). A raw captured anchor is not a packet-start timestamp (`driver/bluetooth/FEATURES.md`, "Peripheral timing limits"). The long recurring receive wait counts two-microsecond units, so a backend rounds an odd wait up.
 - Controller memory is initialized internal SRAM (`.dma.data.open_radio_bluetooth_*`, the `controller_memory!` sections), not a zeroed `.bss` region, and is claimed once per boot (`BluetoothMemoryError::AlreadyClaimed`).
 - Lifecycle facts for the rebuild: power and clock failures roll back to the parked client; any failure after the first Controller write keeps its owners fail-stop until reset. RF closes only when the last PHY client leaves. Initialization and scheduler `RUN` are not RF evidence.
 - PHY order: `esp_phy_enable(PHY_MODEM_BT)` and BTBB after the controller HAL init; unlike IEEE 802.15.4, Bluetooth keeps the transmit-on delay the first BTBB initialization writes (`bluetooth_client.rs`). The vendor's modem ETM channel zero belongs to IEEE 802.15.4 here, so production routes channel two (`verification/esp32s31/README.md`, BLE PHY register initialization).
 - Three interrupt sources (124, 127, 133) go to one dispatcher at level 3 on core 0; both HAL owners must be installed before any CPU route is enabled (driver README, "Bring-up and teardown order").
 - The hardware scheduler keeps the air timing, so a primary interrupt only services the Controller's status and wakes the driver; every decision belongs to the driver ([ownership and refusals](../../../docs/architecture.md#ownership-and-refusals), #643, #563 decision 2).
-- Narrow on purpose: LE 1M only for connections, no peripheral latency, 0 dBm for every role, LE 2M and Coded only in DTM, always awake on the main-XTAL profile. Feature bits stay clear until a production path is complete; a recovered register, SRAM layout, parser or DTM-only PHY never grants advertisement (catalog section `bluetooth-capability-advertisement`).
+- Narrow on purpose: LE 1M only for connections, no peripheral latency, 0 dBm for every role, LE 2M and Coded only in DTM, always awake on the main-XTAL profile. Feature bits stay clear until a production path is complete; a recovered register, SRAM layout, parser or DTM-only PHY never grants advertisement (`driver/bluetooth/FEATURES.md`, "Capability advertisement").
 - `ControllerPoweredTaskRuntime::publish_scan_start` is `unsafe`: its caller must reset the scanner graph and publish the receive chains first, which the deleted radio role did.
 - The controller archives' symbols are obfuscated and change between releases: a vendor leaf names the symbol of the pinned release; source names come from `verification/esp32s31/facts/names/` (grep only).
 
@@ -62,6 +62,4 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 - RV32: `cargo check -p oer-esp32s31-bluetooth --target riscv32imafc-unknown-none-elf`.
 - Vendor comparison: the `bluetooth` scenario over the probes in `verification/esp32s31/probes/bluetooth`.
 
-Qualification: catalogs `qualification/catalog/esp32s31/bluetooth.toml` and `bluetooth-products.toml`; no Bluetooth program exists.
-
-Package detail: [S31 driver](../../../crates/hardware/esp32s31/driver/bluetooth/README.md) and its [capability page](../../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md); the other packages document themselves in their crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/bluetooth-*.md`.
+Package detail: [S31 driver](../../../crates/hardware/esp32s31/driver/bluetooth/README.md) and its [feature page](../../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md); the other packages document themselves in their crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/bluetooth-*.md`.

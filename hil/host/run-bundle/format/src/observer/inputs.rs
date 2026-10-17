@@ -1,4 +1,4 @@
-//! Host build inputs shared by the runner producer and independent evaluator.
+//! Host build inputs shared by the runner producer and its readers.
 use super::cargo_inputs;
 use serde_json::{Value, json};
 use std::{

@@ -54,7 +54,6 @@ impl fmt::Debug for WifiPhyMembership {
 /// # Errors
 ///
 /// The client set rejects the client; nothing changed.
-// CAPABILITY: phy-protocol-consumer-protocol-client-ownership-wifi
 pub fn join_wifi<'l, 'r>(
     ready: PhyReady<'l, 'r>,
     clocked: &WifiClocked,

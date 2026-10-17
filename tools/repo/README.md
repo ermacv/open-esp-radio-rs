@@ -2,7 +2,7 @@
 
 `oer-repo` is the one model of the repository's own structure. Every tool
 that reasons about the tree as a whole — `oer-tidy`, `oer-xtask`, the
-qualification evaluator, the HIL source snapshot and the vendor evidence
+HIL source snapshot and the vendor evidence
 harness — reads it here instead of listing files, parsing manifests or
 asking `cargo metadata` itself. It reads text only: no Cargo resolution, no
 compilation, so loading the whole tree takes a fraction of a second.
@@ -30,7 +30,7 @@ HIL roles: `observation` code shapes what a run observes and reaches no
 stand code; `orchestration` code drives runs (the runner, its families,
 images, the stand library) and may use stand operation; `operation` code
 only operates the stand (boards, flashing, the stand file) and never shapes
-a passed observation, so the evaluator's evidence closures leave it out.
+a passed observation.
 
 Host packages declare typed `host-app` ownership and `host-boundary`
 (`application`, `library`, `format`) alongside their host layer. The path

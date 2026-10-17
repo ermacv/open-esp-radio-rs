@@ -6,9 +6,7 @@
 //! to the store's `runs/`; everything else below `target/hil` (build caches,
 //! snapshots) stays per checkout. Beside `runs/` the store keeps the observer
 //! builds its runs refer to ([`oer_hil_run_bundle_format::observer::store`]) and its
-//! [`Sidecar`]s. Qualification reads runs only from a verified copy of an
-//! evidence archive version (`oer-hil-evidence-archive`), never from the
-//! store.
+//! [`Sidecar`]s.
 
 use std::{
     collections::BTreeMap,

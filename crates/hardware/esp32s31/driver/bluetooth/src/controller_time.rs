@@ -35,7 +35,6 @@ pub enum ControllerDurationError {
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test))]
-// CAPABILITY: bluetooth-controller-scheduler-timebase
 pub struct ControllerTimeSample {
     latched_time: BluetoothControllerLatchedTime,
 }

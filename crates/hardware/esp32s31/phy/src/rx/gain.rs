@@ -761,7 +761,6 @@ enum InitStep {
 /// rejecting a completion. The root therefore retains coefficient storage
 /// across steps instead of copying the child around every accepted action.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: phy-rx-and-tx-calibration-primitives-rx-gain-table-initialization
 pub struct PhyRxGainInitTransition {
     parameters: Option<PhyRxGainInitParameters>,
     step: InitStep,

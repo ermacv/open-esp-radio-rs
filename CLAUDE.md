@@ -1,19 +1,18 @@
 # open-esp-radio-rs
 
 A Rust 2024 radio stack for the ESP32-S31 and ESP32-C5 (Wi-Fi, Bluetooth LE,
-IEEE 802.15.4) with its HIL stand, vendor verification and qualification.
+IEEE 802.15.4) with its HIL stand and vendor verification.
 Coding agents do almost all the work; the owner sets the tasks.
 
-**Chips.** ESP32-S31 is the production target: every layer, the
-qualification catalogs. ESP32-C5 has
+**Chips.** ESP32-S31 is the production target: every layer. ESP32-C5 has
 investigation inputs only: its register model and PAC, HAL, platform,
 esp-hal SoC adapter, HIL target and vendor verification; it has no radio
-driver, role, runtime, composition, qualification catalog or example yet.
+driver, role, runtime, composition or example yet.
 Commands written with `<chip>` take either chip where that input exists.
 
 ## Rules
 
-- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, add a fallback, leave required work unfinished, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
+- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, add a fallback, leave required work unfinished, change on-hardware behavior, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
@@ -50,7 +49,6 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `registers/` | Reviewed register models and generated SVD/bindings: [registers/CLAUDE.md](registers/CLAUDE.md) |
 | `hil/` | HIL protocol, runner, targets, scenarios and evidence: [hil/CLAUDE.md](hil/CLAUDE.md) |
 | `verification/` | `cargo verification` (own workspace): vendor pins, recovered facts and comparisons: [verification/CLAUDE.md](verification/CLAUDE.md) |
-| `qualification/` | Capability catalogs, programs and the evaluator: [qualification/CLAUDE.md](qualification/CLAUDE.md) |
 | `tools/` | Repository commands (xtask, tidy), dev kit (`cargo fw`: flash an image bundle or an ESP-IDF catalog image such as a `hil/peers` reference, monitor, devices, compare), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
 | `stand/` | `cargo stand` and the shared stand's packages: [stand guide](hil/host/stand.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |

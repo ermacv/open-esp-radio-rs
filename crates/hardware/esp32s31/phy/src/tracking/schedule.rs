@@ -10,7 +10,6 @@ use crate::state::client::{PhyClientSnapshot, PhyPllTrackClass, PhyTrackTimeErro
 
 /// Scheduling observation, independent of executor and hardware admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: phy-calibration-state-and-tracking-read-only-tracking-demand
 pub enum Schedule {
     /// No radio client requires tracking; no timer is needed.
     Inactive,

@@ -364,7 +364,6 @@ pub fn phy_ready<'l, 'r>(
 ///
 /// The client set rejects the client (already acquired, clock error). The
 /// domain is unchanged.
-// CAPABILITY: phy-protocol-consumer-initial-tracking-before-client-handoff-wifi, phy-protocol-consumer-initial-tracking-before-client-handoff-bluetooth, phy-protocol-consumer-initial-tracking-before-client-handoff-ieee802154, whole-radio-exclusive-ownership-and-client-handoff-protocol-specific-phy-handoff
 pub(crate) fn acquire_client(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     client: RadioClient,

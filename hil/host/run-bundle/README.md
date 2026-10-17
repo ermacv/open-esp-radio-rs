@@ -1,8 +1,7 @@
 # HIL run bundle
 
 `oer-hil-run-bundle` owns the format of a HIL run bundle, its one writer and
-its one reader; every producer and consumer of a run, the qualification
-evaluator included, goes through it.
+its one reader; every producer and consumer of a run goes through it.
 
 | Module | Owns |
 | --- | --- |

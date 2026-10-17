@@ -219,7 +219,7 @@ SSH, network mutation, flashing or RF checks. The fixed root-owned receipt at
 `/var/lib/open-radio/fixture/<provider>/receipt.json` reports the generation,
 source dirty/content identity, artifact and policy hashes, previous generation,
 checks and terminal/recovery state. It contains no lab credentials and is not
-HIL evidence or qualification input. A successful receipt means software is
+HIL evidence. A successful receipt means software is
 installed consistently; privileged platform behavior and hardware acceptance
 remain separate operator checks.
 

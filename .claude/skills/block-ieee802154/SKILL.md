@@ -34,7 +34,7 @@ hardware.
 - ESP32-S31:
   - PAC, HAL and PHY modules inside the chip crates (`hardware/esp32s31/{pac,hal}/src/ieee802154*`, `phy/src/ieee802154_client.rs`);
   - `Ieee802154MacOwners` implements the engine's low level; the HAL lifecycle typestate is `role.rs`, and `policy.rs` stays whole;
-  - `crates/hardware/esp32s31/driver/ieee802154/` holds only the capability page.
+  - `crates/hardware/esp32s31/driver/ieee802154/` holds only the feature page.
 - Facade: `crates/oer` features `ieee802154` and `esp32s31-ieee802154` (the engine).
 - No HIL image, scenario or host family. The reference peers `hil/peers/esp32c5-ieee802154` (the PHY cross-check's vendor side) and `hil/peers/esp32c5-openthread` (#774) stay.
 
@@ -56,7 +56,7 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 - Scheduled TX uses TIMER0 and the modem ETM, scheduled RX TIMER1; ETM channels zero and one belong to IEEE 802.15.4 (BLE routes channel two).
 - Coexistence: the participant counting, status bits and join/leave order are in `oer-espressif-coex`'s README; external coexistence does nothing on the pinned libcoexist. `recent_rssi` reads the shared BTBB byte of the last reception, whichever protocol received it.
 - Security: a retransmission keeps its frame counter and key index; only a CSL receiver gets a new counter per retry.
-- No readiness claim beyond the catalog: Thread, Zigbee and Matter are host-only, and CSMA/CA and CSL are outside the qualified capabilities.
+- Thread, Zigbee and Matter are host-only.
 
 ## Checks
 
@@ -64,6 +64,4 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 - RV32: `cargo check -p oer-esp32s31-hal -p oer-espressif-ieee802154-engine --target riscv32imafc-unknown-none-elf`.
 - Vendor comparison: the host stand's `compare` and its `ieee802154-host` shard.
 
-Qualification: catalog `qualification/catalog/esp32s31/ieee802154.toml`; no 802.15.4 program exists.
-
-Package detail: the READMEs of the [engine](../../../crates/hardware/espressif/ieee802154/engine/README.md), the [vendor host stand](../../../verification/esp32s31/host/ieee802154/README.md) and the [capability page](../../../crates/hardware/esp32s31/driver/ieee802154/FEATURES.md); the protocol documents itself in its crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/ieee802154-*.md`.
+Package detail: the READMEs of the [engine](../../../crates/hardware/espressif/ieee802154/engine/README.md), the [vendor host stand](../../../verification/esp32s31/host/ieee802154/README.md) and the [feature page](../../../crates/hardware/esp32s31/driver/ieee802154/FEATURES.md); the protocol documents itself in its crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/ieee802154-*.md`.

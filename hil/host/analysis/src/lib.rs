@@ -16,7 +16,7 @@
 //! - [`profile`]: the symbolized report of a repetition's program-counter
 //!   profile.
 //!
-//! Nothing here decides qualification, which remains the evaluator's.
+//! Nothing here decides qualification.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 pub mod arms;

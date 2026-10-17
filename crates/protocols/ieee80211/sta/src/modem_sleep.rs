@@ -500,7 +500,6 @@ impl PmTraffic {
 
 /// Power management of one associated station (`g_pm`).
 #[derive(Clone, Debug, Eq, PartialEq)]
-// CAPABILITY: coex-coexistence-policy-and-scheduler-tbtt-anchored-periods
 pub struct ModemSleep {
     sleep_type: SleepType,
     /// `[14]`: power management runs for an associated station.

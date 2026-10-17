@@ -7,7 +7,7 @@
 //! workspaces, the packages an image build reads, or inside the HIL host
 //! packages and scenarios, which the run reads. The manifest lists every
 //! untracked file it archived and why. This is a source
-//! snapshot, not a hermetic build or a qualification decision.
+//! snapshot, not a hermetic build or a readiness decision.
 //!
 //! A snapshot directory holds its manifest and record; each file's bytes are
 //! an object named by their SHA-256 in an objects directory shared by every

@@ -304,7 +304,6 @@ const fn preserve_failure(terminal: Terminal, transaction: PhyPbusForceTest) -> 
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: phy-rx-and-tx-calibration-primitives-tx-dc-offset-calibration
 pub struct PhyTxDcTransition {
     parameters: PhyTxDcParameters,
     mode: PhyTxDcMode,

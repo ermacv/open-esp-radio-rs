@@ -11,13 +11,9 @@ hardware-readiness claim.
 ## Roles
 
 Every document declares its `role`. A `qualification` scenario is one that a
-[qualification program](../../qualification/README.md) references; every other
-scenario is an `investigation` scenario: the catalog of diagnostics,
-measurements and experiments no program requires. The role is derived, never
-chosen: validating any program fails while a `qualification` scenario is
-referenced by no program, and a requirement on an `investigation` scenario can
-never be satisfied (its obligation reports `requirement-names-investigation-scenario`).
-A scenario on a diagnostic image class (`diagnostic-*`), or one that requests a
+qualification program references; every other scenario is an `investigation`
+scenario: the catalog of diagnostics, measurements and experiments no program
+requires. A scenario on a diagnostic image class (`diagnostic-*`), or one that requests a
 profile, must be an `investigation` scenario and may not carry the
 `performance` tag: observers and probes the product does not carry never
 qualify it or shape a gated figure. `cargo hil run-all --role qualification`
@@ -82,21 +78,17 @@ invalidate recorded evidence.
 ## Named checks
 
 Named checks are derived from implemented workload behavior and explicit
-criteria, not tags. Qualification can
-require these observations by name without duplicating their thresholds.
-`cargo hil plan --proof NAME` filters candidates. It never fills in missing
+criteria, not tags. `cargo hil plan --proof NAME` filters candidates. It never fills in missing
 observations from a suite PASS.
 
-Both the runner and the independent qualification evaluator discover regular
-TOML files recursively. The filename stem must equal the document ID. IDs are
+The runner discovers regular TOML files recursively. The filename stem must equal the document ID. IDs are
 unique throughout the catalog. README.md is the only ignored documentation
 filename. Symlinks (including a symlink catalog root), special files, other
 file extensions and an empty catalog are rejected. One discovery,
 `oer_hil_scenario::catalog::documents`, never follows directory links outside
 the catalog and checks every header (schema, id, repetition bounds) and the
-single family table for both readers; only the runner interprets executable
-workload and acceptance fields, and the qualification evaluator keeps each
-document as a value.
+single family table; the runner interprets executable workload and acceptance
+fields.
 
 The runner sorts by scenario ID.
 `run-all` first traverses `ImageClass::ALL`, then the selected
@@ -125,9 +117,7 @@ The optional top-level `unsupported` field states why the current firmware
 cannot run a scenario: no image it builds serves the workload's image class,
 or the class's image does not declare a role the workload drives. The runner
 refuses an explicitly named unsupported scenario before building any image;
-a tag or run-all selection skips it and prints its id and reason once. A
-qualification requirement on it stays open, and `cargo qualification next`
-shows the reason. The field is not part of the executed procedure, so
+a tag or run-all selection skips it and prints its id and reason once. The field is not part of the executed procedure, so
 recorded evidence stays comparable. The runner's catalog test fails when a
 marked scenario is served, or an unmarked one is not, by the image classes
 declared in `hil/targets/esp32s31/agent/Cargo.toml` and their declared

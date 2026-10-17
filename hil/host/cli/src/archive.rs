@@ -6,8 +6,8 @@
 //! (the pinned version's from its downloaded copy), `holders` lists who pins
 //! which runs, `unpin` drops a holder's pins, `publish` makes a version a release of the archive
 //! repository and writes the pin, and `fetch` downloads the pinned version
-//! into a verified copy, which `cargo qualification evaluate --archive`
-//! reads. `pack`, `publish` and `fetch` reach the network, through `gh`.
+//! into a verified copy. `pack`, `publish` and `fetch` reach the network,
+//! through `gh`.
 //!
 //! Exit status: 0 done, 1 an archive rule refused the inputs, 2 a usage
 //! error, 3 the environment failed (I/O, `gh`, the network), 130 cancelled.
@@ -61,9 +61,8 @@ enum ArchiveCommand {
     /// [network] Pack the runs a references file cites into OUT
     /// (`evidence.tar.gz`, `manifest.json`): the runs the pinned version
     /// already holds from its verified copy, which this downloads, the
-    /// others from the run store. First `cargo qualification check
-    /// references --candidate` holds the references to rules 1 and 2. The
-    /// version takes over the selection's pins until it is published.
+    /// others from the run store. The version takes over the selection's
+    /// pins until it is published.
     Pack {
         #[arg(long)]
         refs: PathBuf,
@@ -75,10 +74,9 @@ enum ArchiveCommand {
         json: bool,
     },
     /// [network] Publish the packed version in DIR as a release of the
-    /// pinned version's repository, then write the pin. First `cargo
-    /// qualification check references --candidate` holds its manifest to
-    /// rules 1 and 2. Before the first version, name the repository; another
-    /// than the pinned one only with `--new-repository`.
+    /// pinned version's repository, then write the pin. Before the first
+    /// version, name the repository; another than the pinned one only with
+    /// `--new-repository`.
     Publish {
         dir: PathBuf,
         #[arg(long, value_parser = parse_repository)]
@@ -202,8 +200,7 @@ fn execute(ctx: &Checkout, owner: Result<String>, command: ArchiveCommand) -> Re
             json,
         } => {
             let by = owner?;
-            let refs_path = rooted(&refs);
-            let refs = read_refs(&refs_path)?;
+            let refs = read_refs(&rooted(&refs))?;
             let store = RunStore::shared()?;
             let out = rooted(&out);
             let pinned = Pin::load(&rooted(&pin))?;
@@ -212,7 +209,6 @@ fn execute(ctx: &Checkout, owner: Result<String>, command: ArchiveCommand) -> Re
                 &refs,
                 &out,
                 &by,
-                || check_candidate(ctx, &refs_path, json),
                 // The pinned version's runs come from its verified copy, so
                 // the new version keeps them after pruning (owner decision
                 // 6231504542).
@@ -248,11 +244,6 @@ fn execute(ctx: &Checkout, owner: Result<String>, command: ArchiveCommand) -> Re
                 repository,
                 Pin::load(&rooted(&pin))?.as_ref(),
                 new_repository,
-            )?;
-            check_candidate(
-                ctx,
-                &dir.join(oer_hil_evidence_archive::manifest::MANIFEST),
-                json,
             )?;
             let (manifest, published) = release::publish(&Gh::new(repository.clone()), &dir)?;
             let pin_path = rooted(&pin);
@@ -348,20 +339,17 @@ fn references(
     Ok((references, local))
 }
 
-/// Check `refs`, pack them into `out` (a base, the pinned version's copy,
-/// staged next to `out`, from `base`) and hand the selection's pins to the
-/// version. `check` holds the references to rules 1 and 2 before anything
-/// is created; a version whose runs could not all be pinned is removed
-/// again, so a retry can write it.
+/// Pack `refs` into `out` (a base, the pinned version's copy, staged next to
+/// `out`, from `base`) and hand the selection's pins to the version; a
+/// version whose runs could not all be pinned is removed again, so a retry
+/// can write it.
 fn pack_version(
     store: &RunStore,
     refs: &Refs,
     out: &Path,
     by: &str,
-    check: impl FnOnce() -> Result<()>,
     base: impl FnOnce(&Path) -> Result<Option<oer_hil_evidence_archive::Copy>>,
 ) -> Result<Manifest> {
-    check()?;
     if std::fs::symlink_metadata(out).is_ok() {
         return Err(Box::new(Refused(format!(
             "{} already exists",
@@ -389,56 +377,6 @@ fn pack_version(
         return Err(error);
     }
     Ok(manifest)
-}
-
-/// Rules 1 and 2 for `candidate` (a references file or a version's
-/// manifest), checked by `cargo qualification check references
-/// --candidate`, their one implementation, against the repository's
-/// citations.
-fn check_candidate(ctx: &Checkout, candidate: &Path, json: bool) -> Result<()> {
-    let mut command = oer_toolchain::cargo_in(&ctx.root);
-    command
-        .args(["qualification", "check", "references", "--candidate"])
-        .arg(candidate)
-        .arg("--root")
-        .arg(&ctx.root);
-    let output = oer_process::output(&mut command, None)?;
-    relay(
-        &output,
-        json,
-        &mut std::io::stdout(),
-        &mut std::io::stderr(),
-    )?;
-    match output.status.code() {
-        Some(0) => Ok(()),
-        Some(1) => Err(Box::new(Refused(format!(
-            "`cargo qualification check references` refused {} (above); nothing was created",
-            candidate.display()
-        )))),
-        Some(130) => Err(Box::new(oer_process::Cancelled)),
-        _ => Err(format!(
-            "cargo qualification check references failed ({})",
-            output.status
-        )
-        .into()),
-    }
-}
-
-/// Pass the check's output on: on stderr only when the command prints JSON,
-/// so that its stdout stays one JSON document.
-fn relay(
-    output: &std::process::Output,
-    json: bool,
-    stdout: &mut impl std::io::Write,
-    stderr: &mut impl std::io::Write,
-) -> Result<()> {
-    if json {
-        stderr.write_all(&output.stdout)?;
-    } else {
-        stdout.write_all(&output.stdout)?;
-    }
-    stderr.write_all(&output.stderr)?;
-    Ok(())
 }
 
 /// The repository `publish` releases to: the pinned version's; the one
@@ -855,8 +793,7 @@ mod tests {
             selection: Some(selection),
             runs: first,
         };
-        let pinned =
-            pack_version(&store, &refs, &out.join("v1"), "a", || Ok(()), |_| Ok(None)).unwrap();
+        let pinned = pack_version(&store, &refs, &out.join("v1"), "a", |_| Ok(None)).unwrap();
         let base = oer_hil_evidence_archive::copy::unpack(
             &out.join("v1")
                 .join(oer_hil_evidence_archive::manifest::ARCHIVE),
@@ -880,15 +817,8 @@ mod tests {
             selection: Some(selection),
             runs: second,
         };
-        let manifest = pack_version(
-            &store,
-            &refs,
-            &out.join("v2"),
-            "a",
-            || Ok(()),
-            move |_| Ok(Some(base)),
-        )
-        .unwrap();
+        let manifest =
+            pack_version(&store, &refs, &out.join("v2"), "a", move |_| Ok(Some(base))).unwrap();
         assert_eq!(manifest.runs.len(), 3);
         let pins = store.read::<Notes>(Sidecar::Pins).unwrap();
         assert_eq!(pins.keys().collect::<Vec<_>>(), ["1-c"]);
@@ -898,35 +828,6 @@ mod tests {
         );
         // Without the pinned version, a pruned run has no reference.
         assert!(references(&store, &ids(&["1-a"]), None).is_err());
-    }
-
-    /// References the repository does not cite create nothing: no version,
-    /// no download, no pin change.
-    #[test]
-    fn references_the_repository_does_not_cite_create_nothing() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = RunStore::at(directory.path().join("store"));
-        sealed(&store, "1-a");
-        let (runs, local) = references(&store, &ids(&["1-a"]), None).unwrap();
-        let selection = select(&store, &local, "a", None).unwrap();
-        let before = store.read::<Notes>(Sidecar::Pins).unwrap();
-        let refs = Refs {
-            selection: Some(selection),
-            runs,
-        };
-        let out = directory.path().join("v1");
-        let error = pack_version(
-            &store,
-            &refs,
-            &out,
-            "a",
-            || Err(Box::new(Refused(String::from("rule 1")))),
-            |_| panic!("nothing is downloaded"),
-        )
-        .unwrap_err();
-        assert!(error.is::<Refused>());
-        assert!(!out.exists());
-        assert_eq!(store.read::<Notes>(Sidecar::Pins).unwrap(), before);
     }
 
     /// `ref --selection` adds to a selection, and `holders` lists each
@@ -991,27 +892,6 @@ mod tests {
         assert_eq!(
             publish_repository(Some(repository("o/first")), None, false).unwrap(),
             repository("o/first")
-        );
-    }
-
-    /// With `--json` the check's report goes to stderr: stdout stays JSON.
-    #[test]
-    fn the_checks_report_leaves_json_stdout_alone() {
-        use std::os::unix::process::ExitStatusExt as _;
-        let output = std::process::Output {
-            status: std::process::ExitStatus::from_raw(0),
-            stdout: b"REFERENCES\t...\n".to_vec(),
-            stderr: b"note\n".to_vec(),
-        };
-        let (mut out, mut err) = (Vec::new(), Vec::new());
-        relay(&output, true, &mut out, &mut err).unwrap();
-        assert!(out.is_empty());
-        assert_eq!(err, b"REFERENCES\t...\nnote\n");
-        let (mut out, mut err) = (Vec::new(), Vec::new());
-        relay(&output, false, &mut out, &mut err).unwrap();
-        assert_eq!(
-            (out.as_slice(), err.as_slice()),
-            (&b"REFERENCES\t...\n"[..], &b"note\n"[..])
         );
     }
 

@@ -1,7 +1,7 @@
 //! The values of the lower-MAC port's optional features: A-MPDU
 //! transmission, beacon timing (each interface's TSF and TBTT schedule)
 //! and monitor reception, with their parametric limits. Why a backend
-//! lacks a feature is recorded in its qualification catalog, not in code.
+//! lacks a feature is recorded in its documentation, not in code.
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
 

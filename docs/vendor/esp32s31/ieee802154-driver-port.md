@@ -6,9 +6,7 @@ production crates port, pinned at commit
 controllers, the complete MAC driver and its register layer are public source;
 only the PHY, BTBB and coexistence libraries it calls are closed. The map
 assigns every source unit to its owning production layer and states the
-current coverage. Coverage here is source inventory; the
-[IEEE 802.15.4 catalog](../../../qualification/catalog/esp32s31/ieee802154.toml)
-and qualification remain the readiness authority.
+current coverage. Coverage here is source inventory.
 
 The [lifecycle](ieee802154-lifecycle.md), [dataplane](ieee802154-dataplane.md)
 and [control](ieee802154-control.md) references record the reviewed contracts

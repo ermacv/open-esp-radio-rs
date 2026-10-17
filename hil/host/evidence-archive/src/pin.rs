@@ -1,5 +1,4 @@
-//! The pin: the one archive version the repository's qualification reads
-//! (rule 4). It names the repository and the version and repeats the
+//! The pin: the one archive version the repository tracks (rule 4). It names the repository and the version and repeats the
 //! version's manifest, so rule 2 (every cited run is in the version with the
 //! same digest) is checked offline, without access to the archive.
 
@@ -14,9 +13,8 @@ use crate::{Manifest, Payload, Result, Version, refused};
 pub const PIN: &str = "qualification/evidence/archive.toml";
 
 const HEADER: &str = "\
-# The HIL evidence archive version qualification reads (#761 Q7). Written
-# by `cargo hil archive publish`; `cargo qualification check references`
-# checks it offline. Never edit it by hand.
+# The HIL evidence archive version the repository tracks (#761 Q7).
+# Written by `cargo hil archive publish`. Never edit it by hand.
 ";
 
 /// A GitHub repository, `owner/name`, that holds the archive's releases.

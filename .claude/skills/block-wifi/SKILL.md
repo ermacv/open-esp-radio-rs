@@ -360,8 +360,6 @@ turn a hardware-capable signature into a temporary-memory DMA binding.
 - No HIL image compiles the Wi-Fi driver.
 - No Wi-Fi HIL scenario exists; new proofs come from the HIL architecture of #761.
 
-Qualification: catalog `qualification/catalog/esp32s31/wifi-phy.toml`.
-
 Package detail: the READMEs of [lower-mac](../../../crates/protocols/ieee80211/lower-mac/README.md), [upper-mac](../../../crates/protocols/ieee80211/upper-mac/README.md), [sta](../../../crates/protocols/ieee80211/sta/README.md) and [arbiter](../../../crates/protocols/ieee80211/arbiter/README.md).
 
 Portable Station PMF keeps management CCMP replay separate from data TIDs.

@@ -19,7 +19,7 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `link/` (`oer-hil-link`) | none | The host/target link: one DUT session (`SerialCapture`) with the generic exchange (`call`, `request`, `command`, `wait_command`) and reboots; reaches the board only through its `Dut` port; and the reference peers' `PeerConsole` with the whole `@` line grammar (`peer`) |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `evidence-archive/` (`oer-hil-evidence-archive`) | none | The evidence archive (#761 Q7): content-addressed versions of the runs qualification cites, their manifest and the pin `evidence/archive.toml` in `qualification/`, deterministic packing from a run store, bounded verified extraction into a copy laid out as a run store, and publication and download through a release transport (`cargo hil archive`) |
-| `run-bundle/` (`oer-hil-run-bundle`) | none | The run bundle: its typed documents, the one writer and its seal, the one typed reader (`RunBundle`) every consumer uses, the qualification evaluator included, integrity verification, the run store with its sidecars (`RunStore`), the run receipt, build provenance and the content-addressed object store, offline verification against the image builder's recipe, and the experiment and laboratory records a run keeps |
+| `run-bundle/` (`oer-hil-run-bundle`) | none | The run bundle: its typed documents, the one writer and its seal, the one typed reader (`RunBundle`) every consumer uses, integrity verification, the run store with its sidecars (`RunStore`), the run receipt, build provenance and the content-addressed object store, offline verification against the image builder's recipe, and the experiment and laboratory records a run keeps |
 | `analysis/` (`oer-hil-analysis`) | none | Analyses of run bundles: the one measurement aggregation and comparison, run queries, retention, performance baselines, A/B arm comparison, the dashboard's runs and the JUnit/HTML views a run seals |
 | `experiment/` (`oer-hil-experiment`) | none | `launch_run`, the one way a run is launched (its runs come from the runner's receipt), the job a launch runs as, revision runs (a revision's scenario set with the runner of its HIL wire), A/B experiments and bisection |
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
@@ -102,7 +102,6 @@ claim an earlier physical action:
 | 5. Repetitions | `fixture::prepared` owns peer/host preparation; `session` owns serial reset, raw `uart.bin`, decoded protocol and target-health state; a workload owns its child processes and typed observations. Primary failures remain distinct from infrastructure failures. |
 | 6. Cleanup and attachment indexing | Each repetition enters a cleanup scope before fixture preparation. Cleanup/restoration finishes before attachments and `result.json` are collected. `cleanup.json` preserves every attempted restoration and its failure independently of the workload result. |
 | 7. Suite and seal | After all scenario results, `RunSession::finish` writes `suite.json`, the JUnit and HTML views `oer-hil-analysis` renders, and the final event/manifest, then writes `integrity.json`. |
-| 8. Independent evaluation | Qualification reads the sealed bundle through the run bundle's one reader, verifies its seals and hashes every sealed file again at admission, and applies target requirements, exact commit/clean-source policy and repetition rules. Runner `PASS`, HTML and a valid hash inventory are insufficient on their own. |
 
 SIGINT/SIGTERM wakes owned protocol and process waits. Ordinary unwinding
 finalizes captures, restores fixtures where possible, marks the run
@@ -389,20 +388,10 @@ image class to match the selected scenario, and then executes the ordinary
 scenario lifecycle without invoking Cargo. The resulting run imports all
 available firmware subjects, effective lock and tracked source patches into
 its own CAS-backed bundle; it remains verifiable after the source run is
-removed. Its manifest records the source run and source integrity digest, and
-the qualification evaluator deliberately excludes replayed firmware from
-direct current-source evidence. `run-all` does not accept `--firmware-from`.
+removed. Its manifest records the source run and source integrity digest.
+`run-all` does not accept `--firmware-from`.
 
-The qualification evaluator consumes these same sealed bundles through the
-run bundle's one reader; its independence is the seals it verifies and the
-files it hashes again when it admits a run, not a second reader.
-`qualification/targets/<chip>/*.toml` maps capabilities to
-scenario IDs and minimum passing repetitions; only a bundle produced from the
-current source composition or admitted by an explicit property/build review
-can satisfy the HIL axis. A verified snapshot that matches every file the
-observation depends on is sufficient even when the checkout is dirty or the
-commit identity differs. The
-derived views and Markdown narratives are never proof inputs.
+The derived views and Markdown narratives are never proof inputs.
 
 `boot-smoke` intentionally precedes the radio protocol and proves only runtime
 relocation plus one Embassy timer wake. It uses its single fixed PASS record;
@@ -476,9 +465,7 @@ their test doubles and fixtures to the other packages' tests.
 
 The recursive [catalog contract](../scenarios/README.md) has one discovery,
 `oer_hil_scenario::catalog::documents`: the runner parses each document with
-its family's types, and the qualification evaluator keeps each as a value;
-qualification never imports execution or family implementation from the
-runner. Tests are adjacent files within each owner.
+its family's types. Tests are adjacent files within each owner.
 
 A capture that begins at a reset expects the boot's unsolicited Hello at
 target message zero. The USB Serial/JTAG can drop the first bytes of that

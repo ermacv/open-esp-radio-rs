@@ -7,9 +7,8 @@
 //! laboratory and build provenance, the event stream, the integrity seal and
 //! the scenario seals. A document outside this build's vocabulary is an
 //! error, never a silently absent value. Whoever reads a bundle, the `cargo
-//! hil` analyses or the qualification evaluator, reads it here; the
-//! evaluator's independence comes from verifying the seals and hashing every
-//! file again when it admits a run ([`RunBundle::integrity`],
+//! hil` analyses included, reads it here; a reader's independence comes from
+//! verifying the seals and hashing every file again when it admits a run ([`RunBundle::integrity`],
 //! [`RunBundle::attempts`]), not from a second reader.
 
 use std::{

@@ -45,8 +45,7 @@ Real input needs your own identified vendor artifacts.
 
 Related tools have different owners: `cargo registers` publishes reviewed
 hardware interfaces; `cargo xtask` checks and builds repository compositions;
-`cargo hil` obtains device observations; `cargo qualification` evaluates a
-selected set of requirements. Blobray does not decide product readiness.
+`cargo hil` obtains device observations. Blobray does not decide product readiness.
 
 `cargo blobray` invokes `blobray-cli`; the
 [operator index](cli/README.md#reference-navigation) describes that interface.

@@ -17,7 +17,6 @@ decision.
 | Preview or install Linux fixture software | [Canonical fixture installation](host/fixtures.md#linux-fixture-software-installation) | Dry-run is offline; installation uses interactive privilege but no RF |
 | Build or understand target firmware | [ESP32-S31 target](targets/esp32s31/README.md) | Build-only sections are separate from flash/run sections |
 | Install or operate the Linux network fixture | [`linux-net`](host/linux-net/) and its checked helper interface | Requires explicit host setup and, for installation, privileges |
-| Evaluate readiness | [Qualification](../qualification/README.md) | Reads declared programs and eligible sealed evidence independently |
 
 The typed scenario model that replaces the scenario documents lives in
 [`model/`](model/README.md), its execution in
@@ -26,12 +25,12 @@ The wire contract lives in `protocol/`, versioned scenarios in `scenarios/`,
 host orchestration in `host/runner/`, and embedded consumers in `targets/`.
 Chip-independent target logic and its host tests live in
 [`agent/`](agent/README.md).
-The evidence contract shared by the runner and the qualification evaluator —
-the run vocabulary, canonical scenarios and source-snapshot manifests — lives
+The evidence contract — the run vocabulary, canonical scenarios and
+source-snapshot manifests — lives
 in the `schema/` crate; the observer's build identity, its content store and
 receipts live in [`observer/`](observer/README.md), whose `producer` feature
 adds the Cargo-running operations that only the runner and repository tools
-use. The run bundle's format, writer and the one reader both sides use are
+use. The run bundle's format, writer and its one reader are
 [`host/run-bundle/`](host/run-bundle/README.md).
 The PHY calibration cross-check libraries live in `phy/`: the chip-neutral
 [`capture/`](phy/capture/README.md), and each chip's shared relation and
@@ -54,10 +53,8 @@ VERSION|SELECTION` drops the pins of a version packed but never published or
 of a selection, and `publish DIR` releases it in the pinned version's
 repository (`--repository OWNER/NAME` before the first version, with
 `--new-repository` to move the archive) and writes the pin `evidence/archive.toml` in `qualification/`, and `fetch --out DIR`
-downloads the pinned version and verifies it for `cargo qualification
-evaluate --archive DIR`. `pack`, `publish` and `fetch` reach the network; a
-version is never changed or deleted. See [the archive](host/evidence-archive/README.md) and
-[qualification](../qualification/README.md#evidence-ownership).
+downloads the pinned version and verifies it. `pack`, `publish` and `fetch` reach the network; a
+version is never changed or deleted. See [the archive](host/evidence-archive/README.md).
 
 ## Safe source-only route
 
@@ -110,8 +107,5 @@ unwinding instead records an interrupted manifest and attempts its own seal.
 Abrupt process termination can leave the active scenario without a seal;
 previously published scenario seals remain usable.
 
-Qualification independently checks the selected program, source/build binding,
-completion seals and repetition requirements. A verified snapshot matching the
-complete current inputs supplies direct evidence, including dirty inputs; nothing
-admits an observation of other inputs. History pages and Markdown
-remain navigation and presentation, never proof input.
+History pages and Markdown remain navigation and presentation, never proof
+input.

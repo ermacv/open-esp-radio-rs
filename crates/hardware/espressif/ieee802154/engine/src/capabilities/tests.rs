@@ -9,15 +9,36 @@ const LEVELS: TransmitPowerLevels = match TransmitPowerLevels::new(&[-24, 0, 20]
 #[test]
 fn single_interface_table_keeps_the_recovered_values_without_csma_or_retries() {
     let caps = capabilities(LEVELS, false);
-    assert_eq!(caps.operations, RADIO_CAPABILITIES);
-    assert!(!caps.operations.contains(RadioCapabilities::MULTI_PAN));
-    // A single attempt per frame: CSMA-CA and retries live above the port.
-    assert!(!caps.operations.contains(RadioCapabilities::CSMA_CA));
-    assert!(
-        !caps
-            .operations
-            .contains(RadioCapabilities::TRANSMIT_RETRIES)
-    );
+    // The eleven operations the engine implements itself, and nothing else:
+    // a single attempt per frame (CSMA-CA and retries live above the port)
+    // and one interface.
+    let implemented = [
+        RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT,
+        RadioCapabilities::SECURITY_OFFLOAD,
+        RadioCapabilities::ENERGY_SCAN,
+        RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT,
+        RadioCapabilities::SCHEDULED_TRANSMIT,
+        RadioCapabilities::SCHEDULED_RECEIVE,
+        RadioCapabilities::PROMISCUOUS,
+        RadioCapabilities::RECEIVE_TIMESTAMP,
+        RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT,
+        RadioCapabilities::SOURCE_MATCH,
+        RadioCapabilities::TIME_SYNC,
+    ];
+    for flag in implemented {
+        assert!(caps.operations.contains(flag), "{flag:?}");
+    }
+    let expected = implemented
+        .into_iter()
+        .fold(RadioCapabilities::NONE, RadioCapabilities::union);
+    assert_eq!(caps.operations, expected);
+    for absent in [
+        RadioCapabilities::CSMA_CA,
+        RadioCapabilities::TRANSMIT_RETRIES,
+        RadioCapabilities::MULTI_PAN,
+    ] {
+        assert!(!caps.operations.contains(absent), "{absent:?}");
+    }
     assert_eq!(caps.interfaces, 1);
     assert_eq!(caps.transmit_power.map(|power| power.reset_dbm), Some(20));
     assert_eq!(

@@ -691,16 +691,16 @@ id = "phy-protocol-consumer-cold-registration-calibration-entry-bluetooth"
 section = "phy-protocol-consumer-composition"
 title = "Cold registration/calibration entry — Bluetooth"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "common-PHY power/calibration-clock readback precedes the borrowed target runner, retaining the I2C clock lease in the task owner"
+level = "lower-primitive"
+scope-and-limitations = "common-PHY power/calibration-clock readback precedes the borrowed target runner, retaining the I2C clock lease in the task owner; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-cold-registration-calibration-entry-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Cold registration/calibration entry — IEEE 802.15.4"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "typed target registration route exists; whole-radio service is incomplete"
+level = "lower-primitive"
+scope-and-limitations = "a typed target registration route exists; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-client-ownership-wifi"
@@ -723,8 +723,8 @@ id = "phy-protocol-consumer-protocol-client-ownership-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Protocol-client ownership — IEEE 802.15.4"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "registered client/foundation/timing wrappers exist without complete operational ownership"
+level = "lower-primitive"
+scope-and-limitations = "registered client/foundation/timing wrappers exist without complete operational ownership; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-initial-tracking-before-client-handoff-wifi"
@@ -753,40 +753,40 @@ id = "phy-protocol-consumer-initial-tracking-before-client-handoff-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Initial tracking before client handoff — IEEE 802.15.4"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "target runner and pending/settled states exist without a complete public service"
+level = "lower-primitive"
+scope-and-limitations = "the target runner and pending/settled states exist without a complete public service; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-channel-switching-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Protocol channel switching — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "channel HAL and MAC-restart entry points are composed"
+level = "lower-primitive"
+scope-and-limitations = "the channel HAL and MAC-restart entry points remain; the Wi-Fi runtime that composed them went in #762 (tag `legacy-wifi-2026-10-16`), and #771 brings a composer back"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-channel-switching-bluetooth"
 section = "phy-protocol-consumer-composition"
 title = "Protocol channel switching — Bluetooth"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "DTM/event-specific frequency inputs exist, not a general shared retune lifetime"
+level = "lower-primitive"
+scope-and-limitations = "DTM/event-specific frequency inputs exist, not a general shared retune lifetime; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-channel-switching-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Protocol channel switching — IEEE 802.15.4"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "MAC channel policy and BTBB timing exist; RF retune readiness remains incomplete"
+level = "lower-primitive"
+scope-and-limitations = "MAC channel policy and BTBB timing exist; RF retune readiness remains incomplete; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Periodic parameter/calibration tracking — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "connected-station observation service defaults to one second and selects the current Wi-Fi/RFPLL graph at role boundaries; complete thermal/RF qualification remains separate"
+level = "lower-primitive"
+scope-and-limitations = "the tracking transaction remains; the connected-station observation service that ran it each second and selected the current Wi-Fi/RFPLL graph at role boundaries went in #762 (tag `legacy-wifi-2026-10-16`), and #771 brings a composer back; complete thermal/RF qualification remains separate"
 
 [[items]]
 id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-bluetooth"
@@ -799,32 +799,32 @@ id = "phy-protocol-consumer-periodic-parameter-calibration-tracking-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Periodic parameter/calibration tracking — IEEE 802.15.4"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "target tracking entry exists; RF/runtime service remains incomplete"
+level = "lower-primitive"
+scope-and-limitations = "a target tracking entry exists; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-operational-power-selection-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Operational power selection — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "configured Wi-Fi ceiling reaches per-rate MAC codes"
+level = "lower-primitive"
+scope-and-limitations = "the configured Wi-Fi ceiling reaches per-rate MAC codes in the [power path](src/tx/power.rs); the Wi-Fi runtime that configured it went in #762 (tag `legacy-wifi-2026-10-16`), and #771 brings a composer back"
 
 [[items]]
 id = "phy-protocol-consumer-operational-power-selection-bluetooth"
 section = "phy-protocol-consumer-composition"
 title = "Operational power selection — Bluetooth"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "default event power encoding, not general live power control"
+level = "lower-primitive"
+scope-and-limitations = "default event power encoding exists, not general live power control; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-operational-power-selection-ieee802154"
 section = "phy-protocol-consumer-composition"
 title = "Operational power selection — IEEE 802.15.4"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "provider-index resolution lacks calibrated provider/MMIO composition"
+level = "lower-primitive"
+scope-and-limitations = "provider-index resolution lacks calibrated provider/MMIO composition; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-resume-after-rf-sleep-wifi"

@@ -78,8 +78,8 @@ id = "coex-internal-arbitration-hardware-and-models-shared-rf-arbitration"
 section = "coex-internal-arbitration-hardware-and-models"
 title = "Shared RF arbitration"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "PTI, timer and client models exist. No complete radio request/grant/release composition controls shared RF ownership."
+level = "lower-primitive"
+scope-and-limitations = "PTI, timer and client models exist. No complete radio request/grant/release composition controls shared RF ownership. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-hardware-pti"
@@ -197,39 +197,39 @@ id = "coex-coexistence-policy-and-scheduler-executable-phase-transitions"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Executable phase transitions"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. No runtime delivers these steps since #770 (the former `RadioSystem::run_coex_schedule`, tag `legacy-radio-2026-10-16`). The Wi-Fi station's power agent consumes its phases; the Bluetooth Controller, like the vendor BLE Controller, does not react to phases."
+level = "lower-primitive"
+scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. No runtime delivers these steps since #770 (the former `RadioSystem::run_coex_schedule`, tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back. The station's [modem-sleep engine](../../../../protocols/ieee80211/sta/src/modem_sleep.rs) consumes its phases; the Bluetooth Controller, like the vendor BLE Controller, did not react to phases."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheme-selection"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Scheme selection"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change`; the vendor `coex` scenario compares it, and the status-bit, timeout and restart entries, with the pinned `libcoexist.a` over every combination of the tested status values. Wi-Fi and the Bluetooth Controller publish their status to the running schedule, which selects the scheme from it."
+level = "lower-primitive"
+scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change`; the vendor `coex` scenario compares it, and the status-bit, timeout and restart entries, with the pinned `libcoexist.a` over every combination of the tested status values. No radio publishes its status to a running schedule since the Wi-Fi runtime (#762, tag `legacy-wifi-2026-10-16`) and the radio system (#770, tag `legacy-radio-2026-10-16`) went; #771 brings the shared radio system back."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Wi-Fi IDLE / CONNECTED / SCAN / CONNECTING schemes"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "All 107 schemes of `coexist_scheme.o` are recovered, including the Wi-Fi scan, connecting and connected schemes beside BLE, classic Bluetooth, IEEE 802.15.4 and external coexistence. The Wi-Fi station publishes its idle, scan, connecting and connected status, and Wi-Fi publishes its idle status when another radio starts coexistence, as `pm_on_coex_start` does. The SoftAP publishes no coexistence status."
+level = "lower-primitive"
+scope-and-limitations = "All 107 schemes of `coexist_scheme.o` are recovered, including the Wi-Fi scan, connecting and connected schemes beside BLE, classic Bluetooth, IEEE 802.15.4 and external coexistence. The removed Wi-Fi runtime published the station's idle, scan, connecting and connected status, and Wi-Fi's idle status when another radio started coexistence, as `pm_on_coex_start` does (#762, tag `legacy-wifi-2026-10-16`); no composition publishes them since, and #771 brings the shared radio system back. The SoftAP publishes no coexistence status."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-tbtt-anchored-periods"
 section = "coex-coexistence-policy-and-scheduler"
 title = "TBTT-anchored periods"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The station's [modem-sleep engine](../../../../protocols/ieee80211/sta/src/modem_sleep.rs) follows `pm_coex_tbtt_process`: at each TBTT it sets the schedule interval from the beacon interval, restarts the phases and requests the beacon window, and `pm_set_next_tbtt` and `pm_handle_tbtt_interval` keep the TBTT interval at the schedule's overall period in step with the DTIM. The station TSF follows the access point's TSF from the join beacon and each beacon, as `ic_update_sta_tsf` does, so the TBTT fires on the access point's schedule."
+level = "lower-primitive"
+scope-and-limitations = "The station's [modem-sleep engine](../../../../protocols/ieee80211/sta/src/modem_sleep.rs) follows `pm_coex_tbtt_process`: at each TBTT it sets the schedule interval from the beacon interval, restarts the phases and requests the beacon window, and `pm_set_next_tbtt` and `pm_handle_tbtt_interval` keep the TBTT interval at the schedule's overall period in step with the DTIM. The station TSF follows the access point's TSF from the join beacon and each beacon, as `ic_update_sta_tsf` does, so the TBTT fires on the access point's schedule. No composition runs the schedule beside it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority"
 section = "coex-coexistence-policy-and-scheduler"
 title = "BLE advertising dynamic priority"
 status = "implemented"
-level = "composed-product"
+level = "lower-primitive"
 scope-and-limitations = "The LE Controller's `coexistence` module raises every third, second or single advertising event for intervals up to 25 ms, up to 50 ms and longer, as the vendor `coexAdv` level update does. While another radio shares the antenna, the Bluetooth driver's `coexistence::advertising_priorities` gives a legacy advertising item the vendor lanes 4, 0, 13, 13 and replaces lane zero with 4, 9 or 11 by the event's level from the vendor legacy table. Alone on the antenna every lane requests 15, a product choice. The radio role that applied them was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration. Legacy advertising only; extended and periodic advertising have no producer."
 packages = ["oer-bluetooth-controller"]
 
@@ -238,7 +238,7 @@ id = "coex-coexistence-policy-and-scheduler-ble-connection-dynamic-priority"
 section = "coex-coexistence-policy-and-scheduler"
 title = "BLE connection dynamic priority"
 status = "implemented"
-level = "composed-product"
+level = "lower-primitive"
 scope-and-limitations = "The LE Controller's `coexistence` module raises a peripheral connection's first six events, events after more missed receptions than its interval allows and events during a local control procedure, as the vendor `coexConn` level update does. While another radio shares the antenna, the Bluetooth driver's `coexistence::connection_priorities` gives the connection item base lane 4 and an event lane of 4, 9 or 11 by that level from the vendor connection table, and `connection_protection` the link state the vendor coexistence protection. Alone on the antenna every lane requests 15. The radio role that applied them was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration. Peripheral connections only; there is no central role."
 packages = ["oer-bluetooth-controller"]
 
@@ -247,8 +247,8 @@ id = "coex-coexistence-policy-and-scheduler-ieee-802-15-4-operation-priorities"
 section = "coex-coexistence-policy-and-scheduler"
 title = "IEEE 802.15.4 operation priorities"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the [shared table](../../../espressif/coex/src/pti.rs), as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The removed composition published the vendor default levels resolved from the table at start or at `update_coexistence` (#770, tag `legacy-radio-2026-10-16`); it did not re-read a later change of the shared table at each scene, and the OpenThread role-dependent TX/RX level is not applied."
+level = "lower-primitive"
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the [shared table](../../../espressif/coex/src/pti.rs), as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The removed composition published the vendor default levels resolved from the table at start or at `update_coexistence` (#770, tag `legacy-radio-2026-10-16`); it did not re-read a later change of the shared table at each scene, and the OpenThread role-dependent TX/RX level is not applied. #771 brings the shared radio system back."
 packages = ["oer-espressif-coex", "oer-esp32s31-hal"]
 
 [[items]]

@@ -18,7 +18,7 @@ pub enum ControllerTimeRetirementError {
     Faulted,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
 /// Controller-time to scheduler-time scale of one HAL configuration.
 pub use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
@@ -34,25 +34,25 @@ pub enum ControllerDurationError {
 
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 // CAPABILITY: bluetooth-controller-scheduler-timebase
 pub struct ControllerTimeSample {
     latched_time: BluetoothControllerLatchedTime,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl ControllerTimeSample {
     const fn from_live_latch(latched_time: BluetoothControllerLatchedTime) -> Self {
         Self { latched_time }
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub const fn for_validation(raw_ticks: u32) -> Self {
         Self::from_live_latch(BluetoothControllerLatchedTime::from_bits(raw_ticks))
     }
 
     /// Return the complete wrapping raw controller-tick image.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn raw_ticks(&self) -> u32 {
         self.latched_time.bits()
     }
@@ -61,13 +61,13 @@ impl ControllerTimeSample {
     ///
     /// This does not expose an integer image or duplicate scheduler-time
     /// authority. The returned PAC value can only enter a lower typed codec.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn latched_time(&self) -> BluetoothControllerLatchedTime {
         self.latched_time
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 mod worker {
 
     use oer_esp32s31_hal::bluetooth::{
@@ -119,7 +119,7 @@ mod worker {
     pub struct ControllerTimeRequest(u64);
 
     impl ControllerTimeRequest {
-        #[cfg(any(test, feature = "test-support"))]
+        #[cfg(test)]
         pub const fn for_validation(generation: u64) -> Self {
             Self(generation)
         }
@@ -401,17 +401,17 @@ mod worker {
 
 #[cfg(test)]
 pub(crate) use worker::ControllerTimeHardware;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub use worker::ControllerTimeRequest;
 #[cfg(test)]
 pub(crate) use worker::ControllerTimeWorkerPhase;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub use worker::{
     ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequestError,
     ControllerTimeWorker,
 };
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub trait ControllerTimePendingOwner {
     fn recheck_owned_controller_time(
         &mut self,
@@ -428,7 +428,7 @@ pub trait ControllerTimePendingOwner {
     ) -> Result<ControllerTimePendingOrphanStep, ControllerTimeEventError>;
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl<T> ControllerTimePendingOwner for &mut T
 where
     T: ControllerTimePendingOwner + ?Sized,
@@ -454,14 +454,14 @@ where
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
 pub enum ControllerTimePendingOwnerStep {
     Waiting,
     Ready(ControllerTimeSample),
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerTimePendingOrphanStep {
     Idle,
@@ -469,7 +469,7 @@ pub enum ControllerTimePendingOrphanStep {
     Drained,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
 pub struct ControllerTimePendingCore<O>
 where
@@ -479,7 +479,7 @@ where
     request: Option<ControllerTimeRequest>,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
 pub enum ControllerTimePendingCoreStep<O>
 where
@@ -492,7 +492,7 @@ where
     },
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
 pub struct ControllerTimePendingCoreFailure<O>
 where
@@ -502,7 +502,7 @@ where
     error: ControllerTimeEventError,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl<O> ControllerTimePendingCoreFailure<O>
 where
     O: ControllerTimePendingOwner,
@@ -512,7 +512,7 @@ where
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl<O> ControllerTimePendingCore<O>
 where
     O: ControllerTimePendingOwner,
@@ -564,7 +564,7 @@ where
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl<O> Drop for ControllerTimePendingCore<O>
 where
     O: ControllerTimePendingOwner,
@@ -576,7 +576,7 @@ where
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub fn drain_controller_time_orphan(
     owner: &mut impl ControllerTimePendingOwner,
 ) -> Result<ControllerTimePendingOrphanStep, ControllerTimeEventError> {
@@ -589,14 +589,14 @@ pub fn drain_controller_time_orphan(
 /// branch geometry, including rounding earlier fractional microseconds down.
 /// Re-anchoring retains raw ticks not consumed by the microsecond projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub struct ControllerSchedulerEpoch {
     raw_tick_anchor: u32,
     micros_anchor: u32,
     scale: BluetoothControllerTimeScale,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl ControllerSchedulerEpoch {
     /// Establish the source-owned epoch from its first live raw-tick update.
     ///
@@ -604,7 +604,7 @@ impl ControllerSchedulerEpoch {
     /// anchor excludes the conversion remainder so both anchors denote the same
     /// whole microsecond. The constructor only borrows the sample so the caller
     /// can consume that same affine value into [`ControllerSchedulerNow`].
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn from_first_live_update(
         sample: &ControllerTimeSample,
         scale: BluetoothControllerTimeScale,
@@ -621,7 +621,7 @@ impl ControllerSchedulerEpoch {
 
     /// Bind arbitrary validation anchors without publishing that authority in
     /// production code.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub const fn new(
         sample: ControllerTimeSample,
         micros_anchor: u32,
@@ -674,7 +674,7 @@ impl ControllerSchedulerEpoch {
         self.project_raw_ticks(captured.wrapping_controller_ticks())
     }
 
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn project_peripheral_event_start(
         self,
         window: crate::scheduler::SchedulerRawWindow,
@@ -682,7 +682,7 @@ impl ControllerSchedulerEpoch {
         self.project_raw_ticks(window.start())
     }
 
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn project_peripheral_event_end(
         self,
         window: crate::scheduler::SchedulerRawWindow,
@@ -690,7 +690,7 @@ impl ControllerSchedulerEpoch {
         self.project_raw_ticks(window.end())
     }
 
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn project_peripheral_receive_time(
         self,
         time: oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime,
@@ -787,16 +787,16 @@ impl ControllerSchedulerEpoch {
 /// sample from the epoch used to project it. Hardware ownership is not implied,
 /// and the projected image is not RF-ready authority.
 #[must_use = "the epoch-bound live scheduler sample must be consumed by scheduling"]
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub struct ControllerSchedulerNow {
     epoch: ControllerSchedulerEpoch,
     sample: ControllerTimeSample,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl ControllerSchedulerNow {
     /// Bind one exact sample to an already retained source-owned epoch.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn from_retained_epoch(
         epoch: ControllerSchedulerEpoch,
         sample: ControllerTimeSample,

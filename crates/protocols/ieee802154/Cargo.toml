@@ -7,11 +7,6 @@ license.workspace = true
 repository.workspace = true
 description = "Allocation-free hardware-independent IEEE 802.15.4 radio contracts"
 
-[features]
-# The in-memory backend of `model`, on the owner shape, for host tests of
-# packages that drive the port.
-model = []
-
 [dependencies]
 scopeguard = { version = "1.2.0", default-features = false }
 oer-radio-port = { path = "../../radio/port" }

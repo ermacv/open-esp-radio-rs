@@ -5,11 +5,11 @@
 //! its target-or-test availability.
 
 pub(crate) mod config;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod core;
 pub mod executor;
 pub(crate) mod finished_lists;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod hardware;
 pub mod list;
 pub mod time;
@@ -56,9 +56,9 @@ pub trait SchedulerRunInterruptStorage {
     ) -> Result<R, T>;
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub use core::{ControllerTimeAcquisitionError, SchedulerInitialized};
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub use hardware::{SchedulerHardwareError, SchedulerStartError, SchedulerStopError};
 pub use timing::SchedulerTimingPolicy;
 

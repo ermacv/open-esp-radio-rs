@@ -4,11 +4,6 @@
 //! acquire radio access nor publish parent calibration state. A returned child
 //! completion must still be accepted by its parent transition.
 
-#![cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code)
-)]
-
 use super::{
     CHANNEL_READY_SAMPLE_LIMIT, PhyTargetObserver, PhyTargetPortError, RF_OPERATION_LIMIT,
 };
@@ -198,10 +193,6 @@ pub fn rx_gain<D: PhyShortDelay, P>(
 
 /// Execute an RX-gain root through its terminal edge. Its caller owns state
 /// publication; success here may still contain a typed calibration failure.
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 #[inline(never)]
 pub fn rx_gain_init<D: PhyShortDelay, P>(
     child: &mut crate::rx::gain::PhyRxGainInitTransition,
@@ -292,10 +283,6 @@ impl From<crate::rx::gain_calibration::PhyRxGainDcFailure> for DirectRxGainDcErr
     }
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn force_rx_gain_pbus(
     registers: &mut impl SharedPhyAccess,
     bank: crate::rx::gain_calibration::PhyRxGainDcBank,
@@ -308,10 +295,6 @@ fn force_rx_gain_pbus(
     }
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn rx_gain_rfpll_direct<D: PhyShortDelay>(
     crystal_selector: u8,
     registers: &mut impl SharedPhyAccess,
@@ -343,10 +326,6 @@ fn rx_gain_rfpll_direct<D: PhyShortDelay>(
     }
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn rx_gain_one_step_direct<D: PhyShortDelay>(
     request: crate::rx::gain_calibration::PhyRxDcCalibrationRequest,
     registers: &mut impl SharedPhyContext,
@@ -369,10 +348,6 @@ fn rx_gain_one_step_direct<D: PhyShortDelay>(
     }
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn rx_gain_cleanup_direct<D: PhyShortDelay>(
     registers: &mut impl SharedPhyContext,
 ) -> Result<(), PhyTargetPortError> {
@@ -394,10 +369,6 @@ fn rx_gain_cleanup_direct<D: PhyShortDelay>(
     Ok(())
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 #[inline(never)]
 fn rx_gain_dc_direct<D: PhyShortDelay>(
     parameters: crate::rx::gain_calibration::PhyRxGainDcParameters,
@@ -633,10 +604,6 @@ fn rx_gain_dc_direct<D: PhyShortDelay>(
     }
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn short_settle<D: PhyShortDelay>(micros: u32) -> Result<(), PhyTargetPortError> {
     if micros != 0 && micros <= D::MAX_MICROS && D::settle_micros(micros) {
         Ok(())
@@ -645,10 +612,6 @@ fn short_settle<D: PhyShortDelay>(micros: u32) -> Result<(), PhyTargetPortError>
     }
 }
 
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-)]
 fn complete_rfpll_hot<D: PhyShortDelay>(
     binding: crate::analog::rfpll::RfpllFrequencyExternalBinding,
     registers: &mut impl SharedPhyAccess,

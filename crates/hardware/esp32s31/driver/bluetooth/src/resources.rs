@@ -17,12 +17,7 @@ use oer_esp32s31_hal::bluetooth::ControllerHalBorrow;
 #[cfg(test)]
 use oer_esp32s31_hal::bluetooth::TaskOwnerReuniteFailure;
 
-#[cfg(any(
-    target_arch = "riscv32",
-    test,
-    feature = "test-support",
-    feature = "validation-probes"
-))]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use oer_esp32s31_hal::bluetooth::{
     ClockedOwner, InterruptSetupOwner as HalBluetoothInterruptSetupOwner,
     TaskOwner as HalBluetoothTaskOwner,
@@ -40,7 +35,7 @@ use {
     oer_esp32s31_hal::types::BluetoothPhyRegisterInitInputs,
 };
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 use crate::controller_time::ControllerTimeWorker;
 #[cfg(test)]
 use crate::controller_time::ControllerTimeWorkerPhase;
@@ -55,12 +50,7 @@ use crate::controller_time::{
 ///
 /// This transition performs no MMIO. In particular it does not configure
 /// controller masks or a CPU interrupt route.
-#[cfg(any(
-    target_arch = "riscv32",
-    test,
-    feature = "test-support",
-    feature = "validation-probes"
-))]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) fn separate_interrupt_owner(
     clocked: ClockedOwner,
 ) -> (TaskResources, InterruptBankOwner) {
@@ -68,7 +58,7 @@ pub(crate) fn separate_interrupt_owner(
     (
         TaskResources {
             registers: task,
-            #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+            #[cfg(any(target_arch = "riscv32", test))]
             controller_time: ControllerTimeWorker::new_idle(),
         },
         InterruptBankOwner {
@@ -82,20 +72,15 @@ pub(crate) fn separate_interrupt_owner(
 /// No MMIO operation is exposed until its finite lifecycle transaction has
 /// independent vendor evidence.
 #[must_use = "the Bluetooth task owner must return to the clocked client"]
-#[cfg(any(
-    target_arch = "riscv32",
-    test,
-    feature = "test-support",
-    feature = "validation-probes"
-))]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub struct TaskResources {
     registers: HalBluetoothTaskOwner,
     // Host validation images execute finite register probes without a time runner.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     controller_time: ControllerTimeWorker,
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl TaskResources {
     /// The HAL task owner, which proves the Bluetooth module clocks to the
     /// shared PHY domain and BTBB.
@@ -150,12 +135,7 @@ impl TaskResources {
     }
 }
 
-#[cfg(any(
-    target_arch = "riscv32",
-    test,
-    feature = "test-support",
-    feature = "validation-probes"
-))]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl TaskResources {
     /// Publish the selected random Controller identity while every radio role is idle.
     ///
@@ -379,12 +359,7 @@ impl TaskResources {
 
 /// Inactive owner of the Bluetooth controller interrupt bank.
 #[must_use = "the interrupt owner must be installed or reunited"]
-#[cfg(any(
-    target_arch = "riscv32",
-    test,
-    feature = "test-support",
-    feature = "validation-probes"
-))]
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) struct InterruptBankOwner {
     _registers: HalBluetoothInterruptSetupOwner,
 }

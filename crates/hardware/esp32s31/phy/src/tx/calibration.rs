@@ -5,11 +5,6 @@
 //! delay and a synchronous SAR callback. Rust exposes both as one externally
 //! completed operation per transition step.
 
-#![cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code)
-)]
-
 /// Complete pinned debug helper; this ESP32-S31 archive always returns zero.
 #[inline]
 #[cfg(feature = "validation-probes")]
@@ -512,10 +507,6 @@ impl PhyToneSarTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_calibration_direct")
-    )]
     pub const fn action(self) -> PhyToneSarAction {
         let measurement = self.request.measurement;
         let sample = self.sample;
@@ -557,10 +548,6 @@ impl PhyToneSarTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_calibration_direct")
-    )]
     pub fn advance(
         &mut self,
         completion: PhyToneSarCompletion,

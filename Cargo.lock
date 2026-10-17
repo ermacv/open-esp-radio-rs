@@ -2222,12 +2222,10 @@ dependencies = [
  "oer-esp32s31-pac",
  "oer-espressif-coex",
  "oer-espressif-ieee802154-engine",
- "oer-ieee802154-trace",
  "oer-memory",
  "oer-radio-analog",
  "oer-radio-clock",
  "oer-radio-coex",
- "oer-trace",
 ]
 
 [[package]]
@@ -2440,8 +2438,6 @@ dependencies = [
  "bytemuck",
  "oer-espressif-coex",
  "oer-ieee802154",
- "oer-ieee802154-trace",
- "oer-trace",
 ]
 
 [[package]]
@@ -2459,17 +2455,14 @@ dependencies = [
  "clap",
  "oer-chip-profile",
  "oer-command-tree",
- "oer-device-lock",
  "oer-devices",
  "oer-durable",
  "oer-image",
  "oer-image-bundle",
- "oer-image-checks",
  "oer-image-compare",
  "oer-process",
  "serde_json",
  "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -3130,13 +3123,6 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-trace"
-version = "0.1.0"
-dependencies = [
- "oer-trace",
-]
 
 [[package]]
 name = "oer-image"

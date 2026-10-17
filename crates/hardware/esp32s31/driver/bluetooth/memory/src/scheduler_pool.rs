@@ -693,7 +693,7 @@ impl<'pools> SchedulerItemSpace<'pools> {
     }
 
     /// Record a status as hardware does when it executes a listed item.
-    #[cfg(any(feature = "validation-probes", test))]
+    #[cfg(test)]
     #[doc(hidden)]
     pub fn record_status_for_validation(&self, id: SchedulerItemId, status: u32) {
         self.header(id).set_status(status);

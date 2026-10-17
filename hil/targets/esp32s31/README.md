@@ -17,8 +17,8 @@ The agent binary is the HIL application of the shared stage-two boot
 contract. Each image class selects one base feature: `system-watchdog`,
 `system-panic-reset` or `boot-smoke` (`usb-jtag-off` adds to
 `system-watchdog`). Board initialization, relocation and interrupt-stack
-mechanics belong to the shared platform; application images use the same
-mechanism through `cargo fw build`. A hardware scenario verdict remains a
+mechanics belong to the shared platform; an application image would use the
+same mechanism through `oer-image`. A hardware scenario verdict remains a
 separate HIL responsibility.
 
 ## Protocol families per image

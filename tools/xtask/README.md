@@ -71,11 +71,10 @@ at the caller; unrelated errors and notes do not satisfy the contract.
 
 ## Firmware builds and image checks
 
-The PHY library's target build. Images are not xtask's: `cargo fw build`
-([`oer-fw`](../fw/src/main.rs)) builds the examples, `cargo hil images check`
+The PHY library's target build. Images are not xtask's: `cargo hil images check`
 ([`oer-hil-cli`](../../hil/host/cli/README.md)) builds or type-checks the HIL
-image classes, and both go through [`oer-image`](../image/pipeline/README.md); the
-gate runs them as processes.
+image classes through [`oer-image`](../image/pipeline/README.md); the
+gate runs it as a process.
 
 [`tools/phy-archive`](../phy-archive/README.md) holds verification's
 compiled-symbol audit (`oer-check-phy-archive`). The gate runs it as a

@@ -86,7 +86,7 @@ impl ControllerHalInitialized {
         })
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub fn initialize_for_validation(
         clocked: ClockedOwner,
         initialize: impl FnOnce(&mut TaskResources, BluetoothControllerHalInitConfig),

@@ -5,11 +5,6 @@
 //! `phy_set_rx_gain_table(0x985, 0)`. RX-DC and RX-IQ calibration remain
 //! separate typed predecessors; this publisher accepts only copied outcomes.
 
-#![cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code)
-)]
-
 use crate::{
     analog::pbus::PhyPbusForceTest,
     calibration::baseband::{
@@ -226,10 +221,6 @@ impl PhyRxGainPublishTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn action(&self) -> PhyRxGainPublishAction {
         match self.step {
             Step::Debug(bank) => PhyRxGainPublishAction::ConfigurePbusDebugMode { bank },
@@ -282,10 +273,6 @@ impl PhyRxGainPublishTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn advance(
         &mut self,
         completion: PhyRxGainPublishCompletion,
@@ -829,10 +816,6 @@ impl PhyRxGainInitTransition {
     /// publisher transition, but firmware does not route every table entry
     /// through the action/binding ABI.
     #[cfg(target_arch = "riscv32")]
-    #[cfg_attr(
-        feature = "rx-gain-hot-sram",
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-    )]
     #[inline(never)]
     pub(crate) fn execute_publish_target_direct<D: crate::executor::wait::PhyShortDelay>(
         &mut self,
@@ -902,10 +885,6 @@ impl PhyRxGainInitTransition {
     }
 
     #[cfg(target_arch = "riscv32")]
-    #[cfg_attr(
-        feature = "rx-gain-hot-sram",
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-    )]
     pub(crate) fn execute_tail_target_direct(
         &mut self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
@@ -955,10 +934,6 @@ impl PhyRxGainInitTransition {
     }
 
     #[cfg(test)]
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub(crate) fn finish_minimum(&mut self) -> Result<(), PhyRxGainInitTransitionError> {
         match &mut self.step {
             InitStep::Dc(transition) => transition
@@ -971,10 +946,6 @@ impl PhyRxGainInitTransition {
     /// Lower only the live cursor. Completed coefficient products stay in this
     /// owner until the caller requests the terminal action.
     #[cfg(test)]
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub(crate) fn prepare_external(
         &self,
     ) -> Result<Option<PhyRxGainInitExternalBinding>, PhyRxGainExternalBindingError> {
@@ -1037,10 +1008,6 @@ impl PhyRxGainInitTransition {
         Some(memory)
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn action(&self) -> PhyRxGainInitAction {
         match self.step {
             InitStep::PrepareDcControlRestore => PhyRxGainInitAction::PrepareDcControlRestore,
@@ -1058,10 +1025,6 @@ impl PhyRxGainInitTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn advance(
         &mut self,
         completion: PhyRxGainInitCompletion,

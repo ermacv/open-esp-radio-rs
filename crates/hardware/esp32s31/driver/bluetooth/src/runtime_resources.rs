@@ -14,7 +14,7 @@
 
 use oer_esp32s31_hal::bluetooth::BluetoothModemLpTimerEpoch;
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 use crate::resources::TaskResources;
 
 use crate::{
@@ -58,7 +58,7 @@ impl ControllerEventCells {
     /// Coalesced readiness notifications are not work ownership. Discard
     /// them only after the Controller was reset, with every IRQ route of its
     /// epoch removed, so the next epoch starts quiet.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn clear_notifications_after_reset(&self) {
         let _ = self.scheduler_wake.take();
         let _ = self.modem_lp_timer_worker_wake.take();
@@ -167,7 +167,7 @@ impl ControllerTaskRuntime<'_> {
 
     /// Whether scheduler workers hold no transaction that retirement would
     /// lose.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn retirement_ready(&self) -> Result<(), ControllerRuntimeRetirementError> {
         if self.scheduler_finished_lists.is_active() {
             return Err(ControllerRuntimeRetirementError::FinishedLists);
@@ -187,7 +187,7 @@ impl ControllerTaskRuntime<'_> {
 /// worker step never requires an independently recovered register
 /// capability, and [`Self::retire`] returns both for the Controller shutdown.
 #[must_use = "the powered task endpoint retains the Controller task owner"]
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub struct ControllerPoweredTaskRuntime<'runtime> {
     pub(crate) runtime: ControllerTaskRuntime<'runtime>,
     pub(crate) task: TaskResources,
@@ -205,7 +205,7 @@ pub enum ControllerTaskRetirementError {
     ControllerTime(crate::controller_time::ControllerTimeRetirementError),
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl<'runtime> ControllerPoweredTaskRuntime<'runtime> {
     pub(crate) const fn new(
         runtime: ControllerTaskRuntime<'runtime>,

@@ -63,8 +63,8 @@ esac
 step "Next steps"
 cat <<'NEXT'
   cargo fw devices                  the attached boards: port, MAC, chip
-  cargo fw build station            build an example into an image bundle
-  cargo fw flash station --monitor  write it to the attached board and watch its console
+  cargo hil image build CLASS       build a HIL image class into an image bundle
+  cargo fw flash BUNDLE --monitor   write a bundle to the attached board and watch its console
   cargo stand init                  a stand file from the attached boards, for HIL runs
 NEXT
 exit "$status"

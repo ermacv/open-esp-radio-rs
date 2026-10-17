@@ -36,7 +36,7 @@ impl SchedulerTimingPolicy {
     }
 
     /// Whether one fresh sample still precedes the guarded item start.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn initial_deadline_is_open(
         self,
         sample: &crate::ControllerTimeSample,

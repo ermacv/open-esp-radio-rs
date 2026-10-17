@@ -12,11 +12,6 @@
 //! register ordering and arithmetic as caller-driven actions. It can advance
 //! only from externally delivered readiness/timer completions.
 
-#![cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code)
-)]
-
 /// Split one packed DC value exactly as pinned archive `get_dc_value`.
 #[inline]
 #[cfg(feature = "validation-probes")]
@@ -431,10 +426,6 @@ impl PhyDcIqEstimateTransition {
         Ok(())
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub const fn action(&self) -> PhyDcIqAction {
         match self.step {
             PhyDcIqStep::Configure => PhyDcIqAction::Configure(self.request),
@@ -479,10 +470,6 @@ impl PhyDcIqEstimateTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn advance(&mut self, completion: PhyDcIqCompletion) -> Result<(), PhyDcIqTransitionError> {
         self.step = match (self.step, completion) {
             (PhyDcIqStep::Configure, PhyDcIqCompletion::Configured(request))

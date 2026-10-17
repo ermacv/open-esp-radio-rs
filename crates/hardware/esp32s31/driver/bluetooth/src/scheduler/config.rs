@@ -38,7 +38,7 @@ impl SchedulerSoftwareConfig {
     /// so the standalone lead is 137. DTM and advertising consume the same
     /// scheduler policy; it is not part of a role-specific command or
     /// descriptor ABI.
-    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub const fn preparation_lead_micros(self) -> u32 {
         self.preparation_lead_micros
     }

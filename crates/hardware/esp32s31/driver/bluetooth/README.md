@@ -45,9 +45,7 @@ register. Each wait observation joins a fresh task-side read with a fresh
 scheduler-state read from the stable interrupt owner; the scheduler wake only
 tells the worker when to observe again. Operations
 that discharge an `unsafe` obligation, such as publishing an interrupt owner
-or preparing Controller output, are safe functions of this crate. The
-`test-support` feature exposes validation constructors to dependent crates'
-host tests; it is not a production feature.
+or preparing Controller output, are safe functions of this crate.
 
 The separate [`memory`](memory/) crate retains controller-SRAM codecs.
 

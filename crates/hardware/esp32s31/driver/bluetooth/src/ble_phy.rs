@@ -2,7 +2,7 @@
 
 #[cfg(target_arch = "riscv32")]
 use crate::{phy::ControllerPhyJoined, resources::InterruptBankOwner};
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
@@ -13,7 +13,7 @@ use oer_esp32s31_bluetooth_memory::{
 };
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::bluetooth::ModemLpTimerLowPowerHardwareInitializedOwner;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 use oer_esp32s31_hal::{bluetooth::ControllerPublicAddress, types::BluetoothPhyRegisterInitInputs};
 
 /// Controller-global DF storage after its disabled-CTE descriptor is visible to hardware.
@@ -296,7 +296,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize> ControllerPhyJoined<'cells, MODE
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 fn apply_register_init_then_public_address<T>(
     storage: &oer_esp32s31_bluetooth_memory::BlePhyEngineCpuOwned,
     public_address: BluetoothPublicDeviceAddress,
@@ -312,7 +312,7 @@ fn apply_register_init_then_public_address<T>(
     report
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 fn apply_register_init(
     storage: &oer_esp32s31_bluetooth_memory::BlePhyEngineCpuOwned,
     initialize: impl FnOnce(BluetoothPhyRegisterInitInputs),

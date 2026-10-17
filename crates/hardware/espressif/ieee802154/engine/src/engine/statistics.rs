@@ -2,6 +2,12 @@
 //! (`CONFIG_IEEE802154_TXRX_STATISTIC`, `esp_ieee802154_debug.c` at ESP-IDF
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`): operation counts the driver
 //! keeps and the MAC diagnostic counters it drains at every interrupt.
+//!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_debug.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 
 use crate::ll::Ieee802154LowLevel;
 use crate::types::{Ieee802154DebugCounter, Ieee802154Event, Ieee802154EventMask};

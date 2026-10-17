@@ -87,3 +87,33 @@ Source text is not treated as an API oracle. Verification must not require or
 forbid functions by matching their names with regular expressions; public API
 shape belongs in compile tests, behaviour in unit/HIL tests, and final-link
 constraints in artifact inspection.
+
+## Attribution and licenses
+
+The root [`NOTICE`](../NOTICE) holds every attribution: each third-party work
+the repository derives from, its license, and the files derived from it, with
+the full text of each BSD-3-Clause license. A new derived file is recorded in
+the same change:
+
+- **its own file** names the source, its pinned revision and its license
+  beside the code; a file ported from an Apache-2.0 work carries the
+  modification notice "Ported from … and modified by Vladislav Ermachenkov"
+  (Apache-2.0 §4(b));
+- **`NOTICE`** gains the file under its source's entry, or a new entry;
+- **the crate** becomes `Apache-2.0` when it holds a port of Apache-2.0 code
+  (as the ESP-IDF port crates are), and stays `MIT OR Apache-2.0` for
+  BSD-3-Clause material, whose notice `NOTICE` keeps; a crate depending on an
+  `Apache-2.0` crate states its effective license (the
+  [facade](../crates/oer/README.md#license)).
+
+Copyleft code (GPL, such as Linux `mac80211`) is never translated: such a
+project may be cited for observed behaviour that a specification also fixes.
+
+### Sources without a license
+
+From a source that has no license, such as `esp32s31-bt-lib`, the repository
+records only facts: values, layouts, addresses, order of operations and names.
+It records neither code nor verbatim data blocks (whole tables copied as they
+are). A verbatim table is replaced by values derived independently, measured
+on the stand; where that is not possible, it goes to the owner as a question
+and is never kept silently.

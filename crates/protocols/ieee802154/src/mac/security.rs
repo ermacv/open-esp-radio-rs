@@ -3,6 +3,12 @@
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`), which claims
 //! `OT_RADIO_CAPS_TRANSMIT_SEC`: the radio, not the stack, gives each
 //! secured transmission its frame counter and key.
+//!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/openthread/src/port/esp_openthread_radio.c` (Copyright
+//! Espressif Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 
 use crate::mac::enhanced_ack::{EnhancedAck, KeyIdMode};
 use crate::mac::header::PhrFrame;

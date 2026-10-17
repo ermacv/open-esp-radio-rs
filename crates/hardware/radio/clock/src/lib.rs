@@ -1,5 +1,10 @@
 //! Chip-neutral shared modem clock reference-count planner.
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/esp_hw_support/modem/modem_clock.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! Every radio module (Wi-Fi, Bluetooth, IEEE 802.15.4, PHY, coexistence,
 //! ...) requests a fixed set of modem clock dependencies. Each dependency has
 //! one software refcount. Both acquisition and release visit a module's

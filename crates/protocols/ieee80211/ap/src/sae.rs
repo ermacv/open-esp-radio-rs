@@ -1,5 +1,10 @@
 //! The access point's SAE responder.
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c` (Copyright
+//! Espressif Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! This ports the vendor softAP's SAE authentication: `handle_auth_sae` and
 //! `sae_sm_step` of its hostapd, driven the way its WPA3 hostap task drives
 //! them. Each station owns one session that moves through Nothing,

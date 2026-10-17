@@ -1,6 +1,11 @@
 //! Interrupt-driven IEEE 802.15.4 MAC engine ported from the public ESP-IDF
 //! driver (`components/ieee802154/driver/esp_ieee802154_dev.c`).
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_dev.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! The engine keeps the vendor's private state machine, receive ring and
 //! operation order. Every decision the vendor takes inside its interrupt
 //! handler — ACK and pending-bit selection, the enhanced ACK, the ACK

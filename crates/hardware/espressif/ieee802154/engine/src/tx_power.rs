@@ -1,5 +1,10 @@
 //! IEEE 802.15.4 transmit-power resolution.
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_pib.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! The public vendor PIB supplies the conversion control flow but obtains the
 //! actual ordered dBm levels from the BTBB provider `bt_bb_get_tx_pwr_table`.
 //! This module ports that control flow, validates a level set and produces an

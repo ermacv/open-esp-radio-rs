@@ -62,7 +62,6 @@ pub enum BluetoothPhyClientError {
 /// Every check runs before the client set or BTBB changes: Bluetooth already
 /// holds BTBB, or the client set rejects the client. The lease comes back
 /// either way.
-// CAPABILITY: phy-protocol-consumer-protocol-client-ownership-bluetooth, bluetooth-initial-phy-handoff
 pub fn join_bluetooth<'l, 'r>(
     ready: PhyReady<'l, 'r>,
     task: &TaskOwner,

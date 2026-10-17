@@ -198,7 +198,7 @@ ceiling. Each executor returns observations, coverage and model participation;
 verification owns the verdict. `MATCH` requires all obligations of the declared
 relation; a proven counterexample is `DIFF`; unavailable required behavior or
 coverage is `INCOMPLETE`. A recorded difference is retained even when other
-coverage is incomplete. Qualification evaluates eligibility externally.
+coverage is incomplete.
 
 Execution-session state belongs to the scenario contract. Independent cases
 start fresh; stateful phases carry only declared persistent state. Unknown

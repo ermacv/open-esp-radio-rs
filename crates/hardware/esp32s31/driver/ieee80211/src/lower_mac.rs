@@ -114,8 +114,7 @@
 //! rates only, the one program with a response field; hardware has not
 //! confirmed its on-air behaviour. A published attempt cannot be withdrawn: the
 //! S31 abort path needs the queue's hardware timeout edge. A-MPDU transmission
-//! returns in step 2 (#563); access-point TBTT schedules are not implemented,
-//! as the qualification catalog records.
+//! returns in step 2 (#563); access-point TBTT schedules are not implemented.
 
 use core::pin::Pin;
 use oer_radio_port::{PoolPath, Root};

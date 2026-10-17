@@ -33,7 +33,6 @@ impl DtmRxRssi {
 /// closes the high-byte role as RSSI while leaving the low-bit failure
 /// meanings and physical unit unresolved.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: dtm-rx-accounting
 pub struct DtmRxResultProjection(DtmRxRssi);
 
 /// Why a positional DTM RX result word is not counted by the reviewed path.

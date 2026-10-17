@@ -1,5 +1,5 @@
-//! The HIL evidence archive (#761 Q7): the sealed runs that qualification
-//! evidence cites, kept outside the repository in immutable versions.
+//! The HIL evidence archive (#761 Q7): the sealed runs the repository
+//! cites, kept outside the repository in immutable versions.
 //!
 //! - [`manifest`]: a version's [`Manifest`], every [`RunRef`] it holds and
 //!   the digest of its payload, and the version's content-addressed name;
@@ -8,7 +8,7 @@
 //! - [`pack`]: the deterministic payload of a version, written from a run
 //!   store;
 //! - [`copy`]: a verified local [`Copy`](struct@Copy) of a version, laid out as a run
-//!   store, the only HIL input of the qualification evaluator;
+//!   store;
 //! - [`release`]: publication and download through [`release::Releases`],
 //!   a transport the caller supplies.
 //!

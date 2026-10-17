@@ -1,9 +1,7 @@
 # HIL observer identity
 
 `oer-hil-observer` owns the build identity of the HIL observer, the runner
-(`oer-hil-runner`), which the runner records in every run and the
-qualification evaluator recomputes to decide whether a run's observer still
-observes the checkout.
+(`oer-hil-runner`), which the runner records in every run.
 
 | Module | Owns |
 | --- | --- |
@@ -14,8 +12,7 @@ observes the checkout.
 | `receipt` | The receipt of a prepared runner, `OER_OBSERVER_RECEIPT` and the checkout's current descriptor `target/hil/current-observer.json` |
 | `compile`, `resolve`, `prepare` (feature `producer`) | Building the runner from Cargo's artifact messages, resolving its graph (the runner's build script), and its private copy under `target/hil/runners/<sha256>/` with the invocation's receipt (`prepare`), or without reading its embedded build or writing a receipt (`build`, for another revision's runner, whose build record is in that revision's format) |
 
-`cargo hil` and `cargo hil observer` prepare the observer; the
-evaluator reads prepared descriptors and never runs Cargo for it.
+`cargo hil` and `cargo hil observer` prepare the observer.
 
 ```console
 cargo test -p oer-hil-observer --features producer

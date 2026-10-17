@@ -2,13 +2,12 @@
 
 `crates/` contains the source-owned radio implementation, its protocol code
 and production integrations. Applications supply board identity, credentials
-and peripherals. HIL scenarios, traffic generators, UART test protocols,
-vendor artifacts and qualification policy live outside this tree. See the
+and peripherals. HIL scenarios, traffic generators, UART test protocols
+and vendor artifacts live outside this tree. See the
 [source policy](../docs/source-policy.md).
 
-The [ESP32-S31 radio capability map](hardware/esp32s31/driver/FEATURES.md) indexes shared
-lifecycle, PHY, coexistence and protocol inventories alongside their current
-qualification authorities.
+The [ESP32-S31 radio feature map](hardware/esp32s31/driver/FEATURES.md) indexes shared
+lifecycle, PHY, coexistence and protocol inventories.
 
 ## Source map
 
@@ -166,15 +165,10 @@ internal SRAM; placement checks enforce this boundary.
 
 Protocol limits, security modes and live/partial/fail-closed boundaries belong
 in the domain inventories indexed by the
-[radio capability map](hardware/esp32s31/driver/FEATURES.md). A parser,
+[radio feature map](hardware/esp32s31/driver/FEATURES.md). A parser,
 register setter, descriptor or host test alone does not establish an
 operational radio feature. Do not infer concurrent-radio support or new
 capabilities from structural reuse.
-
-[Qualification](../qualification/README.md) is the readiness authority. Its
-program manifests connect production owners to host, vendor and dated HIL
-evidence; none exists since #770 (tag `legacy-radio-2026-10-16`). Validation
-of a manifest is not a passing hardware qualification.
 
 Unit tests live in separate child files beside the modules whose private
 contracts they exercise; public integration tests live in crate `tests/`

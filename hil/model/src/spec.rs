@@ -11,12 +11,9 @@ use crate::{
     finite::{self, NonFinite},
 };
 
-/// The contract a scenario exercises. A qualification proof is accepted
-/// only when its scenario's subject is the capability's contract, so an
-/// incidental scenario cannot stand in for the minimal one. The contract's
-/// bound ceilings are its port conformance crate's typed `CEILINGS`
-/// constant, which the scenario's waits and verdict use directly (#761,
-/// owner decision 6223045367).
+/// The contract a scenario exercises. The contract's bound ceilings are its
+/// port conformance crate's typed `CEILINGS` constant, which the scenario's
+/// waits and verdict use directly (#761, owner decision 6223045367).
 pub trait Subject {
     const CONTRACT: ContractName;
 }
@@ -24,8 +21,8 @@ pub trait Subject {
 /// Everything about a scenario but its execution: identity, purpose,
 /// typed parameters, criteria, trace and findings, what it needs and how
 /// long it takes, and its verdict. Execution is a separate trait in the
-/// executor, so this one stays a format the qualification evaluator links
-/// to recompute verdicts.
+/// executor, so this one stays a format a reader links to recompute
+/// verdicts.
 pub trait Spec {
     const ID: ScenarioId;
     /// [`Conformance`](crate::Conformance), [`Interop`](crate::Interop),
@@ -36,7 +33,7 @@ pub trait Spec {
     type Subject: Subject;
     /// One instance's parameters; instances replace copied scenarios.
     type Params: Clone + Debug + Serialize + DeserializeOwned;
-    /// Acceptance thresholds a qualification requirement owns. A bound the
+    /// Acceptance thresholds. A bound the
     /// backend reports is not a criterion: it travels in the trace.
     type Criteria: Clone + Debug + Serialize + DeserializeOwned;
     /// What a run records; the verdict's only input besides the criteria.

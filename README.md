@@ -6,13 +6,12 @@ ownership, Embassy integration and independent verification tooling.
 The production implementation targets **ESP32-S31**. IEEE 802.11 has portable
 protocols and an ESP32-S31 driver core, but no ESP32-S31 composition yet.
 Bluetooth LE and IEEE 802.15.4 provide narrower implemented operations with
-explicit limits. A source API,
-host test or target build does not establish on-air readiness: the
-[qualification evaluator](qualification/README.md) derives that from accepted
-evidence. ESP32-C5 has investigation inputs, not a production radio backend.
+explicit limits. A source API, host test or target build does not establish
+that an operation works on air. ESP32-C5 has investigation inputs, not a
+production radio backend.
 
 See [driver architecture](crates/README.md) for ownership and supported
-composition, and the [ESP32-S31 radio capability map](crates/hardware/esp32s31/driver/FEATURES.md)
+composition, and the [ESP32-S31 radio feature map](crates/hardware/esp32s31/driver/FEATURES.md)
 for shared lifecycle, PHY, coexistence and all three protocol inventories.
 
 The project connects open radio implementation with typed resource ownership and
@@ -39,8 +38,6 @@ except the crates holding the ESP-IDF port, which are Apache-2.0 only.
 | Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
-| See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
-| Assess a selected scope | [Qualification programs](qualification/README.md) |
 | Build API docs, lockfiles and worktrees | [Repository tooling](tools/xtask/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
 | Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
@@ -54,7 +51,6 @@ except the crates holding the ESP-IDF port, which are Apache-2.0 only.
 | `crates/` | Shipping protocol, chip, adapter, runtime and integration code |
 | `platform/` | Shared board boot, staged entry and memory placement |
 | `hil/` | Hardware protocol, runner, fixtures, scenarios and test images |
-| `qualification/` | Engineering map, capability programs and independent evaluation |
 | `registers/` | Reviewed hardware descriptions and PAC publication inputs |
 | `verification/` | Chip knowledge and concrete vendor comparison projects |
 | `tools/` | Blobray, memory analysis and `cargo xtask` repository operations |

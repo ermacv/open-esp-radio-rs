@@ -8,8 +8,8 @@
 //! findings, the [`Resources`] and [`TargetCapabilities`] it needs, an
 //! [`Estimate`] derived from its waits, and a pure [`Spec::verdict`] over a
 //! recorded trace. Because the verdict is a pure function of the trace and
-//! the criteria, the qualification evaluator recomputes it without a new
-//! run; this crate is a `formats` package so that it may.
+//! the criteria, a reader can recompute it without a new run; this crate is
+//! a `formats` package so that it may.
 //!
 //! A contract's bounds are its port conformance crate's own type, with a
 //! `CEILINGS` constant; a conformance trace starts with the

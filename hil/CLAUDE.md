@@ -5,7 +5,7 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 
 | Directory | Owns |
 | --- | --- |
-| `protocol/`, `schema/`, `observer/` | Host/target wire protocol; the evidence contract shared with qualification; the observer's build identity |
+| `protocol/`, `schema/`, `observer/` | Host/target wire protocol; the evidence contract; the observer's build identity |
 | `scenarios/` | Versioned scenario documents and their [roles](scenarios/README.md#roles) |
 | `model/`, `trace-header/`, `host/executor/` | The typed scenario model that replaces those documents (#761): spec with a purpose type and a pure verdict, validated names, derived waits, the stand profile; its execution (the model, or the stand under a granted lease) and the tier plan ([model](model/README.md), the no_std [trace header](trace-header/README.md) of conformance traces, [executor](host/executor/README.md)). Each new HIL scenario crate keeps the identical `hil-scenario` copy of `clippy.toml` |
 | `host/` | `cargo hil` (`cli/`), runner, the flash operation, image builder, families, fixtures, the evidence archive of cited runs (`evidence-archive/`, `cargo hil archive`) ([host guide](host/README.md)) |

@@ -153,7 +153,6 @@ pub const fn rx_dc_calibration_correction(delta: i32, threshold: i32, shift: u8)
 
 /// Heap-free translation of one complete RX DC-calibration step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: phy-rx-and-tx-calibration-primitives-rx-gain-calibration
 pub struct PhyRxDcCalibrationTransition {
     request: PhyRxDcCalibrationRequest,
     step: Step,

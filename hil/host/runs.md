@@ -11,8 +11,7 @@ The bundle contract is in the [architecture](architecture.md).
 Every checkout's `target/hil/runs` is a link to one store shared by
 all checkouts of this user, `~/.local/share/open-esp-radio/hil/runs`
 (`$XDG_DATA_HOME`, or `$OER_HIL_STORE/<target>/runs`). `cargo hil` creates the
-link, and refuses a checkout whose own run directory holds runs. Qualification reads the store from any checkout and still decides
-per bundle whether it applies to that checkout's sources.
+link, and refuses a checkout whose own run directory holds runs.
 
 ```console
 cargo hil runs list --scenario system-watchdog --outcome failed --since 7d
@@ -351,9 +350,8 @@ runtime features of every image class it builds, `features=+usb-jtag-off,-panic-
 its runs build with `cargo hil run --features`, which only an experiment
 accepts, the build record keeps the delta, the preflight accepts the flashed
 image by the image keys of its class's features with the delta applied (an arm
-without an instrument reports fewer keys than its class), `report verify`
-checks the image's features against it, and qualification never counts such an image as its
-class's. Each arm's revision is
+without an instrument reports fewer keys than its class), and `report
+verify` checks the image's features against it. Each arm's revision is
 checked out in a worktree below `target/hil/ab/<id>/` and captured with its
 overrides into a source snapshot; this checkout's runner builds and runs
 both, so both revisions must have this checkout's `messages.lock`. For

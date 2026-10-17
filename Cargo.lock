@@ -3305,31 +3305,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-qualification"
-version = "0.1.0"
-dependencies = [
- "oer-command-tree",
- "oer-durable",
- "oer-hil-evidence-archive",
- "oer-hil-observer",
- "oer-hil-run-bundle",
- "oer-hil-run-bundle-format",
- "oer-hil-scenario-catalog",
- "oer-hil-schema",
- "oer-markers",
- "oer-process",
- "oer-repo",
- "oer-vendor-artifacts",
- "oer-vendor-evidence-shard",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "toml",
- "toml_edit",
-]
-
-[[package]]
 name = "oer-radio-analog"
 version = "0.1.0"
 

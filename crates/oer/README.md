@@ -33,7 +33,7 @@ facade also enables portable Wi-Fi in the final feature union.
 Stack and executor adapters are separate integrations. Availability through
 the facade does not establish hardware readiness or concurrent-radio
 operation. Bluetooth support retains the limitations of the
-[Bluetooth capability map](../hardware/esp32s31/driver/bluetooth/FEATURES.md).
+[Bluetooth feature map](../hardware/esp32s31/driver/bluetooth/FEATURES.md).
 
 Internal libraries depend on their specific contracts and on `oer-radio-port`
 for the radio port lifecycle, using the corresponding `oer-*` Cargo package names. They must

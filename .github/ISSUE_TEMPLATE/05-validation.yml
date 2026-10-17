@@ -1,4 +1,4 @@
-name: "Validation or qualification"
+name: "Validation"
 description: "Evaluate a named subject against declared criteria."
 labels: ["triage:incomplete","kind:validation"]
 body:
@@ -17,7 +17,7 @@ body:
     attributes:
       label: "Primary area"
       description: "The owner of the result."
-      options: ["area:wifi","area:bluetooth","area:ieee802154","area:radio","area:registers","area:platform","area:tooling","area:hil","area:qualification"]
+      options: ["area:wifi","area:bluetooth","area:ieee802154","area:radio","area:registers","area:platform","area:tooling","area:hil"]
     validations:
       required: true
   - type: dropdown
@@ -40,7 +40,7 @@ body:
     id: method
     attributes:
       label: "Method, apparatus and criteria"
-      description: "Measurements, predeclared tolerances, repetitions, fixture/board/profile and required inputs. Distinguish HIL observations from the qualification verdict."
+      description: "Measurements, predeclared tolerances, repetitions, fixture/board/profile and required inputs."
     validations:
       required: true
   - type: textarea

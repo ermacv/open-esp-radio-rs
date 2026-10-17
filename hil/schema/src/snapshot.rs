@@ -2,9 +2,8 @@
 //!
 //! The runner writes `manifest.json` and `snapshot.json` into a snapshot's
 //! directory; each file's bytes are an object named by their SHA-256 in the
-//! store's [`OBJECTS`] directory, shared by every snapshot and run. The
-//! qualification evaluator reads the manifest back and recomputes each
-//! source's identity from its serialized form. Both use these types, so the
+//! store's [`OBJECTS`] directory, shared by every snapshot and run. A
+//! reader reads the manifest back and recomputes each source's identity from its serialized form. Both use these types, so the
 //! field order and the fields themselves are one contract. Unknown fields
 //! are refused: a field this build does not know would change an identity it
 //! cannot recompute.

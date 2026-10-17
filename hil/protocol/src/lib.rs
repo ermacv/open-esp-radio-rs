@@ -3,7 +3,7 @@
 //!
 //! The wire types deliberately contain no board paths, expected image hashes,
 //! vendor ABI versions, or target-specific register layouts. Those belong to
-//! the firmware adapter and the qualification manifest that selects it.
+//! the firmware adapter.
 
 // The framework: message identity, framing and the envelope.
 mod envelope;

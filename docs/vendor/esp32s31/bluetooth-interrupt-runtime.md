@@ -249,4 +249,4 @@ for that composition. Feature-specific status meanings and mask/re-arm policy
 require their own evidence. Primary publication, scheduler memory ownership,
 executor notification and quiescent route teardown are separate owners; a
 callback selector is not a silicon interrupt ABI. Runtime support and HIL
-readiness are described by their respective driver and qualification owners.
+readiness are described by their respective driver and HIL owners.

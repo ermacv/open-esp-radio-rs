@@ -115,5 +115,4 @@ established is named by its position alone (`WORD_<offset>_OPAQUE`,
 `naming = "opaque"`; see [name origin](../../tools/registers/model/README.md). Neighboring-chip
 similarity is not sufficient evidence for an ESP32-S31 address or bit. Reviewed
 source assertions, vendor comparison and dated hardware observations retain
-their distinct strength. Publication verifies consistency and reproducibility;
-[qualification](../../qualification/README.md) determines readiness.
+their distinct strength. Publication verifies consistency and reproducibility.

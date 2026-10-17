@@ -48,7 +48,6 @@ pub enum WifiCoexActivity {
 
 /// One publication of Wi-Fi's activity to the schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes
 pub struct WifiCoexStatusUpdate {
     /// The Wi-Fi status word that replaces every previous Wi-Fi bit.
     pub status: u16,

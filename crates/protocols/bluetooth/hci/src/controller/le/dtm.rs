@@ -158,7 +158,6 @@ impl LeDtmModulationIndex {
 
 /// A decoded command in the closed supported LE DTM HCI subset.
 #[derive(Debug, Eq, PartialEq)]
-// CAPABILITY: bluetooth-enhanced-dtm-phy-selection
 pub enum LeDtmCommand {
     /// Begin a normalized receiver test.
     ReceiverTest(LeReceiverTestCommand),

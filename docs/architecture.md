@@ -1,8 +1,7 @@
 # Repository ownership
 
 This document defines the boundaries between production code, hardware
-descriptions, analysis tools, experiments and qualification. Detailed APIs and
-commands belong to each component's README and Rust documentation.
+descriptions, analysis tools and experiments. Detailed APIs and commands belong to each component's README and Rust documentation.
 
 ## Owners
 
@@ -15,7 +14,6 @@ commands belong to each component's README and Rust documentation.
 | [Repository tooling](../tools/xtask/README.md) | Push, API docs, firmware lockfiles, worktrees, UI and feature-set checks | Calls domain tools; does not duplicate their validators |
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
-| [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
 
 A directory identifies an owner. A Cargo workspace identifies a joint build
 and lockfile boundary. They need not coincide, and a logical module does not
@@ -87,7 +85,7 @@ packages of its own host layer and the layers below it
 
 | Host layer | Holds | Examples |
 | --- | --- | --- |
-| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-tidy`, `oer-fw`, `oer-stand`, `oer-hil-cli`, `oer-hil-runner`, `oer-qualification`, `oer-register-tool`, `oer-verification-cli`, `blobray-cli` |
+| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-tidy`, `oer-fw`, `oer-stand`, `oer-hil-cli`, `oer-hil-runner`, `oer-register-tool`, `oer-verification-cli`, `blobray-cli` |
 | `orchestration` | Experiments, run analysis, HIL image builds | `oer-hil-experiment`, `oer-hil-analysis`, `oer-hil-image` |
 | `execution` | HIL execution: protocol, agent, DUT link, scenarios, workloads, families, run bundles, observer identity, the HIL lab | `oer-hil-link`, `oer-hil-workload`, `oer-hil-family-*`, `oer-hil-run-bundle` |
 | `verification` | Vendor evidence and provenance, the register model, vendor scenarios and stands | `oer-vendor-evidence`, `oer-vendor-provenance`, `oer-register-model` |
@@ -117,12 +115,11 @@ running it as a process or by reading what it wrote.
 | Vendor verification | `cargo verification` (its own workspace, [verification](../verification/README.md)) | Vendor pins and fetch, provenance, typed scenarios, evidence shards, probes | Blobray's engine, binary analysis, vendor pins, the shard format |
 | Blobray | `cargo blobray` (its own workspace, [Blobray](../tools/blobray/README.md)) | Binary analysis | Binary analysis libraries, foundation |
 | Registers | `cargo registers` ([register tool](../tools/registers/README.md)) | Register model, review, SVD/PAC/bindings publication | Foundation, chip profiles, the bindings format |
-| Qualification | `cargo qualification` ([evaluator](../qualification/README.md)) | Catalogs, programs, assessment | The run bundle, scenario catalog and shard formats, the repository model, foundation; never the runner, lab, HIL images or stand operation |
 | Gate | `cargo xtask`, `cargo tidy` ([xtask](../tools/xtask/README.md), [tidy](../tools/tidy/README.md)) | Push and draft PR, API docs, firmware lockfiles, worktrees, workspace and chip discovery | The repository model and foundation; every other application runs as a process |
 
 Every host-layer package declares `host-app` and `host-boundary` in
 `package.metadata.open-radio`. The application values are `gate`, `fw`,
-`stand`, `hil`, `verification`, `blobray`, `registers` and `qualification`;
+`stand`, `hil`, `verification`, `blobray` and `registers`;
 shared owners are `foundation`, `devices`, `images`, `analysis` and `formats`.
 `application` marks private code, `library` an exposed library and `format`
 a shared data contract. Command lines use `application`.
@@ -139,7 +136,7 @@ code. Libraries cross only these boundaries; host layer rules still apply:
 | verification | foundation, images, analysis, formats, blobray, registers |
 | blobray, analysis | foundation, analysis, formats |
 | registers | foundation, analysis, formats, verification |
-| qualification, foundation, formats | foundation, formats |
+| foundation, formats | foundation, formats |
 | devices | foundation, formats |
 | images | foundation, analysis, formats |
 
@@ -147,10 +144,8 @@ The `formats` owner exposes only `format` packages. Test dependencies may
 compose applications for a regression; they still follow host layer rules.
 The dependency policy is `oer_repo::policy::application_edge_allowed`.
 
-The dependency rules are the [host layers](#host-layers), these application boundaries,
-qualification's ban on HIL orchestration and stand operation
-(`oer_repo::policy::qualification_edge_allowed`), and one release profile for
-every firmware workspace.
+The dependency rules are the [host layers](#host-layers), these application
+boundaries and one release profile for every firmware workspace.
 
 **Device foundation.** Every application that touches a board goes through
 the devices layer ([`tools/device/`](../tools/device/README.md)): `oer-devices`
@@ -762,7 +757,7 @@ value) are its capabilities, read before submission; a value outside them is
 refused as unsupported, and that refusal means nothing else. Why a backend
 lacks a feature or a value (hardware absent, glue not written, vendor
 knowledge not recovered, policy decision pending) is recorded in the
-qualification catalog, not in code.
+backend's documentation, not in code.
 
 **Refusals and poisoning.** Every port call returns
 `Result<Result<T, Refusal>, Poisoned<Fault>>`. The inner `Err` is a typed
@@ -835,8 +830,8 @@ flowchart TD
 
 Here each arrow points from a consumer to a production dependency; the diagram
 selects the Wi-Fi driver layers and omits other dependencies and feature
-profiles. This differs from the knowledge-flow diagrams: Blobray, register
-publication and qualification do not enter the production dependency graph.
+profiles. This differs from the knowledge-flow diagrams: Blobray and register
+publication do not enter the production dependency graph.
 Calls can pass through a portable port implemented by a higher composition
 without introducing a reverse Cargo dependency.
 
@@ -880,20 +875,7 @@ flowchart LR
     S[Scenario catalog and stand file] --> H
     B --> I[Vendor evidence index]
     H --> U[Sealed run bundle]
-    I --> Q[Qualification evaluator]
-    U --> Q
-    K[Capability program] --> Q
 ```
-
-The evaluator reads serialized evidence independently of the producers.
-Its engineering map connects knowledge, source owners, checks, observations and
-next-work reasons. Static catalog views require no saved runs; program views
-retain the evaluator's evidence-applicability decisions. Neither view runs
-missing checks or turns the whole project into one readiness gate. Knowledge
-and source facts remain useful outside a selected qualification program.
-Implementation, host coverage and async states are reviewed declarations;
-vendor/HIL states are derived from evidence. A valid incomplete capability
-program is not a passing readiness gate.
 
 ## Hardware descriptions and providers
 
@@ -958,16 +940,14 @@ builds (`oer-hil-image`), arbitration and its spectrum claims
 (`oer-stand-arbiter`) and the stand library (`oer-hil-lab`); their code
 shapes what a run observes. Operation packages only operate the stand —
 boards and flashing (`oer-stand-board`, `oer-hil-flash`), the stand file,
-the `cargo hil` and `cargo stand` command lines — and never shape a passed observation, so the evaluator leaves
-them out of every evidence closure by this role alone. An observation
+the `cargo hil` and `cargo stand` command lines — and never shape a passed observation. An observation
 package never depends on an orchestration or operation package, so neither
 can change what a run observes through it; an
 image build reaches a run's evidence through the build inputs the run
 records.
 
 Scenario IDs are stable logical identities within a recursive protocol/role
-catalog. Producer and evaluator independently validate the format and reject
-ambiguous entries. Firmware and host share a typed wire contract and must be
+catalog. Readers validate the format and reject ambiguous entries. Firmware and host share a typed wire contract and must be
 updated together when that contract changes.
 
 The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board

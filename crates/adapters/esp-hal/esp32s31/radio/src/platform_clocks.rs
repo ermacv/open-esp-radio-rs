@@ -26,7 +26,6 @@ use oer_esp32s31_hal::power::{
 /// records nothing: the radio's one shared owner lives for the whole
 /// program.
 #[derive(Debug, Default)]
-// CAPABILITY: whole-radio-cold-power-and-clocks-shared-clock-lifetime
 pub struct EspHalRadioClocks {
     _private: (),
 }

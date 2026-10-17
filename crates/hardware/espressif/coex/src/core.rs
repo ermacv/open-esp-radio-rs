@@ -14,7 +14,6 @@ pub struct CoexStatus {
     pub uncertain_timers: u8,
 }
 
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-core-request-semantics, whole-radio-concurrent-ownership-and-arbitration-coexistence-hardware-core-infrastructure
 pub struct CoexCore {
     enabled: bool,
     active: [Option<CoexRequest>; COEX_TIMER_COUNT],
@@ -107,7 +106,6 @@ impl CoexCore {
         Ok(index)
     }
 
-    // CAPABILITY: coex-internal-arbitration-hardware-and-models-core-release-disable-status
     pub fn release<H: CoexTimerHardware>(
         &mut self,
         hardware: &mut H,

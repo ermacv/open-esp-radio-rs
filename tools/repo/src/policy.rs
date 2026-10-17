@@ -9,9 +9,6 @@
 //!   `oer-time-embassy`); the time-driver rule covers dev dependencies too.
 //! - A verdict package never depends on a report package, and an
 //!   observation package never on HIL orchestration or stand operation.
-//! - A qualification package reads run bundles, scenario catalogs and
-//!   shards: its normal and build dependencies never reach HIL orchestration
-//!   (runner, lab, HIL images) or stand operation; tests may.
 //! - A host package depends only on its own host layer and the layers below
 //!   it ([`HostLayer`]): entry, orchestration, execution, verification,
 //!   stand, build, foundation.
@@ -114,16 +111,6 @@ pub fn hil_edge_allowed(source: Option<Hil>, target: Option<Hil>) -> bool {
         && matches!(target, Some(Hil::Orchestration | Hil::Operation)))
 }
 
-/// Whether a package of layer `source` may take a `kind` dependency on one
-/// with HIL role `target`: qualification evaluates recorded runs through
-/// the formats only, so its normal and build dependencies reach neither HIL
-/// orchestration (runner, lab, images) nor stand operation.
-pub fn qualification_edge_allowed(source: Layer, kind: Kind, target: Option<Hil>) -> bool {
-    !(source == Layer::Qualification
-        && kind != Kind::Development
-        && matches!(target, Some(Hil::Orchestration | Hil::Operation)))
-}
-
 /// Whether a package of host layer `source` may depend on one of host layer
 /// `target`: only on its own layer and those below it. A package without a
 /// host layer (production code, a portable helper) constrains nothing.
@@ -147,7 +134,7 @@ pub fn application_edge_allowed(source: HostApp, target: HostApp, boundary: Host
     }
     let permitted = match source {
         Gate => target == Foundation,
-        Qualification | Foundation | Formats => matches!(target, Foundation | Formats),
+        Foundation | Formats => matches!(target, Foundation | Formats),
         Fw => matches!(target, Foundation | Devices | Images | Analysis | Formats),
         Devices => matches!(target, Foundation | Formats),
         Stand => matches!(target, Foundation | Devices | Formats),
@@ -321,17 +308,6 @@ pub fn check(model: &Model) -> Vec<String> {
                         source.host_layer.map_or("?", HostLayer::name),
                         package.name,
                         class.host_layer.map_or("?", HostLayer::name),
-                        target.name
-                    ));
-                }
-                if !qualification_edge_allowed(source.layer, dependency.kind, class.hil) {
-                    problem(format!(
-                        "qualification package {} depends on HIL {} package {}; qualification reads recorded runs through the formats only",
-                        package.name,
-                        match class.hil {
-                            Some(Hil::Orchestration) => "orchestration",
-                            _ => "stand operation",
-                        },
                         target.name
                     ));
                 }
@@ -578,30 +554,6 @@ mod tests {
     }
 
     #[test]
-    fn qualification_never_links_hil_orchestration_or_stand_operation() {
-        let qualification =
-            "layer = \"qualification\"\nplatform = \"host\"\nhost-layer = \"entry\"";
-        let hil = |role: &str| {
-            format!(
-                "layer = \"hil\"\nplatform = \"host\"\nhil = \"{role}\"\nhost-layer = \"execution\""
-            )
-        };
-        assert_eq!(
-            edge(qualification, &hil("orchestration"), "dependencies"),
-            [
-                "s/Cargo.toml: qualification package oer-s depends on HIL orchestration package oer-t; qualification reads recorded runs through the formats only"
-            ]
-        );
-        assert_eq!(
-            edge(qualification, &hil("operation"), "build-dependencies").len(),
-            1
-        );
-        // Tests may drive a runner; formats (observation) are always fine.
-        assert!(edge(qualification, &hil("orchestration"), "dev-dependencies").is_empty());
-        assert!(edge(qualification, &hil("observation"), "dependencies").is_empty());
-    }
-
-    #[test]
     fn host_packages_depend_only_down_their_layers() {
         let host = |layer: &str| {
             format!("layer = \"tool\"\nplatform = \"host\"\nhost-layer = \"{layer}\"")
@@ -726,7 +678,6 @@ mod tests {
             for (source, target, boundary) in [
                 ("fw", "stand", "library"),
                 ("gate", "images", "library"),
-                ("qualification", "hil", "library"),
                 ("hil", "stand", "application"),
                 ("verification", "blobray", "application"),
             ] {
@@ -738,7 +689,7 @@ mod tests {
                 ("fw", "images", "library"),
                 ("hil", "stand", "library"),
                 ("verification", "blobray", "library"),
-                ("qualification", "formats", "format"),
+                ("formats", "foundation", "library"),
                 ("gate", "foundation", "library"),
             ] {
                 assert!(

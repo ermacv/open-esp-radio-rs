@@ -2,8 +2,7 @@
 
 `oer-hil-model` defines what a HIL scenario is, independently of how a run
 executes it ([#761](https://github.com/ermacv/open-esp-radio-rs/issues/761)).
-It is a `formats` package, so the qualification evaluator may link it to
-recompute verdicts; execution lives in
+It is a `formats` package; execution lives in
 [`oer-hil-executor`](../host/executor/README.md).
 
 | Module | Owns |

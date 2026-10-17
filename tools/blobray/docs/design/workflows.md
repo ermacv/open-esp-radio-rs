@@ -99,9 +99,7 @@ Verification compares observations and coverage. `MATCH` answers the declared
 relation over its stated scope; `DIFF` retains the counterexample; `INCOMPLETE`
 retains missing obligations. None of these outcomes is silently relabeled a
 product readiness result. The records name both compiled implementations,
-scenario, models, producer, comparison policy, verdict and claim ceiling; the
-independent qualification evaluator decides whether that evidence is
-sufficient for its own requirements.
+scenario, models, producer, comparison policy, verdict and claim ceiling.
 
 ## Update a vendor library or interpretation input
 
@@ -134,7 +132,7 @@ than internal layout or generated register constants.
 | V2 | Generated reference or model stands in for production behavior | Evidence keeps its limited class; exact production equivalence is not asserted | verification |
 | V3 | Stateful phase is incomplete, or independent cases run in a different order | Dependent phases cannot consume unknown state; independent cases have fresh session state and no cross-case leakage | executor, verification |
 | I1 | Issue equivalent requests through API and CLI/JSON | Same selection, results and diagnostics; only presentation differs | application, frontends |
-| B1 | Build generic Blobray without open-radio-specific code | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
+| B1 | Build generic Blobray without open-radio-specific code | No generic dependency on production code or chip hosts | crate dependency checks |
 | B2 | Attempt a forbidden crate dependency | Dependency checks reject it | architecture checks |
 
 ## Contract enforcement

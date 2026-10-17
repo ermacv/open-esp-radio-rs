@@ -27,8 +27,7 @@ commands. A utility does not need its own Cargo package.
 | [tidy](tidy/README.md) | The repository model as text (`cargo tidy workspaces`, `cargo tidy chips`) and the Cargo cache fetch (`cargo tidy fetch`) |
 | [xtask](xtask/README.md) | The repository commands run by hand: API docs, firmware locks, worktrees, `push` (a draft pull request) and the `ui` and `feature-sets` tests; domain work stays with its owners |
 
-The [qualification evaluator](../qualification/README.md) belongs to its
-readiness domain. [HIL](../hil/README.md) owns hardware execution and fixtures;
+[HIL](../hil/README.md) owns hardware execution and fixtures;
 [vendor projects](../verification/README.md) own investigation composition.
 Neither producer decides product readiness. Register model/publication inputs
 have a separate [source map](../registers/esp32s31/README.md).

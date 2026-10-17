@@ -6,8 +6,7 @@
 //! commit from the run store, keeps one reviewed baseline per scenario in
 //! the store's [`Sidecar::PerfBaselines`] and reports a run whose figures
 //! moved the wrong way by more than the baseline's noise. It reads sealed
-//! bundles only and never decides qualification, which remains the
-//! evaluator's.
+//! bundles only and never decides qualification.
 
 use std::{collections::BTreeMap, fs};
 

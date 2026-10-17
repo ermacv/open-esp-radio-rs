@@ -96,7 +96,6 @@ pub enum LegacyScanStartSelection {
 /// disabled periodic synchronization. Callers cannot supply positional
 /// descriptor words or vendor option images.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-// CAPABILITY: bluetooth-le-privacy-1-2
 pub struct LegacyScanResetConfig {
     default_tx_power: LeTxPower,
     scan_type: LegacyScanType,

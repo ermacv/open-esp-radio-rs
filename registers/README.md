@@ -19,5 +19,4 @@ place at their own base addresses; its outputs are
 Generic loading, validation and generation remain in
 [register tool](../tools/registers/README.md). A vendor project references the
 same reviewed model while selecting its own artifact context and comparison
-policy. Neither source generation nor binary analysis decides product readiness;
-that authority remains with [qualification](../qualification/README.md).
+policy. Neither source generation nor binary analysis decides product readiness.

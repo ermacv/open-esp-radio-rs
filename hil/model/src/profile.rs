@@ -365,9 +365,9 @@ pub(crate) mod tests {
     }
 
     /// A field no reader knows is refused at every level, so a run reference
-    /// reaches the profile only through `evidence`, the field
-    /// `cargo qualification check references` will read once a profile is
-    /// tracked (owner decision 6226361520 on #761).
+    /// reaches the profile only through `evidence`, the field a reference
+    /// check will read once a profile is tracked (owner decision 6226361520
+    /// on #761).
     #[test]
     fn a_profile_refuses_fields_it_does_not_read() {
         let provisional = Support::Provisional {

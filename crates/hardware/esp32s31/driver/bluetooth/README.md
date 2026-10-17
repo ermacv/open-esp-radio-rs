@@ -14,9 +14,8 @@ state is tag `legacy-radio-2026-10-16`.
 Portable HCI codecs and LE Link Layer codecs live in
 [`crates/protocols/bluetooth`](../../../../protocols/bluetooth/).
 
-The module table below is the engine API map. `FEATURES.md` links current
-limitations to the generated qualification view; it is not a second readiness
-inventory.
+The module table below is the engine API map. `FEATURES.md` records current
+limitations.
 
 | Module under `src/` | Responsibility |
 | --- | --- |

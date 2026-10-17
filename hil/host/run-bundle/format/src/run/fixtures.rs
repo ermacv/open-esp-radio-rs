@@ -5,10 +5,9 @@
 //! A record is a [`FixtureRecord`]: its type is its schema and fixes its
 //! file name. Fixture code writes one through [`write()`] (or
 //! [`write_labelled`], for a kind a directory holds several of) into the
-//! repetition's artifact directory, and readers (the analyses, the
-//! qualification evaluator) take it back through
-//! [`crate::RunBundle::fixture_record`]; no fixture writes a report file of
-//! its own.
+//! repetition's artifact directory, and readers (the analyses) take it back
+//! through [`crate::RunBundle::fixture_record`]; no fixture writes a report
+//! file of its own.
 //!
 //! - [`Applied`] (`fixture-applied.json`): the station fixture access
 //!   point's applied settings, of an OpenWrt router or a local Linux

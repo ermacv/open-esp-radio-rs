@@ -5,7 +5,7 @@
 //! the Rust target, the boot flow, the chip name `espflash` uses, the silicon revisions and
 //! the chip's properties (radio bands, Bluetooth modes, cores).
 //! Everything else follows the id by convention (`verification/<id>`,
-//! `registers/<id>`, `hil/targets/<id>`, `qualification/targets/<id>`,
+//! `registers/<id>`, `hil/targets/<id>`,
 //! `target/hil/<id>`), and a capability exists where its directory does.
 //! Host tools resolve a chip through [`Profile::load`] instead of matching
 //! chip names, so an unknown chip is refused with the supported ones.

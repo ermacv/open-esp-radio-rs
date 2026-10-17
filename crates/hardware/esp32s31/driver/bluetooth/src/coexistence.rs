@@ -116,7 +116,6 @@ const fn level_index(level: CoexistenceLevel) -> usize {
 }
 
 /// The lanes of one legacy advertising event.
-// CAPABILITY: bluetooth-hardware-pti-coexistence
 pub const fn advertising_priorities(
     profile: CoexistenceProfile,
     level: CoexistenceLevel,

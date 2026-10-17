@@ -1,10 +1,9 @@
 # PHY compiled comparison
 
 PHY comparison executes authenticated vendor artifacts and compiled Rust probes
-in the [typed vendor scenarios](../../verification/esp32s31/README.md). The
-[PHY inventory entry point](../../crates/hardware/esp32s31/phy/FEATURES.md) links
-the canonical catalog and its generated primitive/consumer view; comparison reports describe
-evidence for exact declared boundaries, not general RF readiness.
+in the [typed vendor scenarios](../../verification/esp32s31/README.md).
+Comparison reports describe evidence for exact declared boundaries, not general
+RF readiness.
 
 ## Inputs and ownership
 
@@ -34,16 +33,6 @@ responses and peripheral models remain phase-local. Negative cases with
 deliberately changed inputs must produce `DIFF`, so a comparison that cannot
 distinguish them fails. A scenario cannot manufacture an implementation or hide
 an observed difference.
-
-## Readiness
-
-The [qualification evaluator](../../qualification/README.md) independently
-consumes release-eligible vendor evidence and applicable sealed HIL observations,
-including explicitly reviewed transfers. It checks
-source freshness, declared capability requirements and dependencies; Blobray
-comparison alone cannot establish readiness. No Wi-Fi program exists; shared
-PHY consumer/lifecycle limits appear in the Bluetooth and IEEE 802.15.4
-qualification programs.
 
 Reviewed source identities and immutable evidence retain their original
 meaning. Update the exact source contract and produce new evidence when a

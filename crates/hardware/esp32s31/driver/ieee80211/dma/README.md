@@ -88,8 +88,7 @@ establish physical DMA quiescence or memory-ordering sufficiency on silicon.
 The inspected `lmacProcessTxComplete` body reads the completion result and
 trigger-flow state before calling the completion acknowledgement. Full result
 decoding, descriptor preparation and the enclosing release/abort root have no
-compiled vendor comparison either. Their absence remains visible
-in the [RX/TX capability](../../../../../../qualification/catalog/esp32s31/wifi-phy.toml).
+compiled vendor comparison either.
 
 The [storage tests](src/tx_storage/tests.rs) exercise publication authority and
 quarantine. The [MAC ownership tests](../mac/tests/cases/tx_ownership.rs) exercise

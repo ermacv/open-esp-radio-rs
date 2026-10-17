@@ -119,7 +119,6 @@ pub struct Plan {
 /// # Errors
 ///
 /// Its window lies outside the radio epoch.
-// CAPABILITY: bluetooth-first-peripheral-connection-window
 pub fn first(
     anchor: LeInstant,
     transmit_window: RadioDuration<LeRadio>,
@@ -154,7 +153,6 @@ pub fn first(
 /// # Errors
 ///
 /// Its anchor or window lies outside the radio epoch.
-// CAPABILITY: bluetooth-recurring-peripheral-events, bluetooth-sleep-clock-accuracy-window-widening
 pub fn recurring(
     reference: LeInstant,
     since_reference: RadioDuration<LeRadio>,

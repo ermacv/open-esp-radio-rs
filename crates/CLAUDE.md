@@ -24,8 +24,6 @@ Production libraries, one directory per layer; the
   Find a PAC accessor by grepping `hardware/<chip>/pac/src/generated.rs` or
   `hardware/<chip>/pac/raw/src/lib.rs` by explicit path; never read them whole.
 - `unsafe` follows [UNSAFE.md](UNSAFE.md): `// SAFETY:` on every block.
-- A catalog entry that claims support keeps its `// CAPABILITY: <id>` anchor
-  in step with the code ([code anchors](../qualification/README.md#code-anchors)).
 
 ## Tests
 

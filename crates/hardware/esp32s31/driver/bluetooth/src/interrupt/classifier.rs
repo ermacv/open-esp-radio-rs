@@ -95,7 +95,6 @@ impl PrimarySchedulerTrigger {
 /// trigger facts are exposed.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "a classified primary epoch must drive fault or scheduler handling"]
-// CAPABILITY: bluetooth-controller-interrupt-epoch
 pub struct PrimaryInterruptClassification {
     epoch: BluetoothPrimaryInterruptEpoch,
     scheduler_trigger: PrimarySchedulerTrigger,

@@ -25,22 +25,16 @@ impl RateLadder for StepDown {
 
 const OFDM54: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm54M);
 
-fn retry(set_retry_bit: bool) -> RetryStep {
-    RetryStep {
-        decision: RetryDecision::Retry { set_retry_bit },
-        contention: ContentionUpdate::Double,
-    }
+fn retry(set_retry_bit: bool) -> RetryDecision {
+    RetryDecision::Retry { set_retry_bit }
 }
 
-fn complete(outcome: RetryOutcome) -> RetryStep {
-    RetryStep {
-        decision: RetryDecision::Complete(outcome),
-        contention: ContentionUpdate::Reset,
-    }
+fn complete(outcome: RetryOutcome) -> RetryDecision {
+    RetryDecision::Complete(outcome)
 }
 
 #[test]
-fn an_acknowledged_first_attempt_ends_the_frame_and_resets_contention() {
+fn an_acknowledged_first_attempt_ends_the_frame() {
     let mut state = MpduRetryState::new(VENDOR_LIKE, 5, FrameClass::Short).unwrap();
     assert_eq!(state.rate(&StepDown, OFDM54, OFDM54), OFDM54);
     assert_eq!(

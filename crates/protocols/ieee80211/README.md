@@ -74,13 +74,15 @@ and returns `CoordinatorAction`s; the port's owner carries them out.
 
 [`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
 implements; one submission is one hardware transmission attempt. Optional
-features are its extension traits. `softmac/src/edca.rs` draws the EDCA
-backoff each attempt carries. [`upper-mac`](upper-mac/README.md) decides
+features are its extension traits. An attempt carries no backoff: a backend
+draws its queue's EDCA contention below the port, with
+`softmac/src/edca.rs`. [`upper-mac`](upper-mac/README.md) decides
 everything else above the port for a transmission: the retry ladder and
 Retry bit, A-MPDU retry selection, protection, and the planner that turns an
 exchange into attempts; `mac/src/block_ack/reorder.rs` reorders received
-Block Ack sessions and `mac/src/ccmp.rs` allocates transmit packet numbers and
-checks receive replay. Vendor limits, ladders and estimates for these
+Block Ack sessions and `mac/src/ccmp.rs` checks receive replay; its transmit
+packet-number allocator serves the backend, which numbers protected MPDUs
+below the port. Vendor limits, ladders and estimates for these
 algorithms are parameters; the Espressif ones live in
 [`oer-espressif-ieee80211-policy`](../espressif/ieee80211/policy/README.md).
 

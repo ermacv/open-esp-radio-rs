@@ -5,9 +5,9 @@
 //! outbound MPDU or A-MPDU into those attempts. [`TxPlanner::begin`] returns
 //! the exchange's state ([`TxExchange`]) and its first [`TxAttemptPlan`]: the
 //! rate the peer's [`RateLadder`] gives, the protection exchange the
-//! [`ProtectionPolicy`] selects, the backoff the access category's
-//! [`EdcaContention`] draws from the caller's entropy, and which frame
-//! content with which Retry bits the attempt carries. [`TxPlanner::complete`]
+//! [`ProtectionPolicy`] selects, and which frame content with which Retry
+//! bits the attempt carries. It draws no backoff: the lower-MAC port carries
+//! none, and a backend draws its queues' contention below the port. [`TxPlanner::complete`]
 //! takes that attempt's [`PublicationReport`] and returns either the next plan or
 //! the exchange's [`TxReport`]:
 //!
@@ -28,8 +28,7 @@ use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{BlockAckReport, CoexPriority, TxPower, TxResponse, TxStatus};
 use oer_ieee80211_mac::{phy::PhyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
 use oer_ieee80211_softmac::{
-    BackoffEntropy, EdcaContention, MacAmpduTxResult, MacAmpduTxStatus, MacIndividualRetries,
-    MacTxResult, MacTxStatus,
+    MacAmpduTxResult, MacAmpduTxStatus, MacIndividualRetries, MacTxResult, MacTxStatus,
 };
 
 use crate::{
@@ -42,8 +41,8 @@ use crate::{
         TxPsdu, TxReceiver,
     },
     retry::{
-        ContentionUpdate, FrameClass, MpduRetryState, RateLadder, RetryDecision, RetryLimits,
-        RetryOutcome, RetryStateError,
+        FrameClass, MpduRetryState, RateLadder, RetryDecision, RetryLimits, RetryOutcome,
+        RetryStateError,
     },
 };
 
@@ -243,8 +242,6 @@ pub struct TxAttemptPlan {
     pub access_category: WmmAccessCategory,
     pub rate: PhyRate,
     pub protection: TxProtectionDecision,
-    /// The CSMA/CA backoff slots the backend counts down after the AIFS.
-    pub backoff_slots: u16,
     pub power: TxPower,
     pub coex: CoexPriority,
     pub content: AttemptContent,
@@ -380,10 +377,9 @@ impl TxExchange {
     }
 }
 
-/// The transmit planner of one interface: the EDCA state of the four access
-/// categories and the retry and protection policies every exchange follows.
+/// The transmit planner of one interface: the retry and protection policies
+/// every exchange follows.
 pub struct TxPlanner<B = crate::protection::ProtectEveryHeTxop> {
-    contention: [EdcaContention; 4],
     retry_limits: RetryLimits,
     ampdu_policy: AmpduRetryPolicy,
     protection: ProtectionPolicy,
@@ -391,37 +387,19 @@ pub struct TxPlanner<B = crate::protection::ProtectEveryHeTxop> {
 }
 
 impl<B: HeTxopRtsBudget> TxPlanner<B> {
-    /// A planner whose access categories contend with `contention`, indexed
-    /// by ACI.
+    /// A planner with these retry limits and policies.
     pub const fn new(
-        contention: [EdcaContention; 4],
         retry_limits: RetryLimits,
         ampdu_policy: AmpduRetryPolicy,
         protection: ProtectionPolicy,
         he_budget: B,
     ) -> Self {
         Self {
-            contention,
             retry_limits,
             ampdu_policy,
             protection,
             he_budget,
         }
-    }
-
-    /// The contention state of an access category.
-    pub const fn contention(&self, access_category: WmmAccessCategory) -> EdcaContention {
-        *access_category.select(&self.contention)
-    }
-
-    /// Replace an access category's contention parameters, as a new EDCA
-    /// Parameter Set advertises them.
-    pub fn set_contention(
-        &mut self,
-        access_category: WmmAccessCategory,
-        contention: EdcaContention,
-    ) {
-        *access_category.select_mut(&mut self.contention) = contention;
     }
 
     pub fn protection(&self) -> &ProtectionPolicy {
@@ -445,7 +423,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         &mut self,
         request: TxRequest,
         ladder: &impl RateLadder,
-        entropy: &mut impl BackoffEntropy,
     ) -> Result<(TxExchange, TxAttemptPlan), TxPlanError> {
         let context = RequestContext::from_request(&request);
         let phase = match request.body {
@@ -472,7 +449,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             ack_snr_db: None,
             unanswered: false,
         };
-        let plan = self.plan(&mut exchange, phase, ladder, entropy);
+        let plan = self.plan(&mut exchange, phase, ladder);
         Ok((exchange, plan))
     }
 
@@ -486,7 +463,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         completion: &PublicationReport,
         now: Ieee80211Instant,
         ladder: &impl RateLadder,
-        entropy: &mut impl BackoffEntropy,
     ) -> TxStep {
         if completion.ack_snr_db.is_some() {
             exchange.ack_snr_db = completion.ack_snr_db;
@@ -496,23 +472,19 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             Phase::Live(live) => live,
         };
         let next = match live {
-            Live::Mpdu(mut retry, mpdu) => {
-                let step = retry.observe(completion.status);
-                self.update_contention(exchange, step.contention);
-                match step.decision {
-                    RetryDecision::Retry { set_retry_bit } => {
-                        if set_retry_bit {
-                            exchange.transmitted = 1;
-                        }
-                        Live::Mpdu(retry, mpdu)
+            Live::Mpdu(mut retry, mpdu) => match retry.observe(completion.status) {
+                RetryDecision::Retry { set_retry_bit } => {
+                    if set_retry_bit {
+                        exchange.transmitted = 1;
                     }
-                    RetryDecision::Complete(outcome) => {
-                        let report = TxReport::Mpdu(Self::mpdu_status(exchange, &retry, outcome));
-                        exchange.phase = Phase::Done(report, exchange.body());
-                        return TxStep::Done(report);
-                    }
+                    Live::Mpdu(retry, mpdu)
                 }
-            }
+                RetryDecision::Complete(outcome) => {
+                    let report = TxReport::Mpdu(Self::mpdu_status(exchange, &retry, outcome));
+                    exchange.phase = Phase::Done(report, exchange.body());
+                    return TxStep::Done(report);
+                }
+            },
             Live::Aggregate(mut state, ampdu) => {
                 let result = match (completion.block_ack, completion.status) {
                     (Some(report), _) => AmpduAttemptResult::Answered(Some(report)),
@@ -522,7 +494,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                         AmpduAttemptResult::NoResponse
                     }
                     (None, TxStatus::TimedOut) => {
-                        self.update_contention(exchange, ContentionUpdate::Reset);
                         return self.finish_ampdu(exchange, &state, MacAmpduTxResult::Incomplete);
                     }
                 };
@@ -538,7 +509,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                         None => return self.finished(exchange, &state),
                     },
                     Err(_) => {
-                        self.update_contention(exchange, ContentionUpdate::Reset);
                         return self.finish_ampdu(exchange, &state, MacAmpduTxResult::Incomplete);
                     }
                 }
@@ -562,52 +532,48 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                 mut retry,
                 ampdu,
                 length,
-            } => {
-                let step = retry.observe(completion.status);
-                self.update_contention(exchange, step.contention);
-                match step.decision {
-                    RetryDecision::Retry { .. } => Live::Individual {
-                        aggregate,
-                        remaining,
-                        retry,
-                        ampdu,
-                        length,
-                    },
-                    RetryDecision::Complete(outcome) => {
-                        let status = Self::mpdu_status(exchange, &retry, outcome);
-                        exchange.individual.record(status);
-                        remaining &= remaining.wrapping_sub(1);
-                        if remaining == 0 {
-                            let result = if exchange.individual.failed == 0 {
-                                MacAmpduTxResult::Delivered
-                            } else {
-                                MacAmpduTxResult::Incomplete
-                            };
-                            return self.finish_ampdu(exchange, &aggregate, result);
-                        }
-                        let index = remaining.trailing_zeros() as u8;
-                        match self.subframe_retry(exchange, index) {
-                            Ok((retry, length)) => Live::Individual {
-                                aggregate,
-                                remaining,
-                                retry,
-                                ampdu,
-                                length,
-                            },
-                            Err(_) => {
-                                return self.finish_ampdu(
-                                    exchange,
-                                    &aggregate,
-                                    MacAmpduTxResult::Incomplete,
-                                );
-                            }
+            } => match retry.observe(completion.status) {
+                RetryDecision::Retry { .. } => Live::Individual {
+                    aggregate,
+                    remaining,
+                    retry,
+                    ampdu,
+                    length,
+                },
+                RetryDecision::Complete(outcome) => {
+                    let status = Self::mpdu_status(exchange, &retry, outcome);
+                    exchange.individual.record(status);
+                    remaining &= remaining.wrapping_sub(1);
+                    if remaining == 0 {
+                        let result = if exchange.individual.failed == 0 {
+                            MacAmpduTxResult::Delivered
+                        } else {
+                            MacAmpduTxResult::Incomplete
+                        };
+                        return self.finish_ampdu(exchange, &aggregate, result);
+                    }
+                    let index = remaining.trailing_zeros() as u8;
+                    match self.subframe_retry(exchange, index) {
+                        Ok((retry, length)) => Live::Individual {
+                            aggregate,
+                            remaining,
+                            retry,
+                            ampdu,
+                            length,
+                        },
+                        Err(_) => {
+                            return self.finish_ampdu(
+                                exchange,
+                                &aggregate,
+                                MacAmpduTxResult::Incomplete,
+                            );
                         }
                     }
                 }
-            }
+            },
         };
         exchange.phase = Phase::Live(next);
-        TxStep::Attempt(self.plan(exchange, next, ladder, entropy))
+        TxStep::Attempt(self.plan(exchange, next, ladder))
     }
 
     /// The phase after an aggregate decision; `None` when the exchange ends.
@@ -620,14 +586,10 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
     ) -> Option<Live> {
         match decision {
             AmpduRetryDecision::RetainAggregate { .. }
-            | AmpduRetryDecision::RepublishUnchanged { .. } => {
-                self.update_contention(exchange, ContentionUpdate::Double);
-                Some(Live::Aggregate(state, ampdu))
-            }
+            | AmpduRetryDecision::RepublishUnchanged { .. } => Some(Live::Aggregate(state, ampdu)),
             AmpduRetryDecision::RequestBlockAck { .. } => {
                 // The exhausted protection retries end this frame exchange
                 // sequence; the BlockAckReq starts the next one.
-                self.update_contention(exchange, ContentionUpdate::Reset);
                 Some(Live::BlockAckRequest(state, ampdu))
             }
             AmpduRetryDecision::Unaggregate { retry_mask } => {
@@ -637,7 +599,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                         remaining |= 1 << state.original_index(position);
                     }
                 }
-                self.update_contention(exchange, ContentionUpdate::Double);
                 let index = remaining.trailing_zeros() as u8;
                 match self.subframe_retry(exchange, index) {
                     Ok((retry, length)) => Some(Live::Individual {
@@ -650,10 +611,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                     Err(_) => None,
                 }
             }
-            AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => {
-                self.update_contention(exchange, ContentionUpdate::Reset);
-                None
-            }
+            AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => None,
         }
     }
 
@@ -733,17 +691,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             .map(|retry| (retry, length))
     }
 
-    fn update_contention(&mut self, exchange: &TxExchange, update: ContentionUpdate) {
-        let contention = exchange
-            .context
-            .access_category
-            .select_mut(&mut self.contention);
-        match update {
-            ContentionUpdate::Reset => contention.reset(),
-            ContentionUpdate::Double => contention.record_failure(),
-        }
-    }
-
     fn mpdu_status(
         exchange: &TxExchange,
         retry: &MpduRetryState,
@@ -775,7 +722,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         exchange: &mut TxExchange,
         live: Live,
         ladder: &impl RateLadder,
-        entropy: &mut impl BackoffEntropy,
     ) -> TxAttemptPlan {
         let request = exchange.context;
         let (rate, psdu, content) = match live {
@@ -807,16 +753,11 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             Live::BlockAckRequest(state, ampdu) => {
                 exchange.aggregate = 0;
                 let rate = PhyRate::Legacy(self.protection.control_rate(request.initial_rate));
-                let backoff = request
-                    .access_category
-                    .select(&self.contention)
-                    .draw(entropy);
                 exchange.rate = rate;
                 return TxAttemptPlan {
                     access_category: request.access_category,
                     rate,
                     protection: TxProtectionDecision::UNPROTECTED,
-                    backoff_slots: backoff,
                     power: request.power,
                     coex: request.coex,
                     content: AttemptContent::BlockAckRequest {
@@ -853,15 +794,10 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             },
             &self.he_budget,
         );
-        let backoff = request
-            .access_category
-            .select(&self.contention)
-            .draw(entropy);
         TxAttemptPlan {
             access_category: request.access_category,
             rate,
             protection,
-            backoff_slots: backoff,
             power: request.power,
             coex: request.coex,
             content,

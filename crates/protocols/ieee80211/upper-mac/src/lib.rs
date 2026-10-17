@@ -44,10 +44,10 @@
 //! - [`protection`]: RTS/CTS or CTS-to-self before each PPDU;
 //! - [`rate_control`]: the seam of a peer's data rates, which learns from
 //!   its exchanges;
-//! - [`tx`]: the [`TxPlanner`], which combines them with the
-//!   EDCA backoff draw of `oer-ieee80211-softmac` into one attempt at a time
-//!   and turns each completion into the next attempt or the exchange's
-//!   statistics.
+//! - [`tx`]: the [`TxPlanner`], which combines them into one attempt at a
+//!   time and turns each completion into the next attempt or the exchange's
+//!   statistics. It draws no backoff: the lower-MAC port carries none, and
+//!   a backend draws its queues' contention below the port.
 //!
 //! The package is sans-IO: completions and the radio time enter as values,
 //! attempt plans and reports leave as values, and nothing waits. The station
@@ -73,8 +73,8 @@ pub use protection::{
     TxProtectionDecision, TxProtectionReasons, TxPsdu, TxReceiver,
 };
 pub use retry::{
-    AckFailureAccounting, ContentionUpdate, FixedRate, FrameClass, MpduRetryState, RateLadder,
-    RetryCounters, RetryDecision, RetryLimits, RetryOutcome, RetryStep,
+    AckFailureAccounting, FixedRate, FrameClass, MpduRetryState, RateLadder, RetryCounters,
+    RetryDecision, RetryLimits, RetryOutcome,
 };
 pub use tx::{
     AmpduRequest, AttemptContent, MpduRequest, TxAttemptPlan, TxBody, TxExchange, TxPlanError,

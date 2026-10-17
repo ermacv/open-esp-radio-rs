@@ -17,7 +17,7 @@ use oer_ieee80211_lower_mac::{Ieee80211ClockGeneration, Ieee80211Duration, Ieee8
 use oer_ieee80211_upper_mac::{
     AmpduAttemptResult, AmpduRetryDecision as UpperAmpduRetryDecision,
     AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
-    ContentionUpdate, MpduRetryState, RetryDecision, RetryOutcome, retry::RetryStateError,
+    MpduRetryState, RetryDecision, RetryOutcome, retry::RetryStateError,
 };
 
 use crate::{
@@ -565,15 +565,17 @@ impl OrdinaryMpduRetryState {
         policy: &mut WifiTxRuntimePolicy,
         status: TxStatus,
     ) -> OrdinaryRetryDecision {
-        let step = self.retry.observe(status);
-        match (step.contention, step.decision) {
-            (_, RetryDecision::Complete(RetryOutcome::Delivered)) => {
+        // The frame's end resets the queue's contention window and a retry
+        // doubles it.
+        let decision = self.retry.observe(status);
+        match decision {
+            RetryDecision::Complete(RetryOutcome::Delivered) => {
                 policy.record_success(self.queue);
             }
-            (ContentionUpdate::Reset, _) => policy.reset_terminal_exchange(self.queue),
-            (ContentionUpdate::Double, _) => policy.record_retry_failure(self.queue),
+            RetryDecision::Complete(_) => policy.reset_terminal_exchange(self.queue),
+            RetryDecision::Retry { .. } => policy.record_retry_failure(self.queue),
         }
-        match step.decision {
+        match decision {
             RetryDecision::Complete(_) => OrdinaryRetryDecision::Complete,
             RetryDecision::Retry { set_retry_bit } => {
                 OrdinaryRetryDecision::Retry { set_retry_bit }

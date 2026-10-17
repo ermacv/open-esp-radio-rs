@@ -395,28 +395,6 @@ fn maximum_zero_copy_evidence_fits_and_round_trips() {
 }
 
 #[test]
-fn maximum_cpu_load_evidence_fits_and_round_trips() {
-    use crate::{network::CpuLoadEvidence, network::EvidenceRecord};
-
-    let expected = Envelope::new(
-        7,
-        3,
-        9,
-        2,
-        crate::network::Evidence(EvidenceRecord::CpuLoad(CpuLoadEvidence {
-            window_cycles: u64::MAX,
-            idle_cycles: [Some(u64::MAX), Some(u64::MAX)],
-        })),
-    );
-    let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
-    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
-    let mut decoder = FrameDecoder::new();
-    let observed = receive(&mut decoder, frame).map(Result::unwrap);
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
 fn maximum_radio_evidence_fits_and_round_trips() {
     use crate::{
         network::EvidenceRecord, network::RadioEvidence, network::RxRadioEvidence,
@@ -607,8 +585,7 @@ fn evidence_digest_is_order_and_value_sensitive() {
             | EvidenceRecord::NetworkScheduler(_)
             | EvidenceRecord::Link(_)
             | EvidenceRecord::Stack(_)
-            | EvidenceRecord::RxZeroCopy(_)
-            | EvidenceRecord::CpuLoad(_) => unreachable!(),
+            | EvidenceRecord::RxZeroCopy(_) => unreachable!(),
         }
     });
 

@@ -61,26 +61,6 @@ impl Recorder {
         }]);
     }
 
-    /// Publish each measured core's load over a session's traffic window as
-    /// `cpu.core<N>.load`, in basis points, lower being better: the figures
-    /// `cargo hil ab` pairs like the throughput. A later window of the
-    /// repetition replaces an earlier one's, as its rates do.
-    pub fn cpu_load(&self, load: &oer_hil_protocol::network::CpuLoadEvidence) {
-        use oer_hil_run_bundle_format::run::{Better, MeasurementUnit};
-        self.record(
-            (0..oer_hil_protocol::network::CPU_LOAD_CORES).filter_map(|core| {
-                load.busy_basis_points(core).map(|busy| {
-                    Measurement::observed(
-                        format!("cpu.core{core}.load"),
-                        busy,
-                        MeasurementUnit::BasisPoints,
-                    )
-                    .better(Better::Lower)
-                })
-            }),
-        );
-    }
-
     pub fn record(&self, measurements: impl IntoIterator<Item = Measurement>) {
         let mut recorded = self
             .0

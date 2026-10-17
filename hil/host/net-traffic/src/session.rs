@@ -10,10 +10,10 @@ use oer_hil_protocol::{
     Endpoint, Message,
     base::LinkHealth,
     network::{
-        CpuLoadEvidence, Direction, EvidenceRecord, Finished, FlowTransportEvidence,
-        NetworkSchedulerEvidence, RadioEvidence, RxDeliveryEvidence, RxZeroCopyEvidence,
-        SESSION_FLOW_CAPACITY, SessionConfig, SessionLinkRequirements, SessionReady,
-        TransportEvidence, TxAggregateTimingEvidence, evidence_crc32c,
+        Direction, EvidenceRecord, Finished, FlowTransportEvidence, NetworkSchedulerEvidence,
+        RadioEvidence, RxDeliveryEvidence, RxZeroCopyEvidence, SESSION_FLOW_CAPACITY,
+        SessionConfig, SessionLinkRequirements, SessionReady, TransportEvidence,
+        TxAggregateTimingEvidence, evidence_crc32c,
     },
     system::StackUsage,
 };
@@ -45,9 +45,6 @@ pub struct SessionEvidence {
     pub rx_delivery: Option<RxDeliveryEvidence>,
     pub network_scheduler: Option<NetworkSchedulerEvidence>,
     pub rx_zero_copy: Option<RxZeroCopyEvidence>,
-    /// Each core's load over the traffic window, from an image with the
-    /// executor's idle accounting (none publishes it since #770).
-    pub cpu_load: Option<CpuLoadEvidence>,
     pub stack: StackUsage,
     pub link: LinkHealth,
     pub finished: Finished,
@@ -360,18 +357,13 @@ fn wait_for_session(
     if let Some(zero_copy) = rx_zero_copy {
         crate::validation::validate_rx_zero_copy(zero_copy)?;
     }
-    let cpu_load = session_evidence(capture, session, Duration::ZERO, |record| match record {
-        EvidenceRecord::CpuLoad(evidence) => Some(evidence),
-        _ => None,
-    })?;
     let expected_records = 3
         + u16::try_from(flow_transport.iter().flatten().count())?
         + u16::from(radio.is_some())
         + u16::from(tx_timing.is_some())
         + u16::from(rx_delivery.is_some())
         + u16::from(network_scheduler.is_some())
-        + u16::from(rx_zero_copy.is_some())
-        + u16::from(cpu_load.is_some());
+        + u16::from(rx_zero_copy.is_some());
     if finished.summary.evidence_records != expected_records {
         return Err(format!(
             "device reported {} evidence records but published {expected_records} typed records",
@@ -399,9 +391,6 @@ fn wait_for_session(
     if let Some(zero_copy) = rx_zero_copy {
         records.push(EvidenceRecord::RxZeroCopy(zero_copy));
     }
-    if let Some(cpu_load) = cpu_load {
-        records.push(EvidenceRecord::CpuLoad(cpu_load));
-    }
     records.push(EvidenceRecord::Link(link));
     records.push(EvidenceRecord::Stack(stack));
     let checksum = evidence_crc32c(&records)
@@ -421,7 +410,6 @@ fn wait_for_session(
         rx_delivery,
         network_scheduler,
         rx_zero_copy,
-        cpu_load,
         stack,
         link,
         finished,

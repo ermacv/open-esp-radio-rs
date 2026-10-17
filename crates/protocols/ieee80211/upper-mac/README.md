@@ -80,7 +80,6 @@ Backend adapters retain the commit stamp's generation and reject a sample
 from another generation before consuming a completion or changing retry state.
 Monotonic timers remain the source for waiting and transmit watchdogs.
 
-WMM categories select one cell of an exact four-cell contention array.
 `AmpduRequest` owns its bounded lengths; asking for a subframe outside that
 request gives `None`, and the planner reports `SubframeOutsideAggregate`
 before publishing an attempt. An unrepresentable subframe size admits no

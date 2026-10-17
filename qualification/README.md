@@ -161,16 +161,17 @@ selects it directly. Source-facet
 inventory status and native/lower/composed level are separate from evaluator
 axes; unselected inventory entries have no readiness value.
 
-The [Bluetooth catalog](catalog/esp32s31/bluetooth.toml) owns all 68 existing
-Bluetooth LE qualification declarations and the wider LE, Classic and Host-only
-source inventory. It imports the Wi-Fi/PHY and
+The [Bluetooth catalog](catalog/esp32s31/bluetooth.toml) owns all 64 Bluetooth
+LE capability declarations and the wider LE, Classic and Host-only source
+inventory. It imports the Wi-Fi/PHY and
 [coexistence](catalog/esp32s31/coex.toml) catalogs to reuse the exact
-Bluetooth initial handoff, idle PHY maintenance, idle physical release and
-same-storage restart facts, alongside the diagnostic `coex-timer-validation-bridge`.
-The periodic Bluetooth maintenance fact owns configured active-ACL windows and
-DTM hard-expiry behavior; qualified timing/RF bounds and encrypted recovery
-remain separate limits. Implemented subsets do not promote the incomplete common-PHY, powered
-teardown or coexistence lifetimes.
+Bluetooth initial handoff and idle and periodic PHY maintenance facts, alongside
+the diagnostic `coex-timer-validation-bridge`. Those facts are implemented lower
+primitives that no composition runs since #770 (tag `legacy-radio-2026-10-16`);
+the powered-release and same-storage restart facts went with the Bluetooth
+composition, and #771 brings a composer back. Qualified timing/RF bounds and
+encrypted recovery remain separate limits. Implemented subsets do not promote
+the incomplete common-PHY, powered teardown or coexistence lifetimes.
 
 The coexistence catalog and the
 [whole-radio catalog](catalog/esp32s31/whole-radio.toml) are source-inventory
@@ -179,9 +180,10 @@ readiness authority. Whole-radio views load the Wi-Fi/PHY and coexistence
 catalogs explicitly because they project facts owned there; a missing fact
 owner is an error rather than an omitted row.
 
-The [IEEE 802.15.4 catalog](catalog/esp32s31/ieee802154.toml) owns the existing
-six-capability radio/MAC program and its wider PHY, CCA, dataplane, filtering,
-timing, security, power, coexistence and Host-only source inventory. Its
+The [IEEE 802.15.4 catalog](catalog/esp32s31/ieee802154.toml) owns five
+radio/MAC capability declarations, which no program selects since #770, and
+the wider PHY, CCA, dataplane, filtering, timing, security, power, coexistence
+and Host-only source inventory. Its
 `ieee802154-registered-timing-entry` and
 `ieee802154-mac-operation-subset` facts expose implemented lower operations
 without promoting their incomplete RF-ready and public-dataplane parents.

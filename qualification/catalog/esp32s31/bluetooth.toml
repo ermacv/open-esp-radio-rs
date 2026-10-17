@@ -117,7 +117,7 @@ source-fact-refs = [
 id = "bluetooth-phy-demand-and-release"
 composition = "production"
 scope = "Enter and leave the shared PHY domain and BTBB as the Bluetooth client of the radio arbiter; the arbiter's domain turns due or periodic evaluation into the exact pending tracking request, and the release reports the last-client fact that lets the arbiter's owner close RF (the radio system that did went in #770, tag `legacy-radio-2026-10-16`; #771 brings it back)"
-limits = "These lower transitions acquire no Controller or shared-RF permission. The referenced idle maintenance and powered-release facts own their composed subsets; periodic active-role service retains its separate incomplete fact"
+limits = "These lower transitions acquire no Controller or shared-RF permission. The idle and periodic maintenance facts are implemented lower primitives that no composition runs since #770 (tag `legacy-radio-2026-10-16`); the powered-release fact went with the Bluetooth composition, and #771 brings a composer back"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
   "crates/hardware/esp32s31/phy/src/concurrent.rs",
@@ -1049,7 +1049,7 @@ limitations = "Only the exact declared scope is represented; source coverage doe
 id = "link-layer-encryption"
 title = "LE Link Layer encryption"
 scope = "Typed key installation encryption start pause and restart packet counters nonce and MIC ownership reliable retransmission under encryption and terminal MIC failure through HCI"
-implementation = "complete"
+implementation = "incomplete"
 host = "incomplete"
 async = "bounded"
 depends-on = [
@@ -1057,6 +1057,7 @@ depends-on = [
   "connected-phy-and-data-length",
 ]
 gaps = [
+  { axis = "implementation", id = "link-layer-encryption-hci-and-controller-composition-missing" },
   { axis = "host", id = "link-layer-encryption-production-boundary-regressions-missing" },
   { axis = "vendor", id = "link-layer-encryption-production-contract-evidence-missing" },
   { axis = "hil", id = "link-layer-encryption-interoperability-and-fault-cells-missing" },
@@ -1070,9 +1071,9 @@ security = [
   "le-security",
 ]
 composition = "link-layer-encryption"
-level = "composed-product"
+level = "lower-primitive"
 activation-boundary = "Typed key installation encryption start pause and restart packet counters nonce and MIC ownership reliable retransmission under encryption and terminal MIC failure through HCI"
-limitations = "Only the exact declared scope is represented; source coverage does not promote evidence axes, dependencies, or broader Controller readiness."
+limitations = "The Link Layer owns key installation, the start, pause and restart handshakes, packet counters, nonce and MIC; the controller core and HCI service that ran them through HCI were removed (#770, tag `legacy-radio-2026-10-16`), and #773 rebuilds the Bluetooth orchestration."
 
 [[capabilities]]
 id = "privacy-and-filtering"
@@ -2228,72 +2229,72 @@ id = "bluetooth-connect-ind-decoding-and-admission"
 section = "bluetooth-le-roles-connections-reliability"
 title = "`CONNECT_IND` decoding and admission"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "[Portable connection policy](../../../../protocols/bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only."
+level = "lower-primitive"
+scope-and-limitations = "[Portable connection policy](../../../../protocols/bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only. The controller core and HCI command service that admitted connections with it were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-first-peripheral-connection-window"
 section = "bluetooth-le-roles-connections-reliability"
 title = "First peripheral connection window"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The first event listens across the whole transmit window of the connection indication, widened by the 16-microsecond first-event guard, and reserves the vendor's minimum LE 1M event duration after it."
+level = "lower-primitive"
+scope-and-limitations = "[Peripheral timing](../../../../protocols/bluetooth/le/controller/src/timing.rs) computes the first event's listen window across the whole transmit window of the connection indication, widened by the 16-microsecond first-event guard, and the vendor's minimum LE 1M event duration after it. The controller core that planned connections with it was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-recurring-peripheral-events"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Recurring peripheral events"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Each later event is planned when the previous one ends, at the anchor the last received packet fixed, with clock-drift widening; the connection interval bounds how long the hardware may continue the event."
+level = "lower-primitive"
+scope-and-limitations = "[Peripheral timing](../../../../protocols/bluetooth/le/controller/src/timing.rs) computes each later event at the anchor the last received packet fixed, with clock-drift widening, bounded by the connection interval. The controller core that planned each event when the previous one ended was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-channel-selection-algorithm-1"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Channel Selection Algorithm #1"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Connection events select their data channel by CSA#1 unless both devices negotiated CSA#2."
+level = "lower-primitive"
+scope-and-limitations = "The [Link Layer](../../../../protocols/bluetooth/le/ll/src/connection.rs) selects a connection event's data channel by CSA#1 unless both devices negotiated CSA#2. No controller runs connection events since #770 (tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-channel-selection-algorithm-2"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Channel Selection Algorithm #2"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Connectable advertising sets ChSel, `CONNECT_IND` admission selects CSA#2 when both devices set it, and connection events select their data channel by it."
+level = "lower-primitive"
+scope-and-limitations = "The [Link Layer](../../../../protocols/bluetooth/le/ll/src/connection.rs) encodes ChSel for connectable advertising, `CONNECT_IND` admission selects CSA#2 when both devices set it, and its channel selection follows CSA#2. No controller runs connection events since #770 (tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-sleep-clock-accuracy-window-widening"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Sleep Clock Accuracy / window widening"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Window widening adds the peer's sleep-clock accuracy and the backend's local bound over the time since the last received anchor, plus the backend's 16-microsecond jitter."
+level = "lower-primitive"
+scope-and-limitations = "[Peripheral timing](../../../../protocols/bluetooth/le/controller/src/timing.rs) adds the peer's sleep-clock accuracy and the local bound over the time since the last received anchor, plus the 16-microsecond jitter. The controller core that applied it was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-ll-data-pdu-rx"
 section = "bluetooth-le-roles-connections-reliability"
 title = "LL Data PDU RX"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Received data PDUs are authenticated first when encrypted, then dispatched to the control procedures or delivered to the Host as ACL data that keeps the L2CAP start and continuation boundaries."
+level = "lower-primitive"
+scope-and-limitations = "[Authenticated receive](../../../../protocols/bluetooth/le/controller/src/receive.rs) authenticates an encrypted data PDU first and classifies it for the control procedures or as ACL data that keeps the L2CAP start and continuation boundaries. The controller core that dispatched it and delivered ACL data to the Host was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-llcp-framework"
 section = "bluetooth-le-roles-connections-reliability"
 title = "LLCP framework"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "The [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer feature, version, LE Ping and Data Length requests, apply Connection Update and Channel Map Update at their instants and answer other procedures with `LL_UNKNOWN_RSP`. PHY Update, Connection Parameters Request and later procedures are absent."
+level = "lower-primitive"
+scope-and-limitations = "The [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer feature, version, LE Ping and Data Length requests, decode Connection Update and Channel Map Update with their instants and answer other procedures with `LL_UNKNOWN_RSP`. PHY Update, Connection Parameters Request and later procedures are absent. The controller core and HCI command service that ran it were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-connection-update-channel-map-update"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Connection Update / Channel Map Update"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Central Connection Update and Channel Map Update wait for the event to end and apply at their exact instants; a passed instant ends the connection, and LE Connection Update Complete reports changed parameters."
+level = "lower-primitive"
+scope-and-limitations = "The [Link Layer](../../../../protocols/bluetooth/le/ll/src/connection.rs) applies a central Connection Update and Channel Map Update at their exact instant and ends the connection on a passed instant. The controller core that waited for the event end and reported LE Connection Update Complete was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-phy-update"
@@ -2308,40 +2309,40 @@ id = "bluetooth-data-length-extension-data-length-update"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Data Length Extension / Data Length Update"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The [Link Layer](../../../../protocols/bluetooth/le/ll/src/data_length.rs) answers and starts the Data Length Update on LE 1M up to 251 octets and 2120 us; the Controller fragments Host data by the effective transmit length, serves HCI LE Set Data Length, Read and Write Suggested Default Data Length and Read Maximum Data Length, and reports LE Data Length Change."
+level = "lower-primitive"
+scope-and-limitations = "The [Link Layer](../../../../protocols/bluetooth/le/ll/src/data_length.rs) answers and starts the Data Length Update on LE 1M up to 251 octets and 2120 us. The controller core that fragmented Host data by the effective transmit length, served HCI LE Set Data Length, Read and Write Suggested Default Data Length and Read Maximum Data Length and reported LE Data Length Change was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-feature-exchange"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Feature Exchange"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The peripheral answers `LL_FEATURE_REQ` and serves LE Read Remote Features with its own request and LE Read Remote Features Complete."
+level = "lower-primitive"
+scope-and-limitations = "The peripheral [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer `LL_FEATURE_REQ` and build the request and result of LE Read Remote Features. The controller core and HCI command service that served the HCI command were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-version-exchange"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Version Exchange"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The peripheral answers `LL_VERSION_IND` once and serves Read Remote Version Information with the configured local identity."
+level = "lower-primitive"
+scope-and-limitations = "The peripheral [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer `LL_VERSION_IND` once with the configured local identity and build the result of Read Remote Version Information. The controller core and HCI command service that served the HCI command were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-le-ping"
 section = "bluetooth-le-roles-connections-reliability"
 title = "LE Ping"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The peripheral answers `LL_PING_REQ` with `LL_PING_RSP`."
+level = "lower-primitive"
+scope-and-limitations = "The peripheral [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer `LL_PING_REQ` with `LL_PING_RSP`. No controller runs connections since #770 (tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-adaptive-frequency-hopping-channel-assessment"
 section = "bluetooth-le-roles-connections-reliability"
 title = "Adaptive Frequency Hopping / channel assessment"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "Channel maps from the connection indication and Channel Map Updates select the hopping channels. Local channel assessment and Controller-initiated map generation are absent."
+level = "lower-primitive"
+scope-and-limitations = "Channel maps from the connection indication and Channel Map Updates select the [Link Layer](../../../../protocols/bluetooth/le/ll/src/connection.rs) hopping channels. Local channel assessment and Controller-initiated map generation are absent. No controller runs connections since #770 (tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-le-channel-classification"
@@ -2364,8 +2365,8 @@ id = "bluetooth-link-layer-encryption"
 section = "bluetooth-security-privacy"
 title = "Link Layer Encryption"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The [Link Layer security](../../../../protocols/bluetooth/le/ll/src/security.rs) owns the Long Term Key, the peripheral start, pause and restart handshakes, independent packet counters, nonce construction and MIC authentication in software AES-CCM. The Controller serves LE Long Term Key Request Reply and Negative Reply, reports Encryption Change and Encryption Key Refresh Complete, and terminates the connection when authentication fails. The accelerator surface stays unused."
+level = "lower-primitive"
+scope-and-limitations = "The [Link Layer security](../../../../protocols/bluetooth/le/ll/src/security.rs) owns the Long Term Key, the peripheral start, pause and restart handshakes, independent packet counters, nonce construction and MIC authentication in software AES-CCM. The controller core that served LE Long Term Key Request Reply and Negative Reply, reported Encryption Change and Encryption Key Refresh Complete and terminated the connection on an authentication failure was removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration. The accelerator surface stays unused."
 
 [[items]]
 id = "bluetooth-le-privacy-1-2"
@@ -2380,8 +2381,8 @@ id = "bluetooth-resolving-list"
 section = "bluetooth-security-privacy"
 title = "Resolving List"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "[PHY engine storage](memory/src/ble_phy_engine.rs) owns allocation and base publication. HCI list commands, IRKs and live resolution policy are not composed."
+level = "lower-primitive"
+scope-and-limitations = "[PHY engine storage](memory/src/ble_phy_engine.rs) owns allocation and base publication. HCI list commands, IRKs and live resolution policy are absent; no controller composes them since #770 (tag `legacy-radio-2026-10-16`), and #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-le-secure-connections-integration"
@@ -2540,7 +2541,7 @@ id = "bluetooth-acl-sco-iso-packet-framing"
 section = "bluetooth-hci-host-boundary"
 title = "ACL / SCO / ISO packet framing"
 status = "implemented"
-level = "composed-product"
+level = "lower-primitive"
 scope-and-limitations = "[Packet validation](../../../../protocols/bluetooth/hci/src/transport/packet.rs) recognizes standard packet kinds and declared lengths. This is framing only, not an operational data plane."
 
 [[items]]
@@ -2556,32 +2557,32 @@ id = "bluetooth-read-local-supported-commands"
 section = "bluetooth-hci-host-boundary"
 title = "Read Local Supported Commands"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The standard 64-octet bitmap declares the command inventory of the Controller's classifier; LE Rand appears only when a random source is attached."
+level = "lower-primitive"
+scope-and-limitations = "The standard 64-octet bitmap of the [HCI bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) declares the command inventory of its classifier; LE Rand appears only when a random source is attached. The controller core and HCI command service that answered with it were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-public-bd-addr-le-read-buffer-size"
 section = "bluetooth-hci-host-boundary"
 title = "Public BD_ADDR / LE Read Buffer Size"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Bootstrap reports the configured address and bounded buffer information; buffer reporting does not establish ACL support."
+level = "lower-primitive"
+scope-and-limitations = "The [HCI bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) reports the configured address and bounded buffer information; buffer reporting does not establish ACL support. The controller core and HCI command service that answered with it were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-le-set-random-address"
 section = "bluetooth-hci-host-boundary"
 title = "LE Set Random Address"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "The Controller stores the address for advertising sets whose own-address type is random. It does not establish privacy."
+level = "lower-primitive"
+scope-and-limitations = "The [HCI bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) stores the address for advertising sets whose own-address type is random. It does not establish privacy. The controller core and HCI command service that served the command were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-le-read-local-supported-features-command"
 section = "bluetooth-hci-host-boundary"
 title = "LE Read Local Supported Features command"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "[Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns bit 0 for LE Encryption, bit 3 for Peripheral-initiated Feature Exchange, bit 4 for the LE Ping responder, bit 5 for LE Data Packet Length Extension and bit 14 for Channel Selection Algorithm #2. Every other optional feature bit remains clear."
+level = "lower-primitive"
+scope-and-limitations = "[Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns bit 0 for LE Encryption, bit 3 for Peripheral-initiated Feature Exchange, bit 4 for the LE Ping responder, bit 5 for LE Data Packet Length Extension and bit 14 for Channel Selection Algorithm #2. Every other optional feature bit remains clear. The controller core and HCI command service that served the command were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-optional-le-capability-advertisement"
@@ -2596,32 +2597,32 @@ id = "bluetooth-le-read-filter-accept-list-size"
 section = "bluetooth-hci-host-boundary"
 title = "LE Read Filter Accept List Size"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Configured capacity is reported; list operation remains absent."
+level = "lower-primitive"
+scope-and-limitations = "The [HCI bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) reports the configured capacity; list operation remains absent. The controller core and HCI command service that served the command were removed (#770, tag `legacy-radio-2026-10-16`); #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-controller-scheduler-timebase"
 section = "bluetooth-controller-lifetime"
 title = "Controller scheduler timebase"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "Always-awake event-driven time ownership uses two raw ticks per microsecond and retains fractional ticks across epoch updates. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete."
+level = "lower-primitive"
+scope-and-limitations = "Event-driven [controller time](../../../esp32s31/driver/bluetooth/src/controller_time.rs) uses two raw ticks per microsecond and retains fractional ticks across epoch updates. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete; no runtime samples it since #770 (tag `legacy-radio-2026-10-16`), and #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-controller-interrupt-epoch"
 section = "bluetooth-controller-lifetime"
 title = "Controller interrupt epoch"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "IRQ routing, bounded hard-handler classification and task wake exist; unrelated finished-list and complete role dispatch remain incomplete."
+level = "lower-primitive"
+scope-and-limitations = "Bounded hard-handler [classification](../../../esp32s31/driver/bluetooth/src/interrupt/classifier.rs) exists; the esp-hal IRQ routes and the task wake were removed (#770, tag `legacy-radio-2026-10-16`), and #773 rebuilds the Bluetooth orchestration. Unrelated finished-list and complete role dispatch remain incomplete."
 
 [[items]]
 id = "bluetooth-controller-sram-ownership"
 section = "bluetooth-controller-lifetime"
 title = "Controller SRAM ownership"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "Static DTM, advertising, scanning and peripheral graphs have CPU/hardware handoff contracts. Missing role graphs and packet-engine contracts are not implied."
+level = "lower-primitive"
+scope-and-limitations = "Static DTM, advertising, scanning and peripheral graphs have CPU/hardware handoff contracts in [controller memory](../../../esp32s31/driver/bluetooth/memory/src/scheduler_pool.rs). Missing role graphs and packet-engine contracts are not implied; no radio role builds the graphs since #770 (tag `legacy-radio-2026-10-16`), and #773 rebuilds the Bluetooth orchestration."
 
 [[items]]
 id = "bluetooth-bluetooth-modem-sleep-wake-request"
@@ -2644,8 +2645,8 @@ id = "bluetooth-hardware-pti-coexistence"
 section = "bluetooth-coexistence"
 title = "Hardware PTI coexistence"
 status = "partial"
-level = "composed-product"
-scope-and-limitations = "Recovered priority/register machinery exists without a complete Bluetooth request/grant/release policy."
+level = "lower-primitive"
+scope-and-limitations = "Recovered priority/register machinery exists in the [driver](../../../esp32s31/driver/bluetooth/src/coexistence.rs) without a complete Bluetooth request/grant/release policy. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
 
 [[items]]
 id = "bluetooth-external-coexistence-interface"

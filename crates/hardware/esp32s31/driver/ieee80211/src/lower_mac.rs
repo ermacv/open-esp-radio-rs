@@ -845,8 +845,8 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
 {
-    /// A disabled core over an idle ordinary TX owner. `coex` is the radio
-    /// system the core shares its RF with: beacon reception and connection
+    /// A disabled core over an idle ordinary TX owner. `coex` is the shared
+    /// radio the core shares its RF with: beacon reception and connection
     /// frames ask for the air at its priorities.
     pub fn new(
         authority: CoreAuthority<'core, Path, TICKETS>,

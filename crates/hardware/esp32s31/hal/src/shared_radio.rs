@@ -585,7 +585,7 @@ impl<T> SharedRadioLease<'_, T> {
     }
 
     /// Enter client `K` into the coexistence participant set; returns how
-    /// many take part now. The radio system applies the coexistence policy.
+    /// many take part now. The shared radio's owner applies the coexistence policy.
     pub fn enter_coex<K: RadioClientKind>(
         &mut self,
         absent: CoexAbsent<K>,

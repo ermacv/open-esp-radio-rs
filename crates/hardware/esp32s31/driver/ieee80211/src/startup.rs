@@ -56,8 +56,8 @@ impl<W> RadioStartFailure<W> {
     }
 }
 
-/// Bring the initialized Wi-Fi client up on the shared PHY domain the radio
-/// system prepared and perform the common MAC initialization without
+/// Bring the initialized Wi-Fi client up on the shared PHY domain the shared
+/// radio's owner prepared and perform the common MAC initialization without
 /// choosing a Wi-Fi role. Role
 /// topology is validated for each supervisor epoch immediately before that
 /// epoch consumes this stopped owner.

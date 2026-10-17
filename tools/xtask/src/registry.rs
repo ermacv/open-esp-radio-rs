@@ -429,8 +429,9 @@ pub const CHECKS: &[Check] = &[
         trigger: None,
         run: |ctx, _| checks::isa_conformance::run(ctx, std::path::Path::new("clang")),
     },
-    // A change type-checks the classes it reaches instead.
-    // The boot smoke image, the one image CI builds, builds in a job of its own.
+    // The boot smoke image, the one image CI builds, builds in a job of its
+    // own: for a change to the boot path a chip profile places, and with its
+    // tier; other changes type-check the classes they reach instead.
     Check {
         id: "final-images",
         tier: Tier::Full,

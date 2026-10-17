@@ -118,10 +118,11 @@ Every runner works over a change's reach or over the whole tree. Each CI job
 tier TIER --job JOB`, on a branch with `--checks` naming what its change
 reaches; a test holds the workflows to the registry, so no
 workflow lists checks of its own. A check without a trigger runs only with
-its whole tier: the boot smoke image build, every image class, the
-conformance check (it needs clang and the Sail model), Blobray's
+its whole tier: every image class, the conformance check (it needs clang and the Sail model), Blobray's
 whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
-the probes and the host stands. The session start hook
+the probes and the host stands. The boot smoke image build (`final-images`)
+runs for a change under `platform/`, whose boot path it builds, and with its
+tier. The session start hook
 reads CI's state through `ci-status`, and the pre-tool hook reads its
 heavy-command list from `cargo xtask hooks`. The fast host `claude-hooks`
 check runs the hook's offline regressions
@@ -327,7 +328,7 @@ The root Cargo alias selects this package. `--root PATH` selects an explicit
 repository checkout. A nested independent workspace does not acquire the root
 workspace's package membership through `--manifest-path`.
 
-Architecture and example checks resolve their Cargo jobs from the same typed
+Architecture checks resolve their Cargo jobs from the same typed
 configuration model. Package metadata owns supported feature alternatives; the
 model keeps workspace, package/target, host or MCU target, feature selection and
 Cargo build profile separate. API documentation instead follows each package's
@@ -389,11 +390,7 @@ there are no source-spelling or regex checks for required Rust identifiers.
 Builds retain normal Cargo parallelism. `OPEN_RADIO_ANALYSIS_BUILD_JOBS` is an
 optional explicit local limit for vendor probe builds.
 
-## Standalone firmware builds
-
-Standalone firmware builds keep a Cargo cache per example and copy their ELFs
-and images into a unique `target/firmware/esp32s31-<example>/build-<id>/`
-bundle.
+## Firmware lockfiles
 
 Firmware builds never modify a committed `Cargo.lock`. Each build copies the
 workspace catalog into its own cache and resolves through Cargo's

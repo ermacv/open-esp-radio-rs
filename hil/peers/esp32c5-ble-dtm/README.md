@@ -56,10 +56,11 @@ where the reason is `invalid`, `timeout` or the HCI status as
 
 ## Host driver
 
-`oer_hil_family_bluetooth::fixture::dtm_peer::DtmPeer` drives this protocol from a
-scenario: it takes the running peer over with `SYNC`, checks the protocol
-version, refuses arguments outside the table above before sending them, and
-returns the `@END` packet count. A scenario that uses the peer names
-`ble-dtm-peer` as its peer image, so the runner claims the run's peer board
-from the stand file's pool in the run's lease and brings it to
-the current catalog build first.
+The host driver, `oer_hil_family_bluetooth::fixture::dtm_peer::DtmPeer`, was
+removed with the Bluetooth HIL family in #770 (tag `legacy-radio-2026-10-16`);
+#773 brings an interop driver back. It drove this protocol from a scenario: it
+took the running peer over with `SYNC`, checked the protocol version, refused
+arguments outside the table above before sending them, and returned the `@END`
+packet count. A scenario that used the peer named `ble-dtm-peer` as its peer
+image, so the runner claimed the run's peer board from the stand file's pool in
+the run's lease and brought it to the current catalog build first.

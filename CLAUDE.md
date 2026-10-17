@@ -56,7 +56,7 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `hil/` | HIL protocol, runner, targets, scenarios and evidence: [hil/CLAUDE.md](hil/CLAUDE.md) |
 | `verification/` | `cargo verification` (own workspace): vendor pins, recovered facts and comparisons: [verification/CLAUDE.md](verification/CLAUDE.md) |
 | `qualification/` | Capability catalogs, programs and the evaluator: [qualification/CLAUDE.md](qualification/CLAUDE.md) |
-| `tools/` | Gate (xtask, tidy), dev kit (`cargo fw`: flash, monitor, devices), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
+| `tools/` | Gate (xtask, tidy), dev kit (`cargo fw`: flash an image bundle or an ESP-IDF catalog image such as a `hil/peers` reference, monitor, devices, compare), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
 | `stand/` | `cargo stand` and the shared stand's packages: [stand guide](hil/host/stand.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |
 | `docs/` | Cross-owner contracts: [architecture](docs/architecture.md), [documentation](docs/documentation.md), [verification and qualification](docs/verification-and-qualification.md) |

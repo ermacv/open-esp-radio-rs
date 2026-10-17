@@ -183,5 +183,5 @@ return exact inline owners without allocation. An uncomposed hardware path
 must identify its missing caller at the entry boundary; broad module-level
 warning suppression does not document that lifecycle limitation.
 Vendor comparison must exercise compiled production entries and fail
-closed. Examples and HIL may compose or observe the driver, but must not own
+closed. Compositions and HIL may compose or observe the driver, but must not own
 another implementation of its protocol or hardware behavior.

@@ -1,7 +1,6 @@
 //! The one image pipeline: `build(ImageSpec) -> ImageBundle`.
 //!
-//! Every firmware image of the repository, a standalone example or a HIL
-//! image class, is built here by the [`staged`] pipeline: the ESP-IDF
+//! Every firmware image of the repository, a HIL image class, is built here by the [`staged`] pipeline: the ESP-IDF
 //! bootloader loads the platform bootstrap, which stages the packed runtime
 //! into PSRAM. [`esp_idf`] builds the firmware catalog's ESP-IDF images
 //! (vendor references and peers) and bundles them with their own bootloader.

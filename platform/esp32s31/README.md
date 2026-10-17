@@ -1,7 +1,7 @@
 # ESP32-S31 staged application boot
 
-This platform composes ESP-HAL for ESP32-S31-Function-CoreBoard-1. Both the
-standalone examples and HIL consume it; it has no HIL protocol, scenario,
+This platform composes ESP-HAL for ESP32-S31-Function-CoreBoard-1. The HIL
+images consume it; it has no HIL protocol, scenario,
 radio role, executor or network-stack dependency.
 
 | Component | Responsibility |

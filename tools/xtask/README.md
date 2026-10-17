@@ -33,7 +33,7 @@ The gate every change passes before it reaches `main`; see [the push gate](#the-
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask check changed [--base REV] [--full]` | The push gate over what this checkout changed against the merge base with `REV` (default `origin/main`), committed, uncommitted or untracked: every fast check of [the registry](#the-check-registry) the change selects ([selection](#the-push-gate)). `--full` adds the full-tier checks it selects, as CI runs them on every push: among them the tests of every dependent package, `check docs`, root-workspace Clippy, API documentation of the affected root packages, the HIL image classes whose last build read a changed file, the examples, the PHY, network, architecture, register, qualification and provenance checks for their inputs |
+| `cargo xtask check changed [--base REV] [--full]` | The push gate over what this checkout changed against the merge base with `REV` (default `origin/main`), committed, uncommitted or untracked: every fast check of [the registry](#the-check-registry) the change selects ([selection](#the-push-gate)). `--full` adds the full-tier checks it selects, as CI runs them on every push: among them the tests of every dependent package, `check docs`, root-workspace Clippy, API documentation of the affected root packages, the HIL image classes whose last build read a changed file, the PHY, network, architecture, register, qualification and provenance checks for their inputs |
 | `cargo xtask check tier TIER --job JOB [--checks IDS]` | Run every check of the registry that CI job `JOB` has up to `TIER` (`fast`, `full` or `nightly`), or only the comma-separated `IDS` of them (default `all`), over the whole tree, as that job does; a failing check does not stop the others. Each CI job is one such call, on a branch without the audited checks its change does not reach ([CI input reuse](#ci-input-reuse)) |
 | `cargo xtask check tier --list` | Print the registry: each check's id, tier, CI job and what it checks; a check marked whole-tier-only never runs for a change |
 | `cargo xtask ci-status` | Print each workflow whose newest finished run on `main` failed, naming its failed jobs, or that `main` is green, then the open Claude review findings (`review: …` issues of the workflow or the repository owner): those of the checkout's branch one by one, and a count of the rest, which are ordinary issues; then every open pull request whose `claude-runtime-review` ended in error, to review again with `@claude review`; the session start hook runs it |
@@ -118,8 +118,8 @@ Every runner works over a change's reach or over the whole tree. Each CI job
 tier TIER --job JOB`, on a branch with `--checks` naming what its change
 reaches; a test holds the workflows to the registry, so no
 workflow lists checks of its own. A check without a trigger runs only with
-its whole tier: the boot smoke image build, every image class, the examples'
-builds, the conformance check (it needs clang and the Sail model), Blobray's
+its whole tier: the boot smoke image build, every image class, the
+conformance check (it needs clang and the Sail model), Blobray's
 whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
 the probes and the host stands. The session start hook
 reads CI's state through `ci-status`, and the pre-tool hook reads its
@@ -355,8 +355,7 @@ performs no hardware operations.
 ## Image checks
 
 Every image is built by the one image pipeline,
-[`oer-image`](../image/pipeline/README.md): `build firmware` with the examples' spec,
-`check firmware` and `compare images` through `oer-hil-image`'s class specs.
+[`oer-image`](../image/pipeline/README.md): `check firmware` and `compare images` through `oer-hil-image`'s class specs.
 The Blobray audit of a product image's calls into the vendor radio ROM was
 removed with the last image it audited (#762); it returns with the first
 product image, and the forbidden ROM ranges stay in `chip.toml`. Encoding uses the `espflash` library, so no build needs the `espflash`
@@ -401,7 +400,7 @@ workspace catalog into its own cache and resolves through Cargo's
 `resolver.lockfile-path` (Cargo 1.97+), so a `[patch]` or local override
 writes only that copy, which is archived as the build's effective lockfile.
 Metadata checks read committed catalogs without waiting, and builds of
-different examples or image classes run concurrently. An overlapping
+different image classes run concurrently. An overlapping
 build of the same output fails on that copy's lease; the artifact lease
 separately protects the selected cache and output snapshot.
 Successful bundles remain available for inspection, while failed partial bundles

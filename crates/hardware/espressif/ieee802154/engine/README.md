@@ -60,17 +60,22 @@ and a new generator keeps these rules:
   2. the Link Metrics enhanced-ACK probing IE, when the frame's source is a
      probing initiator (`otLinkMetricsEnhAckGenData`);
   3. the configured header IEs, at most `ENHANCED_ACK_IE_CAPACITY` bytes.
-- The CSL phase is taken at the transmit SFD (`ot_radio_transmit_sfd_done`):
-  the CSL IE of the frame or enhanced ACK going out gets the period and the
-  phase from the radio clock at that moment to the next sample time
-  (`oer_ieee802154::mac::csl`). The Time IE goes only into a transmitted
-  frame, never into an enhanced ACK.
+- At the transmit SFD (`ot_radio_transmit_sfd_done`), with a nonzero CSL
+  period, the CSL IE of the frame or enhanced ACK going out gets the period
+  and the phase from the radio clock at that moment to the next sample time
+  (`oer_ieee802154::mac::csl`); with a zero period nothing is written. A
+  transmitted frame's Time IE gets the time-sync sequence and the network
+  time (the radio clock plus the network time offset,
+  `oer_ieee802154::mac::time_sync`); an enhanced ACK never carries one.
 - A retransmission keeps its frame counter and key index, except that a CSL
   receiver takes a new frame counter on every retry: the CSL IE changes
   with each attempt.
 - A secured ACK uses the keys of the interface the received frame matched
   (`mpf_index`; `enh_ack_set_security_addr_and_key`). The ACK takes the next
   frame counter of those keys and the frame's key index, which the port
-  keeps as `s_ack_frame_counter` and `s_ack_key_id`. A frame that no single
-  interface claims, or an interface without keys, gets no ACK: the engine
-  delivers the frame unacknowledged.
+  keeps as `s_ack_frame_counter` and `s_ack_key_id`. When the ACK must be
+  secured, a frame that no single interface claims, or an interface without
+  keys, gets no ACK.
+- The generator also refuses a received frame it cannot parse and an ACK it
+  cannot generate (`generate_enhanced_ack` fails) or secure. A refused ACK
+  leaves the engine to deliver the frame unacknowledged.

@@ -122,7 +122,7 @@ fetch esp32s31 --artifact rom`; a missing or changed ROM is an error)
 and its reviewed summaries, with the platform's interrupt contract
 (`oer-esp32s31-platform-layout`'s `interrupts`). The analysis reports every
 hart as a bound or `partial + ?` with its holes; the gate's policy,
-`Required`, decides what passes: `Proven` (product images and examples) fails
+`Required`, decides what passes: `Proven` (product images) fails
 unless every bound is known, `Partial` (diagnostic image classes, whose
 observers the product does not carry) also passes a `partial + ?` hart with a
 warning. Either way the bound, or the proven part, must fit the usable stack

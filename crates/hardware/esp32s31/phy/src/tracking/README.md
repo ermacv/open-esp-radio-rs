@@ -39,9 +39,10 @@ sample order and timestamp updates. It runs only when the caller commits to
 execution; it must not be used merely to ask whether work is due. Its pending
 owner remains pending until the selected target children complete.
 
-The concurrent domain runs the vendor periodic tracking: the radio system
-calls `track_concurrent_phy` every tracking period under the arbiter lease,
-and due work starts at once, as the vendor's does: no protocol pauses, and
+The concurrent domain runs the vendor periodic tracking when its owner calls
+`track_concurrent_phy` every tracking period under the arbiter lease (the
+radio system that did went in #770, tag `legacy-radio-2026-10-16`; #771
+brings it back), and due work starts at once, as the vendor's does: no protocol pauses, and
 the tracking graph brackets its RF-sensitive regions with the grant-protect
 request. There is no protocol-selected maintenance of individual operations.
 

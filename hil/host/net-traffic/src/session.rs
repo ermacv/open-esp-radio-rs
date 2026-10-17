@@ -45,8 +45,8 @@ pub struct SessionEvidence {
     pub rx_delivery: Option<RxDeliveryEvidence>,
     pub network_scheduler: Option<NetworkSchedulerEvidence>,
     pub rx_zero_copy: Option<RxZeroCopyEvidence>,
-    /// Each core's load over the traffic window, from an image with
-    /// `telemetry/cpu-load`.
+    /// Each core's load over the traffic window, from an image with the
+    /// executor's idle accounting (none publishes it since #770).
     pub cpu_load: Option<CpuLoadEvidence>,
     pub stack: StackUsage,
     pub link: LinkHealth,

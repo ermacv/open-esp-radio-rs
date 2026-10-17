@@ -37,12 +37,6 @@ source = "platform/espressif/staged-runtime/src/entry.rs"
 reason = "Assembly boot and fallback stack initialization run before normal tasks; no compiler frame is claimed."
 
 [[reviewed]]
-symbols = ["_runtime_enter_cpu1_psram", "esp_hal::system::multi_core::start_core1_init::<oer_esp32s31_hil_agent::runtime_main::{closure#0}>"]
-category = "assembly"
-source = "platform/espressif/staged-runtime/src/stacks.rs; esp-hal@21e2e93 esp-hal/src/system/multi_core.rs start_core1_init #[naked]"
-reason = "Reviewed secondary-core stack/PMA boot entries use assembly, then jump to separately compiled Rust. The full concrete Rust symbol is matched ignoring only v0 crate disambiguators; start_core1_init_impl is not exempt."
-
-[[reviewed]]
 symbols = ["strlen"]
 category = "compiler-runtime"
 source = "rustc 1.97.1 library/compiler-builtins/compiler-builtins/src/mem/mod.rs and src/macros.rs"

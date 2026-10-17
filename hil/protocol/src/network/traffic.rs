@@ -251,9 +251,12 @@ pub const CPU_LOAD_CORES: usize = 2;
 /// cycles. Everything else on the core is busy: tasks, interrupt handlers and
 /// the executor's own polling.
 ///
-/// An image with the executor's idle accounting (`telemetry/cpu-load`)
-/// publishes it for every TCP session and every one-direction UDP session; a
-/// bidirectional UDP session runs one window per direction and publishes none.
+/// An image with the executor's idle accounting published it for every TCP
+/// session and every one-direction UDP session; a bidirectional UDP session
+/// runs one window per direction and publishes none. No image publishes it
+/// now: the `telemetry/cpu-load` property and the Wi-Fi images that set it
+/// went in #770 and #762 (tags `legacy-radio-2026-10-16`,
+/// `legacy-wifi-2026-10-16`).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct CpuLoadEvidence {
     /// The window's length in CPU cycles.

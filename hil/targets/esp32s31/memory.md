@@ -3,8 +3,8 @@
 ## IRQ stack evidence
 
 The shared platform paints dedicated SRAM IRQ stacks before interrupt admission.
-The Bluetooth images sample core 0's IRQ stack on its hart in thread mode
-(`agent/src/stack_evidence.rs`) and return it with their stack queries.
+No image samples them now: the Bluetooth images that read core 0's IRQ stack
+(`agent/src/stack_evidence.rs`) went in #770 (tag `legacy-radio-2026-10-16`).
 
 The [stack policy](../../../platform/esp32s31/stack.toml) sets the interrupt stacks' `minimum_free_bytes`; its current
 reserve is an engineering guard, not a qualified nesting bound. A sampling

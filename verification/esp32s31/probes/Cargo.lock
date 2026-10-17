@@ -1115,11 +1115,9 @@ dependencies = [
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
- "oer-ieee80211-trace",
  "oer-ieee80211-upper-mac",
  "oer-memory",
  "oer-time",
- "oer-trace",
  "pin-project",
  "subtle",
  "zeroize",
@@ -1149,10 +1147,8 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
- "oer-phy-trace",
  "oer-radio-analog",
  "oer-time",
- "oer-trace",
 ]
 
 [[package]]
@@ -1345,18 +1341,9 @@ dependencies = [
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
- "oer-ieee80211-trace",
  "oer-ieee80211-upper-mac",
  "oer-radio-port",
  "oer-time",
- "oer-trace",
-]
-
-[[package]]
-name = "oer-ieee80211-trace"
-version = "0.1.0"
-dependencies = [
- "oer-trace",
 ]
 
 [[package]]
@@ -1387,13 +1374,6 @@ name = "oer-memory"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
-]
-
-[[package]]
-name = "oer-phy-trace"
-version = "0.1.0"
-dependencies = [
- "oer-trace",
 ]
 
 [[package]]
@@ -1439,10 +1419,6 @@ dependencies = [
 
 [[package]]
 name = "oer-time"
-version = "0.1.0"
-
-[[package]]
-name = "oer-trace"
 version = "0.1.0"
 
 [[package]]

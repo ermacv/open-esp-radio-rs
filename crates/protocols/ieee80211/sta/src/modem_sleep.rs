@@ -22,7 +22,6 @@
 //! follows.
 
 use oer_ieee80211_mac::tsf::TsfInstant;
-use oer_ieee80211_trace::{PowerState, PowerStateTrace};
 use oer_time::{Duration, Instant};
 
 /// Beacon receive window requested at each TBTT (`g_pm_cfg[20]`).
@@ -144,16 +143,6 @@ pub enum PmState {
     PowerSave,
     /// Power save advertised and the station's RF asleep.
     Dozing,
-}
-
-impl PmState {
-    const fn traced(self) -> PowerState {
-        match self {
-            Self::Awake => PowerState::Awake,
-            Self::PowerSave => PowerState::PowerSave,
-            Self::Dozing => PowerState::Dozing,
-        }
-    }
 }
 
 /// Timers the power manager arms.
@@ -514,9 +503,6 @@ impl PmTraffic {
 #[derive(Clone, Debug, Eq, PartialEq)]
 // CAPABILITY: coex-coexistence-policy-and-scheduler-tbtt-anchored-periods
 pub struct ModemSleep {
-    /// False only on the private arithmetic-validation copy. The committed
-    /// transition emits every state edge, including intermediate wake states.
-    emit_state_trace: bool,
     sleep_type: SleepType,
     /// `[14]`: power management runs for an associated station.
     started: bool,
@@ -606,19 +592,15 @@ impl ModemSleep {
         step: impl Fn(&mut Self, Places<'_, PM_ACTION_CAPACITY>) -> Result<R, PmScheduleError>,
     ) -> Result<(R, PmActions), PmScheduleError> {
         let mut next = self.clone();
-        next.emit_state_trace = false;
         let mut actions = PmActions {
             items: [None; PM_ACTION_CAPACITY],
         };
-        let _validated = step(&mut next, actions.items.each_mut().map(EffectPlace))?;
+        let result = step(&mut next, actions.items.each_mut().map(EffectPlace))?;
         actions.validate_deadlines(clock.now)?;
-        // All inputs are captured values and helpers perform no IO besides
-        // tracing. Replay after validation is deterministic, preserving every
-        // original trace edge without a separately bounded trace queue. Both
-        // passes reserve at most PM_ACTION_CAPACITY places and never loop on
-        // external events; only the committed pass emits traces.
-        let (result, actions) = self.transition(step);
-        result.map(|result| (result, actions))
+        // Every input is a captured value: the validated copy is the
+        // committed state.
+        *self = next;
+        Ok((result, actions))
     }
 
     /// Stopped power management with the vendor attach defaults.
@@ -626,7 +608,6 @@ impl ModemSleep {
     /// SOURCE(esp32s31): `pm_attach`.
     pub const fn new(sleep_type: SleepType) -> Self {
         Self {
-            emit_state_trace: true,
             sleep_type,
             started: false,
             state: PmState::Awake,
@@ -666,15 +647,8 @@ impl ModemSleep {
         self.state
     }
 
-    /// Record every committed state edge. The validation pass suppresses
-    /// tracing, so a refused schedule emits no attempted state changes.
+    /// Enter `state`.
     fn enter(&mut self, state: PmState) {
-        if self.emit_state_trace && self.state != state {
-            oer_trace::emit(&PowerStateTrace {
-                from: self.state.traced(),
-                to: state.traced(),
-            });
-        }
         self.state = state;
     }
 

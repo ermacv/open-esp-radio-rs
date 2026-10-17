@@ -1080,11 +1080,6 @@ impl PhyState {
         }
     }
 
-    /// The committed tracking reference temperatures, in °C.
-    pub(crate) const fn temperature_references(&self) -> TemperatureReferences {
-        self.common.references
-    }
-
     pub(crate) fn apply_observed_temperature_outcome(
         &mut self,
         outcome: PhyTemperatureOutcome,

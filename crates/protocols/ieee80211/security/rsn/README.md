@@ -55,7 +55,7 @@ cannot accept an arbitrary slice whose suffix would escape authentication.
 GTK KDE parsing retains `GroupKeyId` in `RsnGtk` and `RsnKeyKind::Group`;
 IDs outside the two-bit wire domain never reach a key installation. The
 recorded M3 regression in `frames/captured_m3.rs` authenticates and unwraps
-frame 8 of Wireshark's pinned public `wpa2-psk-mfp` capture. Derived KDE cases
+a PSK-SHA256 + MFP Message 3 that hostapd sent on the stand. Derived KDE cases
 change only its ID to exercise all four wire values, including zero.
 
 The portable station can retain a completed key installation while waiting for

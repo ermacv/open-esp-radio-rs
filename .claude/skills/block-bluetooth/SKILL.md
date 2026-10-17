@@ -19,9 +19,9 @@ service loop (`serve`), the in-process HCI transport, the S31 radio role,
 runtime and composition, the Trouble GATT adapter, the Controller's planning
 core and HCI command service, the Bluetooth trace, and the Bluetooth HIL. The
 tag `legacy-radio-2026-10-16` keeps them (and `legacy-wifi-2026-10-16` keeps
-`main` before #756). The redesign is #563 decision 8: the upper link layer sans-IO
-in the body, the lower link layer in the P2 driver, a port shaped like the
-lower-MAC port. Nothing on `main` runs a Controller or reaches the air.
+`main` before #756). The redesign is #563 decision 8: the upper link layer
+sans-IO in the body, the lower link layer in the P2 driver, a port shaped like
+the lower-MAC port. Nothing on `main` runs a Controller or reaches the air.
 
 ## Packages (path → role)
 

@@ -14,8 +14,8 @@
 //!   Layer and Host dispatch;
 //! - [`coexistence`]: the vendor Controller's dynamic coexistence priority
 //!   rules for advertising and connection events;
-//! - `diagnostic` (feature `diagnostic-mic-fault`): the vendor HCI command
-//!   `0xFC01` that arms one received-MIC corruption.
+//! - [`diagnostic`]: the codec of the vendor HCI command `0xFC01` that armed
+//!   one received-MIC corruption, and the corruption itself.
 //!
 //! The Controller core that served HCI commands and ran the Link Layer roles
 //! over the radio request port was removed with the Bluetooth LE
@@ -25,7 +25,6 @@
 extern crate std;
 
 pub mod coexistence;
-#[cfg(feature = "diagnostic-mic-fault")]
 pub mod diagnostic;
 pub mod receive;
 pub mod timing;

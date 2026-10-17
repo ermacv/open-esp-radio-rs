@@ -1,16 +1,17 @@
-//! Diagnostic vendor command that arms one received-MIC corruption.
+//! The diagnostic vendor command that armed one received-MIC corruption:
+//! its opcode, its Command Complete and the corruption itself.
 //!
-//! Compiled only with the `diagnostic-mic-fault` feature, which diagnostic
-//! images enable and product images never do. Vendor-specific HCI command
-//! `0xFC01` (OGF `0x3F`, OCF `0x001`) takes one Connection_Handle and may be
-//! sent before encryption starts. The next received encrypted data PDU on that
-//! connection has one MIC octet inverted before CCM authentication;
-//! plaintext PDUs carry no MIC and are left alone, so the production
-//! authentication failure and connection exit run unchanged. The arming is
-//! one-shot and belongs to the connection: disconnection and Reset clear it.
-//! Command Complete returns the status and the Connection_Handle: `0x00`,
-//! `0x02` Unknown Connection Identifier, `0x0C` Command Disallowed while the
-//! connection is closing, or `0x12` for malformed parameters.
+//! Vendor-specific HCI command `0xFC01` (OGF `0x3F`, OCF `0x001`) took one
+//! Connection_Handle and could be sent before encryption started. The next
+//! received encrypted data PDU on that connection had one MIC octet inverted
+//! before CCM authentication; plaintext PDUs carry no MIC and were left
+//! alone, so the production authentication failure and connection exit ran
+//! unchanged. The one-shot arming per connection, its clearing on
+//! disconnection and Reset, and the choice of the Command Complete status
+//! (`0x00`, `0x02` Unknown Connection Identifier, `0x0C` Command Disallowed
+//! while the connection was closing, `0x12` for malformed parameters) lived
+//! in the Controller core removed in #770 (tag `legacy-radio-2026-10-16`);
+//! #773 brings a Controller back.
 
 use bt_hci::{
     cmd::{Opcode, OpcodeGroup},

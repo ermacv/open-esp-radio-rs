@@ -1,7 +1,9 @@
 //! The telemetry module: the program-counter profile. No current image
 //! produces it; the shared scenario `[profile]` header still names it, and
-//! #761 decides both. The event trace and the Wi-Fi observer properties went
-//! with the images that served them (tag `legacy-radio-2026-10-16`).
+//! #761 decides both. The event trace went with the images that served it in
+//! #770 (tag `legacy-radio-2026-10-16`). The Wi-Fi observer properties have
+//! had no producer since the Wi-Fi stack went in #762 (tag
+//! `legacy-wifi-2026-10-16`); #770 deleted their definitions.
 
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};

@@ -116,7 +116,7 @@ security = ["independent-of-link-security"]
 composition = "rf-channel-readiness"
 level = "composed-product"
 activation-boundary = "Registered common PHY RFPLL BTBB and protocol-specific channel transition required for calibrated ED or on-air operation"
-limitations = "Only the exact declared source scope is represented; source coverage does not promote evidence axes, dependencies, calibrated RF behavior, or broader operational readiness."
+limitations = "Only the exact declared source scope is represented; source coverage does not promote evidence axes, dependencies, calibrated RF behavior, or broader operational readiness. The radio system that composed the retune and tracking lifetime went in #770 (tag `legacy-radio-2026-10-16`); #771 brings it back."
 
 [[capabilities]]
 id = "active-interrupt-runtime"
@@ -250,7 +250,7 @@ section = "ieee802154-phy-and-rf"
 title = "Channels 11-26"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Channel validation](../../hal/src/ieee802154/lifecycle.rs) and frequency-code publication exist; the runtime that retuned the running radio was removed (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-channel-energy` retuned from channel 15 to 25 and back on air (tag `legacy-wifi-2026-10-16`); the shared-PLL retune composition remains incomplete in qualification. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "[Channel validation](../../hal/src/ieee802154/lifecycle.rs) and frequency-code publication exist; the runtime that retuned the running radio was removed (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-channel-energy` retuned from channel 15 to 25 and back on air (tag `legacy-wifi-2026-10-16`); the shared-PLL retune composition remains incomplete in qualification. #771 brings the shared radio system back."
 packages = ["oer-esp32s31-hal", "oer-espressif-ieee802154-engine"]
 
 [[items]]
@@ -293,7 +293,7 @@ section = "ieee802154-cca-and-channel-access"
 title = "CCA-before-TX"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. The engine takes the CCA energy threshold and mode; the removed OpenThread adapter applied OpenThread's threshold as the port does (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-channel-energy` ran assessed transmissions on a channel the peer kept busy and on a clear one (tag `legacy-wifi-2026-10-16`). No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back, and #774 the OpenThread integration."
+scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. The engine takes the CCA energy threshold and mode; the removed OpenThread adapter applied OpenThread's threshold as the port does (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-channel-energy` ran assessed transmissions on a channel the peer kept busy and on a clear one (tag `legacy-wifi-2026-10-16`). #771 brings the shared radio system back, and #774 the OpenThread integration."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-csma-ca"
@@ -301,7 +301,7 @@ section = "ieee802154-cca-and-channel-access"
 title = "CSMA/CA"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "Unslotted CSMA/CA as ESP-IDF's OpenThread SubMac runs it over the one-CCA radio: the [portable backoff](../../../../protocols/ieee802154/src/mac/csma.rs), and the engine's CCA attempts; the radio role that received on the transmit channel during backoffs and the runtime runner that held the backoff timers were removed (#770, tag `legacy-radio-2026-10-16`), and #563 decision 8 moves CSMA and retries above the port. Frames are [retransmitted](../../../../protocols/ieee802154/src/mac/retransmission.rs) as SubMac retries them with ESP-IDF's OpenThread defaults, a random growing delay before each retry after a missing acknowledgement, each attempt arming its transmit security again. The former HIL cell `ieee802154-peer-exchange` transmitted by CSMA/CA with retries to the vendor peer, including a frame that ended unacknowledged after its retries (tag `legacy-wifi-2026-10-16`). Slotted CSMA/CA and re-securing retransmitted frames that carry header IEs are absent. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "Unslotted CSMA/CA as ESP-IDF's OpenThread SubMac runs it over the one-CCA radio: the [portable backoff](../../../../protocols/ieee802154/src/mac/csma.rs), and the engine's CCA attempts; the radio role that received on the transmit channel during backoffs and the runtime runner that held the backoff timers were removed (#770, tag `legacy-radio-2026-10-16`), and #563 decision 8 moves CSMA and retries above the port. Frames are [retransmitted](../../../../protocols/ieee802154/src/mac/retransmission.rs) as SubMac retries them with ESP-IDF's OpenThread defaults, a random growing delay before each retry after a missing acknowledgement, each attempt arming its transmit security again. The former HIL cell `ieee802154-peer-exchange` transmitted by CSMA/CA with retries to the vendor peer, including a frame that ended unacknowledged after its retries (tag `legacy-wifi-2026-10-16`). Slotted CSMA/CA and re-securing retransmitted frames that carry header IEs are absent. #771 brings the shared radio system back."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-active-scan"
@@ -309,7 +309,7 @@ section = "ieee802154-cca-and-channel-access"
 title = "Active Scan"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "The upper MAC owns the beacon-request and beacon-collection procedure, as with ESP-IDF, whose IEEE 802.15.4 driver has no scan: OpenThread's Mac runs it over the radio's transmit, receive and channel switching, and the repository's openthread fork exposes it as `OpenThread::scan` (`otLinkActiveScan`). The radio itself only serves energy scans. Active scan is not exercised by a host test or on air."
+scope-and-limitations = "The upper MAC owns the beacon-request and beacon-collection procedure, as with ESP-IDF, whose IEEE 802.15.4 driver has no scan: OpenThread's Mac runs it over the radio's transmit, receive and channel switching, and the openthread fork that the removed OpenThread adapter used (#770, tag `legacy-radio-2026-10-16`; #774 brings the integration back) exposes it as `OpenThread::scan` (`otLinkActiveScan`). The radio itself only serves energy scans. Active scan is not exercised by a host test or on air."
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-rx"
@@ -317,7 +317,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "RX"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The [engine](../../../espressif/ieee802154/engine/src/engine.rs) owns the twenty-buffer receive ring with its stub buffer and receive-when-idle rearm; the runtime that handed frames to the consumer was removed (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-peer-exchange` received the vendor peer's frames intact on air (tag `legacy-wifi-2026-10-16`). No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "The [engine](../../../espressif/ieee802154/engine/src/engine.rs) owns the twenty-buffer receive ring with its stub buffer and receive-when-idle rearm; the runtime that handed frames to the consumer was removed (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-peer-exchange` received the vendor peer's frames intact on air (tag `legacy-wifi-2026-10-16`). #771 brings the shared radio system back."
 packages = ["oer-espressif-ieee802154-engine"]
 
 [[items]]
@@ -326,7 +326,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Direct TX"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine copies the frame into its DMA buffer and starts the transmission and reports completion and failures; the runtime queue of the composed client that received them was removed (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-peer-exchange` delivered the device's frames to the vendor peer intact (tag `legacy-wifi-2026-10-16`). No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "The engine copies the frame into its DMA buffer and starts the transmission and reports completion and failures; the runtime queue of the composed client that received them was removed (#770, tag `legacy-radio-2026-10-16`). The former HIL cell `ieee802154-peer-exchange` delivered the device's frames to the vendor peer intact (tag `legacy-wifi-2026-10-16`). #771 brings the shared radio system back."
 packages = ["oer-espressif-ieee802154-engine"]
 
 [[items]]
@@ -368,7 +368,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Enhanced ACK TX"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from a generator (the removed role's, a port of ESP-IDF's OpenThread generator (#770, tag `legacy-radio-2026-10-16`)): the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from the radio's MAC keys with engine-armed transmit security. Received frames report the frame-pending bit and the counter and key index of the secured ACK they were sent. With CSL the ACK carries the port's CSL IE, filled with period and phase at its SFD. For a Link Metrics probing initiator the ACK carries the Thread enhanced-ACK probing IE with the frame's LQI, link margin and RSSI, from the [portable probing table](../../../../protocols/ieee802154/src/mac/link_metrics.rs) the removed OpenThread adapter filled from `otPlatRadioConfigureEnhAckProbing`; link margins are measured from the reported receive sensitivity, where ESP-IDF's port leaves the noise floor at zero. Other header IEs are fixed caller bytes. The former HIL cell `ieee802154-peer-exchange` had the vendor peer receive the device's enhanced ACK of a 2015 frame (tag `legacy-wifi-2026-10-16`); secured, CSL and probing enhanced ACKs are not exercised on air. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back, and #774 the OpenThread integration."
+scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from a generator (the removed role's, a port of ESP-IDF's OpenThread generator (#770, tag `legacy-radio-2026-10-16`)): the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from the radio's MAC keys with engine-armed transmit security. Received frames report the frame-pending bit and the counter and key index of the secured ACK they were sent. With CSL the ACK carries the port's CSL IE, filled with period and phase at its SFD. For a Link Metrics probing initiator the ACK carries the Thread enhanced-ACK probing IE with the frame's LQI, link margin and RSSI, from the [portable probing table](../../../../protocols/ieee802154/src/mac/link_metrics.rs) the removed OpenThread adapter filled from `otPlatRadioConfigureEnhAckProbing`; link margins are measured from the reported receive sensitivity, where ESP-IDF's port leaves the noise floor at zero. Other header IEs are fixed caller bytes. The former HIL cell `ieee802154-peer-exchange` had the vendor peer receive the device's enhanced ACK of a 2015 frame (tag `legacy-wifi-2026-10-16`); secured, CSL and probing enhanced ACKs are not exercised on air. #771 brings the shared radio system back, and #774 the OpenThread integration."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-pan-id"
@@ -408,7 +408,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Promiscuous receive mode"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "Static control and readback exist in the engine; the portable configuration switch and the composed runtime that applied it were removed (#770, tag `legacy-radio-2026-10-16`). On-air promiscuous reception is not qualified. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "Static control and readback exist in the engine; the portable configuration switch and the composed runtime that applied it were removed (#770, tag `legacy-radio-2026-10-16`). On-air promiscuous reception is not qualified. #771 brings the shared radio system back."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-four-multi-pan-contexts"
@@ -416,7 +416,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Four Multi-PAN contexts"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "A [multi-PAN engine](../../../espressif/ieee802154/engine/src/engine.rs) assigns each received frame to the interface it addresses and keeps pending mode, pending table, receive and sleep per interface, as the vendor multi-PAN build does. The portable values address up to the engine's interfaces (`MULTI_PAN`, `RxMetadata::interface`, the owner shape's per-interface client). The removed role kept MAC keys, the nonce address and enhanced-ACK security per interface, as ESP-IDF's multi-instance OpenThread port does, the removed composition parked a multi-PAN engine and the removed OpenThread adapter served one instance on interface zero (#770, tag `legacy-radio-2026-10-16`); #774 brings OpenThread back. On-air multi-PAN filtering is not qualified. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back, and #774 the OpenThread integration."
+scope-and-limitations = "A [multi-PAN engine](../../../espressif/ieee802154/engine/src/engine.rs) assigns each received frame to the interface it addresses and keeps pending mode, pending table, receive and sleep per interface, as the vendor multi-PAN build does. The portable values address up to the engine's interfaces (`MULTI_PAN`, `RxMetadata::interface`, the owner shape's per-interface client). The removed role kept MAC keys, the nonce address and enhanced-ACK security per interface, as ESP-IDF's multi-instance OpenThread port does, the removed composition parked a multi-PAN engine and the removed OpenThread adapter served one instance on interface zero (#770, tag `legacy-radio-2026-10-16`); #774 brings OpenThread back. On-air multi-PAN filtering is not qualified. #771 brings the shared radio system back, and #774 the OpenThread integration."
 packages = ["oer-espressif-ieee802154-engine", "oer-esp32s31-pac", "oer-ieee802154"]
 
 [[items]]
@@ -433,7 +433,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Source Matching table"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses of each interface, and refuses a source a full half has no room for; the engine applies the table and the pending mode (`SOURCE_MATCH`) of each interface. The removed OpenThread adapter applied OpenThread's table entry by entry, as ESP-IDF's port does (#770, tag `legacy-radio-2026-10-16`). No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back, and #774 the OpenThread integration."
+scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses of each interface, and refuses a source a full half has no room for; the engine applies the table and the pending mode (`SOURCE_MATCH`) of each interface. The removed OpenThread adapter applied OpenThread's table entry by entry, as ESP-IDF's port does (#770, tag `legacy-radio-2026-10-16`). #771 brings the shared radio system back, and #774 the OpenThread integration."
 
 [[items]]
 id = "ieee802154-timing-mac-timers-clock-match"
@@ -466,7 +466,7 @@ section = "ieee802154-timing"
 title = "Timed TX (`transmit_at`)"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine programs TIMER0 and modem ETM channel zero to start TX or CCA-then-TX at the requested time; the portable scheduled transmit mode carries the CCA choice (OpenThread's mCsmaCaEnabled) and the removed role and runtime exposed the radio clock scheduled times use (otPlatRadioGetNow) (#770, tag `legacy-radio-2026-10-16`). The single-device air check bounds scheduled transmits against their start; on-air timing seen by a peer is not qualified. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "The engine programs TIMER0 and modem ETM channel zero to start TX or CCA-then-TX at the requested time; the portable scheduled transmit mode carries the CCA choice (OpenThread's mCsmaCaEnabled) and the removed role and runtime exposed the radio clock scheduled times use (otPlatRadioGetNow) (#770, tag `legacy-radio-2026-10-16`). The single-device air check bounds scheduled transmits against their start; on-air timing seen by a peer is not qualified. #771 brings the shared radio system back."
 
 [[items]]
 id = "ieee802154-timing-timed-rx-receive-at"
@@ -474,7 +474,7 @@ section = "ieee802154-timing"
 title = "Timed RX (`receive_at`)"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine programs TIMER1 and modem ETM channel one to open a receive window and closes it at its end unless a frame is in flight. The portable scheduled receive command (otPlatRadioReceiveAt) ran it through the removed role and runtime (#770, tag `legacy-radio-2026-10-16`): the radio slept outside the window, the first received frame ended it as the vendor receive path does, and an already elapsed window ended at once. The single-device air check bounds the window's end and its first frame against the requested window; reception of a peer's frame inside a window is not qualified. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "The engine programs TIMER1 and modem ETM channel one to open a receive window and closes it at its end unless a frame is in flight. The portable scheduled receive command (otPlatRadioReceiveAt) ran it through the removed role and runtime (#770, tag `legacy-radio-2026-10-16`): the radio slept outside the window, the first received frame ended it as the vendor receive path does, and an already elapsed window ended at once. The single-device air check bounds the window's end and its first frame against the requested window; reception of a peer's frame inside a window is not qualified. #771 brings the shared radio system back."
 
 [[items]]
 id = "ieee802154-timing-coordinated-sampled-listening-csl"
@@ -482,7 +482,7 @@ section = "ieee802154-timing"
 title = "Coordinated Sampled Listening (CSL)"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "OpenThread owns CSL scheduling and synchronization; the radio serves it as ESP-IDF's OpenThread port does. The [portable CSL module](../../../../protocols/ieee802154/src/mac/csl.rs) ports the CSL IE template, OpenThread's CSL IE write and the port's phase. The removed role put the IE into enhanced ACKs, wrote period and phase into every CSL IE it sent at the frame's SFD through the engine and secured retransmissions anew, and the removed OpenThread adapter mapped CSL windows to scheduled receive windows and delayed frames to scheduled transmissions over the fork's csl feature (#770, tag `legacy-radio-2026-10-16`); #774 brings OpenThread back. No peer has exchanged CSL frames with the device; on-air CSL is not qualified. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back, and #774 the OpenThread integration."
+scope-and-limitations = "OpenThread owns CSL scheduling and synchronization; the radio serves it as ESP-IDF's OpenThread port does. The [portable CSL module](../../../../protocols/ieee802154/src/mac/csl.rs) ports the CSL IE template, OpenThread's CSL IE write and the port's phase. The removed role put the IE into enhanced ACKs, wrote period and phase into every CSL IE it sent at the frame's SFD through the engine and secured retransmissions anew, and the removed OpenThread adapter mapped CSL windows to scheduled receive windows and delayed frames to scheduled transmissions over the fork's csl feature (#770, tag `legacy-radio-2026-10-16`); #774 brings OpenThread back. No peer has exchanged CSL frames with the device; on-air CSL is not qualified. #771 brings the shared radio system back, and #774 the OpenThread integration."
 
 [[items]]
 id = "ieee802154-timing-network-time-sync"
@@ -490,7 +490,7 @@ section = "ieee802154-timing"
 title = "Thread network time synchronization (Time IE)"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "OpenThread owns time synchronization; the radio fills a transmitted frame's Time IE as ESP-IDF's OpenThread port does at the SFD: the [portable Time IE write](../../../../protocols/ieee802154/src/mac/time_sync.rs) puts the time sync sequence and the radio clock plus the network time offset into it. The removed role wrote it for the request's Time IE (`TIME_SYNC`) and never into an enhanced ACK, and the removed OpenThread adapter passed OpenThread's Time IE over the fork's time-sync feature, whose `otPlatTimeGet` read the same radio clock (#770, tag `legacy-radio-2026-10-16`); #774 brings OpenThread back. No peer has synchronized with the device; on-air time synchronization is not qualified. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back, and #774 the OpenThread integration."
+scope-and-limitations = "OpenThread owns time synchronization; the radio fills a transmitted frame's Time IE as ESP-IDF's OpenThread port does at the SFD: the [portable Time IE write](../../../../protocols/ieee802154/src/mac/time_sync.rs) puts the time sync sequence and the radio clock plus the network time offset into it. The removed role wrote it for the request's Time IE (`TIME_SYNC`) and never into an enhanced ACK, and the removed OpenThread adapter passed OpenThread's Time IE over the fork's time-sync feature, whose `otPlatTimeGet` read the same radio clock (#770, tag `legacy-radio-2026-10-16`); #774 brings OpenThread back. No peer has synchronized with the device; on-air time synchronization is not qualified. #771 brings the shared radio system back, and #774 the OpenThread integration."
 packages = ["oer-ieee802154"]
 
 [[items]]
@@ -499,7 +499,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Hardware TX security"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. The [portable frame counter and key](../../../../protocols/ieee802154/src/mac/security.rs) keep the vendor rules. With the radio's MAC keys the removed role secured each attempt as ESP-IDF's OpenThread port does (#770, tag `legacy-radio-2026-10-16`): a request kept the counter of the stack's retransmission or left a frame the stack secured as given, the completion reported the counter and key index written, and while CSL was enabled a retransmission took a new frame counter, as in the port. Key derivation is not composed, and hardware security offload is not qualified on air. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. The [portable frame counter and key](../../../../protocols/ieee802154/src/mac/security.rs) keep the vendor rules. With the radio's MAC keys the removed role secured each attempt as ESP-IDF's OpenThread port does (#770, tag `legacy-radio-2026-10-16`): a request kept the counter of the stack's retransmission or left a frame the stack secured as given, the completion reported the counter and key index written, and while CSL was enabled a retransmission took a new frame counter, as in the port. Key derivation is not composed, and hardware security offload is not qualified on air. #771 brings the shared radio system back."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-rx-on-when-idle"
@@ -507,7 +507,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "RX-on-when-idle"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine rearms receive after each operation when the PIB receive-when-idle flag is set, which the removed role set for `Receive` and cleared for `Sleep` (#770, tag `legacy-radio-2026-10-16`). It is not qualified on air. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "The engine rearms receive after each operation when the PIB receive-when-idle flag is set, which the removed role set for `Receive` and cleared for `Sleep` (#770, tag `legacy-radio-2026-10-16`). It is not qualified on air. #771 brings the shared radio system back."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-radio-sleep-wake"
@@ -523,7 +523,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. The [scene priorities](../../hal/src/ieee802154/coex.rs) hold the software-coexistence PTIs of the pinned driver: the ACK and TX/RX scene priorities of the arbiter's shared table, which the removed composed client published (#770, tag `legacy-radio-2026-10-16`). The static foundation and MAC policy still prove both PTIs disabled before operation. The former HIL cell `ieee802154-peer-exchange-coex` ran the acknowledged peer exchange with the device in coexistence with Wi-Fi and the coexistence schedule running (tag `legacy-wifi-2026-10-16`). Complete multi-radio request/grant/release operation under Wi-Fi load is not composed, and PTI arbitration is not measured on air. External coexistence is absent: its TX and RX stages do nothing on the pinned ESP32-S31 libcoexist, and the force-RX and arbitration-delay writes its builds make at MAC init and deinit wait for an external-coexistence owner in the coexistence driver. No composition runs it since #770 (tag `legacy-radio-2026-10-16`); #771 brings the shared radio system back."
+scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. The [scene priorities](../../hal/src/ieee802154/coex.rs) hold the software-coexistence PTIs of the pinned driver: the ACK and TX/RX scene priorities of the arbiter's shared table, which the removed composed client published (#770, tag `legacy-radio-2026-10-16`). The static foundation and MAC policy still prove both PTIs disabled before operation. The former HIL cell `ieee802154-peer-exchange-coex` ran the acknowledged peer exchange with the device in coexistence with Wi-Fi and the coexistence schedule running (tag `legacy-wifi-2026-10-16`). Complete multi-radio request/grant/release operation under Wi-Fi load is not composed, and PTI arbitration is not measured on air. External coexistence is absent: its TX and RX stages do nothing on the pinned ESP32-S31 libcoexist, and the force-RX and arbitration-delay writes its builds make at MAC init and deinit wait for an external-coexistence owner in the coexistence driver. #771 brings the shared radio system back."
 packages = ["oer-esp32s31-coex", "oer-esp32s31-hal"]
 
 [[items]]

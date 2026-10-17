@@ -1,8 +1,8 @@
 # Public source policy
 
 This policy defines which inputs belong in the public source tree and how
-production code may use hardware knowledge. Register publication and vendor
-comparison retain their own validation rules.
+production code may use hardware knowledge. Register publication retains its
+own validation rules.
 
 Included:
 
@@ -24,9 +24,9 @@ Excluded:
 - ROM or vendor ABI bindings;
 - `esp-wifi-sys` and hidden runtime dependencies.
 
-Production driver and ordinary HIL builds obey these exclusions. The isolated
-vendor-oracle workspace may use caller-supplied vendor dependencies for
-comparison; its private inputs and outputs remain outside tracked source.
+Production driver and ordinary HIL builds obey these exclusions. The vendor
+reference firmware (`verification/<chip>/hil-vendor`) links the pinned vendor
+archives; its fetched inputs and build outputs remain outside tracked source.
 
 ## Recovered tables and coefficients
 
@@ -47,16 +47,16 @@ and license notices.
 
 Every vendor function a `SOURCE:` block, ROM function summary
 (`platform/<chip>/linker/rom/functions.toml`), register-model evidence source or
-register or field description names is registered with the
-relocation-normalized code fingerprint of the revision its facts were reviewed
-against (`verification/<chip>/facts/provenance.toml`). A pin update
-that changes or removes such a function fails `cargo verification check provenance --chip <chip>`;
-`cargo verification diff --chip <chip>` shows what changed, and after the facts follow the
-pinned code, `cargo verification provenance --chip <chip> --accept` records its fingerprint.
+register or field description names is cited by the pinned revision and its
+symbol, and `verification/<chip>/facts/provenance.toml` records the reviewed
+relocation-normalized code fingerprint of each such function at the revision
+its facts were reviewed against. After a pin update that changes or removes
+such a function, its facts are reviewed again against the pinned code before
+its fingerprint is recorded.
 A function that several pinned artifacts define (the ROM's copy and a
 library's, which can handle the same register bits differently) is cited by
 the copy its facts were read from (`libpp[pm.o]::pm_parse_beacon`,
-`rom[]::pm_tbtt_process`); the check refuses a bare name of one.
+`rom[]::pm_tbtt_process`), never by a bare name.
 
 A `SOURCE` block names the chips whose pinned artifacts its facts describe in
 parentheses directly after the marker, before any bracketed evidence tag:
@@ -64,8 +64,8 @@ parentheses directly after the marker, before any bracketed evidence tag:
 be a chip with a `verification/<chip>/artifacts.toml`. A block under a chip's
 own directory belongs to that chip and may omit the list; naming only other
 chips there is a violation. A block under a chip-neutral path that cites a
-function of a chip's pins must name its chips, and the check of each chip
-counts only the neutral blocks that name it. A neutral block that cites no
+function of a chip's pins must name its chips, and describes only the chips
+it names. A neutral block that cites no
 vendor function, such as a standard or a HIL record, needs no list. A word
 directly followed by `.o` is an archive member name, not a cited function.
 

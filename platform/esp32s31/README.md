@@ -109,8 +109,7 @@ PSRAM.
 
 ## Boot state on the board
 
-The [boot-state probe](../../verification/esp32s31/hardware/boot-state-probe/README.md)
-reads what the bootloader leaves and what esp-hal relies on:
+Read on the board, what the bootloader leaves and what esp-hal relies on:
 
 - The `espflash`-bundled ESP-IDF bootloader already programs PMA entry 7 as
   the locked 64 MiB NAPOT external-memory aperture at `0x5000_0000`, the

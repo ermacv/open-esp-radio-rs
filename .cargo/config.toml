@@ -9,9 +9,6 @@ fw = "run --quiet -p oer-fw --"
 stand = "run --quiet -p oer-stand --"
 hil = "run --quiet -p oer-hil-cli --"
 blobray = "run --quiet --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray --"
-# Vendor verification, its own workspace: pins, provenance, the typed
-# scenarios (`cargo verification scenario`), evidence shards and probes.
-verification = "run --quiet --manifest-path verification/Cargo.toml --profile verification -p oer-verification-cli --bin verification --"
 # The repository model of oer-tidy: `cargo tidy workspaces`,
 # `chips` and `fetch`. Its few dependencies rarely change, so it still
 # builds from its own workspace, without firmware Git dependencies, after

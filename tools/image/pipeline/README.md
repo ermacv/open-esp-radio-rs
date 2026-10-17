@@ -117,7 +117,7 @@ sites.
 Its `interrupt_stack` module is the interrupt half of the runtime's gate: it
 bounds each hart's interrupt stack from
 the runtime ELF, the pinned ROM ELF (`rom` of
-`verification/esp32s31/artifacts.toml`, from the vendor store: `cargo verification
+`verification/esp32s31/artifacts.toml`, from the vendor store: `cargo xtask vendor
 fetch esp32s31 --artifact rom`; a missing or changed ROM is an error)
 and its reviewed summaries, with the platform's interrupt contract
 (`oer-esp32s31-platform-layout`'s `interrupts`). The analysis reports every

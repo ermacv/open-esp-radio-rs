@@ -12,7 +12,7 @@ Every operation takes `in_process::Executable` values, a `WorkingMemory` and a
 returns. A request names executables by content, and `in_process::find` fails
 with `invalid-request` when it names content that was not given.
 `in_process::Limits` is the work-unit, deadline and run-position control the
-CLI and the vendor scenarios use. See
+CLI and library callers use. See
 [cooperative control](../../cli/reference/resources/README.md#cooperative-control-and-failure-diagnostics)
 for policy and working-memory boundaries.
 

@@ -23,9 +23,7 @@ reaches, which the caller passes to
 
 The engine names no executor, interrupt route or chip. A runtime holds it
 with the chip's MAC owners in one critical section and calls its operation
-entries and interrupt handler. The
-[ESP32-S31 host stand](../../../../../verification/esp32s31/host/ieee802154/README.md)
-compares its accessor sequence with the compiled vendor driver.
+entries and interrupt handler.
 
 ## Bring-up and teardown order
 

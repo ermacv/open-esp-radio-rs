@@ -127,23 +127,10 @@ own default threshold and fixed ±2 correction; the outer RFPLL action no
 longer selects it.
 
 Host tests cover bounded search termination, direction changes, arithmetic
-boundaries, completion ordering and channel restoration after memory updates.
-The compiled probes `open_phy_rfpll_trace_search` and
-`open_phy_rfpll_trace_maintain` invoke production target entries, including I2C
-and delay operations. Typed vendor scenarios compare the search's I2C
-commands and requested settling delays, and the frequency-control envelope
-against the admitted vendor child with zero and nonzero corrections. Every
-memory transaction and the final channel restoration are compared for the
-installed layout. `open_phy_rfpll_trace_track` additionally compares threshold,
-debug override, skipped/executed outcomes and the resulting reference against
-the admitted vendor child. Vendor-only cases retain the busy/result-flag
-characterization. Tests also
-check that a bounded I2C timeout returns without restoring hardware control.
-See the [RFPLL comparison scenarios](../../../../../../../verification/esp32s31/README.md#rfpll-search-and-frequency-maintenance).
-
-The comparison preserves every requested delay, including any unexpected
-executor-added one-microsecond wait. It does not assert equal execution time or raw polling
-traces. Alternative memory layouts, linked coexistence grants and physical RF behavior
+boundaries, completion ordering and channel restoration after memory updates,
+and check that a bounded I2C timeout returns without restoring hardware
+control. They do not assert equal execution time or raw polling traces.
+Alternative memory layouts, linked coexistence grants and physical RF behavior
 require separate evidence. The validation-only full-parent profile is described
 in the [tracking contract](../README.md).
 

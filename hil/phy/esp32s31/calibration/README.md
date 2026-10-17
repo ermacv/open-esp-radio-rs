@@ -2,10 +2,10 @@
 
 Compares the cold PHY calibration of the pinned vendor firmware with the
 production calibration on the same ESP32-S31 board. The comparison uses the
-reviewed `phy_param` relation that the Blobray tracking scenario also uses
+reviewed `phy_param` relation
 ([`oer-esp32s31-phy-relation`](../relation/README.md)'s `committed`).
-The production side goes through the same projection functions as the
-comparison probes (its `projection`).
+The production side goes through the relation's projection functions (its
+`projection`).
 It does not depend on Blobray peripheral models.
 
 This package is a library: what is compared and how. No HIL scenario runs

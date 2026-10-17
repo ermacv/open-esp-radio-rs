@@ -2,12 +2,10 @@
 //! `register-accesses`, under the RISC-V integer calling convention and
 //! with the constants callees return taken at their calls, over
 //! every pinned vendor binary inside the publication's owned MMIO ranges,
-//! compared with the register model ([`super`]), with the provenance
-//! registry's cited functions ranked first.
+//! compared with the register model ([`super`]).
 use super::{self as inventory, Region};
 use crate::Result;
 use oer_process::Checkout;
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -96,26 +94,21 @@ fn accesses(
 /// Build the inventory of `chip` into `output`, by default
 /// `target/register-inventory/<chip>`.
 pub fn run(ctx: &Checkout, chip: &str, output: Option<PathBuf>) -> Result<()> {
-    oer_vendor_artifacts::project::Project::new(&ctx.root, chip)?;
+    // The pins refuse a chip without a verification project before
+    // anything is written.
+    let inputs = inputs(ctx, chip)?;
     let directory = output.unwrap_or_else(|| ctx.root.join("target/register-inventory").join(chip));
     fs::create_dir_all(&directory)?;
-    let inputs = inputs(ctx, chip)?;
     let (registers, regions) = inventory::model(&ctx.root, chip)?;
     let host = oer_toolchain::workspace::blobray_host(&ctx.root)?;
     let accesses = accesses(ctx, &directory, &host, &inputs, &regions)?;
     let ids: Vec<String> = inputs.iter().map(|input| input.id.clone()).collect();
     let observations = inventory::observations(&fs::read_to_string(&accesses)?, &ids)?;
-    let cited: BTreeSet<inventory::Function> =
-        oer_vendor_provenance::registry::registered(&ctx.root, chip)?
-            .into_iter()
-            .map(|e| (e.artifact, e.symbol))
-            .collect();
     let mut words = inventory::classify(
         &regions,
         &inventory::declared_words(&registers),
         &inventory::arrays(&registers),
         &observations,
-        &cited,
     );
     inventory::rank(&mut words);
 

@@ -40,7 +40,7 @@ except the crates holding the ESP-IDF port, which are Apache-2.0 only.
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | Build API docs, lockfiles and worktrees | [Repository tooling](tools/xtask/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
-| Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
+| Find the pinned vendor code and reviewed facts | [Vendor references](verification/README.md) |
 | Review register/PAC publication | [Registers](registers/README.md) |
 | Find a reference or maintain documentation | [Documentation index](docs/README.md) |
 
@@ -52,7 +52,7 @@ except the crates holding the ESP-IDF port, which are Apache-2.0 only.
 | `platform/` | Shared board boot, staged entry and memory placement |
 | `hil/` | Hardware protocol, runner, fixtures, scenarios and test images |
 | `registers/` | Reviewed hardware descriptions and PAC publication inputs |
-| `verification/` | Chip knowledge and concrete vendor comparison projects |
+| `verification/` | Vendor pins, reviewed facts and vendor reference firmware |
 | `tools/` | Blobray, memory analysis and `cargo xtask` repository operations |
 | `docs/` | Cross-component contracts and documentation conventions |
 

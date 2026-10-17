@@ -34,9 +34,8 @@ execution, network service or concurrent collaborative editing.
 SVD/PAC publication belongs to the register tool, which consumes reviewed
 hardware models rather than investigations; its publication policies do not
 shape the analysis engine.
-Retained evidence belongs to its consumer: the vendor verification evidence
-index is derived from the checkout (`cargo verification evidence`) and never
-committed, and reviewed contracts reach a comparison by content.
+Retained evidence belongs to its consumer, and reviewed contracts reach a
+comparison by content.
 
 ## Information boundaries
 
@@ -60,7 +59,7 @@ Crate boundaries enforce independent dependency and authority rules. Modules
 inside each crate divide implementation without acquiring extra capabilities.
 The command line package is `blobray-cli` and its executable is `blobray`; the
 Linux linker adapters are the separate `blobray-linker`, so a consumer that
-links, such as the vendor scenarios, does not depend on the command line.
+links does not depend on the command line.
 
 | Crate | Principal modules | Owns | Allowed local dependencies |
 | --- | --- | --- | --- |
@@ -187,7 +186,7 @@ dependencies or claims that their behavior meets Blobray's proof requirements.
 | [angr/CLE loading](https://docs.angr.io/en/latest/core-concepts/loading.html) | Objects, symbols, relocations and mapped address spaces have loader ownership | Separate artifact inventory and linked image. CLE's extern-object representation of unresolved symbols does not establish resolved behavior for Blobray. |
 | [rev.ng model](https://docs.rev.ng/user-manual/key-concepts/model/) and [artifacts and analyses](https://docs.rev.ng/user-manual/key-concepts/artifacts-and-analyses/) | Editable model is separate from derived artifacts | Separate reviewed interpretation from computed results. rev.ng analyses can update its model; Blobray analysis never changes a reviewed contract or register model. |
 | [LLD archive semantics](https://lld.llvm.org/ELF/warn_backrefs.html) | GNU ld and LLD can select different archive members | Identify the actual linker and recipe. A synthetic analysis link cannot prove original firmware selection. |
-| [Bazel remote caching](https://bazel.build/remote/caching) | Action-result metadata is separate from content-addressed output bytes | Identify inputs and outputs by content; the vendor scenarios key reused results by their request and producer identities. |
+| [Bazel remote caching](https://bazel.build/remote/caching) | Action-result metadata is separate from content-addressed output bytes | Identify inputs and outputs by content. |
 | [bumpalo allocation limits](https://docs.rs/bumpalo/latest/bumpalo/struct.Bump.html#bump-allocation-limits) | Limits apply when obtaining backing chunks, not to each allocation in an existing chunk | Phase allocation is useful; a generic bump allocator does not establish Blobray's accounting or cleanup contract. |
 | [Rust GlobalAlloc](https://doc.rust-lang.org/std/alloc/trait.GlobalAlloc.html) and [Linux mmap](https://man7.org/linux/man-pages/man2/mmap.2.html) | Global allocation has reentrancy/unwind constraints; mappings and prefaulting do not guarantee physical memory availability | Keep capacity authority explicit. A global allocator or a successful mapping is insufficient evidence of a bounded operation. |
 

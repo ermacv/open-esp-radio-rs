@@ -43,10 +43,10 @@ Evidence sources that describe a board observation in prose
 `kind = "unattested-hil-observation"`: they stay cited until each is
 replaced by an attestation bound to a sealed HIL run.
 
-The [vendor investigation](../../verification/esp32s31/README.md)
-selects those additional inputs explicitly and authenticates artifact-specific
-facts in its caller-provided run context. Sharing a publication scope does not
-inherit that context or promote a model-only check into comparison evidence.
+Artifact-specific facts name the
+[pinned vendor artifact](../../verification/esp32s31/README.md) they were
+observed in. Sharing a publication scope does not promote a model-only check
+into comparison evidence.
 The common scope is selected through `[registers].ownership-policy`. Its schema-1
 pack contains only `owned-ranges`; combining it with an inline `owned-ranges`
 list is rejected. A standalone project may instead select an inline scope.

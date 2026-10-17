@@ -12,14 +12,10 @@
 //! to it, and a new checkout or worktree finds everything another one fetched.
 //! A checkout's former `target/vendor` directory is merged into the store.
 //!
-//! `cargo verification fetch` and the vendor checks read the pins here, and
-//! so does the HIL stand's pinned ESP-IDF build (`oer-hil-cli`).
-//! [`project::Project`] names the fixed files of a chip's verification
-//! project (its shards, provenance registry and scenarios).
+//! `cargo xtask vendor fetch`, the image build's ROM ELF ([`ensure`]) and
+//! the register inventory read the pins here.
 use oer_vendor_pins::{Artifact, CACHE, Manifest, Source, SourceKind, cache_directory};
 use std::path::{Path, PathBuf};
-
-pub mod project;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -73,31 +69,6 @@ fn merge_into(from: &Path, into: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// The verified file of the fetched artifact `id` of `chip` in the
-/// host-wide [`store`]: an error naming `cargo verification fetch` when it is
-/// missing, and naming the pin when it differs.
-pub fn fetched(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
-    let manifest = Manifest::load(root, chip)?;
-    let artifact = manifest.artifact(id)?;
-    let source = manifest.source_of(artifact);
-    if source.kind == SourceKind::Firmware {
-        return Err(format!("`{id}` is a firmware build output, not a fetched artifact").into());
-    }
-    let path = cache_directory(&store()?, source)?.join(&artifact.path);
-    if !path.is_file() {
-        return Err(format!(
-            "the pinned `{id}` artifact {} is missing: run `cargo verification fetch {chip} --artifact {id}`",
-            path.display()
-        )
-        .into());
-    }
-    let pin = pinned_sha256(artifact)?;
-    if !verified(&path, pin)? {
-        return Err(format!("{} differs from its pin {pin}", path.display()).into());
-    }
-    Ok(path)
 }
 
 /// The pinned SHA-256 of the fetched `artifact`.
@@ -219,48 +190,16 @@ pub struct Pinned {
 }
 
 /// Every pinned artifact of `chip` at its verified path; fails when one is
-/// missing or differs, naming `cargo verification fetch` for fetched ones.
+/// missing or differs, naming `cargo xtask vendor fetch` for fetched ones.
 /// Firmware outputs are skipped when unbuilt: they are not vendor sources.
 pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
     let resolved = resolve(root, chip)?;
     match resolved.unfetched.first() {
         None => Ok(resolved.pinned),
         Some(id) => Err(format!(
-            "{id} is not fetched as pinned; run `cargo verification fetch {chip}`"
+            "{id} is not fetched as pinned; run `cargo xtask vendor fetch {chip}`"
         )
         .into()),
-    }
-}
-
-/// The pinned firmware outputs of `chip` not built in this checkout, by
-/// artifact id: [`pinned`] skips them.
-pub fn unbuilt_firmware(root: &Path, chip: &str) -> Result<Vec<String>> {
-    Ok(resolve(root, chip)?.unbuilt)
-}
-
-/// Fetches every pinned vendor artifact of `chip` into the shared store,
-/// leaving firmware outputs alone; fails when one cannot be fetched as pinned.
-pub fn fetch_vendor_sources(root: &Path, chip: &str) -> Result<()> {
-    link_store(root, &store()?)?;
-    let manifest = Manifest::load(root, chip)?;
-    let mut failures = vec![];
-    for artifact in &manifest.artifact {
-        let source = manifest.source_of(artifact);
-        if source.kind == SourceKind::Firmware {
-            continue;
-        }
-        if let Err(error) = fetch(root, source, artifact) {
-            failures.push(format!("{}: {error}", artifact.id));
-        }
-    }
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "vendor artifacts of {chip} could not be fetched: {}",
-            failures.join("; ")
-        )
-        .into())
     }
 }
 
@@ -277,32 +216,9 @@ pub fn ensure(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
     fetch(root, source, artifact)
 }
 
-/// The firmware catalog images whose outputs `chip` pins, in pin order:
-/// what `cargo hil firmware build` builds before a scenario links them.
-pub fn firmware_images(root: &Path, chip: &str) -> Result<Vec<String>> {
-    Ok(images(Manifest::load(root, chip)?))
-}
-
-fn images(manifest: Manifest) -> Vec<String> {
-    manifest
-        .source
-        .into_iter()
-        .filter(|source| source.kind == SourceKind::Firmware)
-        .filter_map(|source| source.image)
-        .collect()
-}
-
-/// The fetched vendor artifacts of `chip` that are missing or differ from
-/// their pin; empty when every citation can be checked.
-pub fn unfetched(root: &Path, chip: &str) -> Result<Vec<String>> {
-    Ok(resolve(root, chip)?.unfetched)
-}
-
 struct Resolved {
     pinned: Vec<Pinned>,
     unfetched: Vec<String>,
-    /// Firmware outputs not built in this checkout, by artifact id.
-    unbuilt: Vec<String>,
 }
 
 fn resolve(root: &Path, chip: &str) -> Result<Resolved> {
@@ -313,14 +229,12 @@ fn resolve_manifest(root: &Path, manifest: &Manifest) -> Result<Resolved> {
     let mut resolved = Resolved {
         pinned: vec![],
         unfetched: vec![],
-        unbuilt: vec![],
     };
     for artifact in manifest.artifact.iter().cloned() {
         let firmware = manifest.source_of(&artifact).kind == SourceKind::Firmware;
         let path = manifest.location(root, &artifact)?;
         if firmware {
             if !path.is_file() {
-                resolved.unbuilt.push(artifact.id);
                 continue;
             }
         } else if !verified(&path, pinned_sha256(&artifact)?)? {
@@ -440,20 +354,18 @@ mod tests {
                 continue;
             };
             let manifest = Manifest::load(&root, &profile.id).unwrap();
-            let pinned = &manifest.artifact(&rom.elf).unwrap().path;
-            match fetched(&root, &profile.id, &rom.elf) {
-                Ok(path) => assert!(path.ends_with(pinned)),
-                // A host without the vendor store names the fetch command.
-                Err(error) => assert!(
-                    error
-                        .to_string()
-                        .contains(&format!("{} --artifact {}", profile.id, rom.elf)),
-                    "{error}"
-                ),
-            }
+            let artifact = manifest.artifact(&rom.elf).unwrap();
+            assert_ne!(manifest.source_of(artifact).kind, SourceKind::Firmware);
+            assert!(
+                cache_directory(&store().unwrap(), manifest.source_of(artifact))
+                    .unwrap()
+                    .join(&artifact.path)
+                    .starts_with(store().unwrap())
+            );
         }
         let chip = oer_chip_profile::supported(&root).unwrap().remove(0);
-        let error = fetched(&root, &chip, "absent").unwrap_err();
+        let manifest = Manifest::load(&root, &chip).unwrap();
+        let error = manifest.artifact("absent").unwrap_err();
         assert!(error.to_string().contains("pins no `absent` artifact"));
     }
 
@@ -497,20 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn the_firmware_images_are_those_of_firmware_sources_in_pin_order() {
-        let manifest = Manifest::parse(
-            "schema = 1\nartifact = []\n\
-             [[source]]\nid = \"b\"\nkind = \"firmware\"\nimage = \"second\"\n\
-             [[source]]\nid = \"vendor\"\nkind = \"git\"\n\
-             repository = \"https://github.com/o/r\"\nrevision = \"0123\"\n\
-             [[source]]\nid = \"a\"\nkind = \"firmware\"\nimage = \"first\"\n",
-        )
-        .unwrap();
-        assert_eq!(images(manifest), ["second", "first"]);
-    }
-
-    #[test]
-    fn an_unbuilt_firmware_output_is_listed_and_a_built_one_pinned() {
+    fn an_unbuilt_firmware_output_is_skipped_and_a_built_one_pinned() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = Manifest::parse(
             "schema = 1\n\
@@ -530,7 +429,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["image"]
         );
-        assert_eq!(resolved.unbuilt, ["hal"]);
     }
 
     #[test]

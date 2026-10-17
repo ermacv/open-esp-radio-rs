@@ -40,6 +40,11 @@ enum Task {
         #[command(subcommand)]
         worktree: Worktree,
     },
+    /// The pinned vendor artifacts of `verification/<chip>/artifacts.toml`.
+    Vendor {
+        #[command(subcommand)]
+        vendor: Vendor,
+    },
     Check {
         #[command(subcommand)]
         check: Check,
@@ -61,6 +66,18 @@ enum Worktree {
     /// Turn this checkout's target/ into a btrfs subvolume once, so `add`
     /// snapshots it instantly; run it while no build uses target/.
     Prepare,
+}
+
+#[derive(Subcommand)]
+enum Vendor {
+    /// Download CHIP's pinned vendor artifacts into the host-wide store
+    /// (linked as target/vendor) and verify each against its pin.
+    Fetch {
+        chip: String,
+        /// Only these artifacts, by id (such as `rom`).
+        #[arg(long = "artifact", value_name = "ID")]
+        artifacts: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -133,6 +150,9 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
             Worktree::Remove { path } => oer_xtask::worktree::remove(&ctx, &path),
             Worktree::Prepare => oer_xtask::worktree::prepare(&ctx),
         },
+        Task::Vendor {
+            vendor: Vendor::Fetch { chip, artifacts },
+        } => oer_vendor_artifacts::run(&ctx.root, &chip, &artifacts),
         Task::Check { check } => match check {
             Check::FeatureSets => checks::feature_sets::run(&ctx),
             Check::Ui => checks::ui::run(&ctx),

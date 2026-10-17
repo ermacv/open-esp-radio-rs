@@ -62,8 +62,7 @@ pub const fn decode(raw: CompletionRaw) -> Result<CompletionObservation, Complet
     // +0x42c/+0x430 loads that same address and +0x434 installs it in the
     // dispatch table. Thus ROM table calls also execute the library copy;
     // the divergent rom[]::lmacProcessTxComplete status-3 branch is not
-    // on this path. `cargo verification copies --chip esp32s31` audits
-    // that divergence; these citations register its executable provenance.
+    // on this path; these citations name the executed copy.
     match raw.status {
         0 => Ok(Observed(TxStatus::Success)),
         1 => rts_error(raw.detail),

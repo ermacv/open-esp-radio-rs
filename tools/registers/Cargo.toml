@@ -22,7 +22,6 @@ oer-durable = { path = "../durable" }
 oer-elf = { path = "../elf" }
 oer-toolchain = { path = "../toolchain" }
 oer-vendor-artifacts = { path = "../vendor-artifacts" }
-oer-vendor-provenance = { path = "../vendor-provenance" }
 clap = { version = "=4.5.48", features = ["derive"] }
 roxmltree = "=0.20.0"
 serde = { version = "=1.0.229", features = ["derive"] }

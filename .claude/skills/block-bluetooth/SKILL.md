@@ -60,8 +60,8 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 
 - `cargo test -p <package>`.
 - RV32: `cargo check -p oer-esp32s31-bluetooth --target riscv32imafc-unknown-none-elf`.
-- Vendor comparison: the `bluetooth` scenario over the probes in `verification/esp32s31/probes/bluetooth` (`vendor-evidence` skill).
+- Vendor comparison: the `bluetooth` scenario over the probes in `verification/esp32s31/probes/bluetooth`.
 
-Skills: `protocol-change`, `driver-or-hardware-change`, `vendor-evidence`, `qualification-entry` (catalogs `qualification/catalog/esp32s31/bluetooth.toml` and `bluetooth-products.toml`; no Bluetooth program exists).
+Qualification: catalogs `qualification/catalog/esp32s31/bluetooth.toml` and `bluetooth-products.toml`; no Bluetooth program exists.
 
 Package detail: [S31 driver](../../../crates/hardware/esp32s31/driver/bluetooth/README.md) and its [capability page](../../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md); the other packages document themselves in their crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/bluetooth-*.md`.

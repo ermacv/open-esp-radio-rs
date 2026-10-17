@@ -35,5 +35,3 @@ never decide it. Reference: [README](README.md).
 - `cargo qualification check references`: the pin and the cited runs, offline
 - `cargo qualification validate --manifest qualification/targets/<chip>/<program>.toml`
 - `cargo qualification catalog check --catalog qualification/catalog/<chip>/*.toml` and `cargo qualification catalog anchors --catalog qualification/catalog/<chip>/*.toml` after catalog changes.
-
-Workflow: the `qualification-entry` skill.

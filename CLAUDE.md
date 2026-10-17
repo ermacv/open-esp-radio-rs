@@ -13,18 +13,14 @@ Commands written with `<chip>` take either chip where that input exists.
 
 ## Rules
 
-- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, add a fallback, leave required work unfinished, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. Any other choice the agent makes itself and records in its PR as its own decision, never as an owner decision. An explicit user decision stays authoritative: do not ask it again.
+- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, add a fallback, leave required work unfinished, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
 - **Generated files.** Never read the raw PACs, `pac/src/generated.rs`, published SVD/bindings or `verification/*/facts` TOML: grep them with an explicit path (tree-wide searches skip them through `.ignore`). Regenerate, never hand-edit; the pre-tool hook refuses such reads and edits.
 - **Own GitHub account only.** Never act on GitHub outside the owner's account: no pushes, pull requests, issues, comments, reviews or any other message in another project, upstream included (`esp-rs/*` and every other third-party repository). Fixes to a dependency go to the owner's fork (for esp-hal, `ermacv/esp-hal` `oer/main`, see its `UPSTREAM.md`); reading other projects is fine.
-- **Decisions.** An owner decision is only what the repository owner said or approved, recorded with a link; the owner may revise it at any time. Never record your own choice as an "owner decision": on a material question (a reading that differs in a shared crate, drops required data, adds a fallback, leaves required work unfinished, changes on-hardware behavior or qualification, or changes a block's public API; see Ask) propose options and ask; any other choice is recorded in the PR as the agent's own. See [decisions and approval](docs/issues.md#decisions-and-approval).
-- **Issue creation.** Before creating any issue through a plugin, API or CLI, validate its explicit labels with `python3 .github/scripts/issue_labels.py validate`: exactly one `kind:*`, at least one `area:*`, and exactly one `priority:*` for an executable issue (tracking may omit priority). Supply that complete set in the creation request and verify the returned labels; never defer them to triage or report creation complete while classification is invalid. See [issue management](docs/issues.md#creation-and-automatic-control).
 - **Sources.** Never commit vendor binaries, disassembly dumps, credentials, unreviewed extraction artifacts or anything from `_oracles/`. Recovered tables and coefficients belong in production source with their provenance: [source policy](docs/source-policy.md#recovered-tables-and-coefficients).
-- **Docs current.** Update the owning README or rustdoc in the same change ([documentation policy](docs/documentation.md)). Never add audit reports, work plans, migration histories, experiment diaries or test-run summaries; generated reports stay in ignored outputs.
-- **Block knowledge.** A non-obvious fact about a block found during a task (an invariant, a trap, where a value really comes from) goes into that block's guide skill or owning README in the same PR.
 - Preserve unrelated changes in an already-dirty worktree.
 
 ## Agent entry points
@@ -42,7 +38,7 @@ registers the permissions and the generated-file guard in `.claude/hooks/`.
 - Build and test with Cargo: `cargo test -p <package> <test>`. Repository commands a person runs by hand: `cargo xtask check ui` (compile-fail contract tests), `cargo xtask check feature-sets` (each package's declared feature sets), `cargo xtask doc` (API documentation and doctests), `cargo xtask lock` (every workspace's lock after a dependency or pin change; `--check` verifies offline) and `cargo xtask worktree add` (a second checkout with its own warm host `target/`).
 - After a pull that changed a lock file: `cargo tidy fetch` (Cargo is offline). If tidy's own registry dependencies are missing, bootstrap with `cargo --config net.offline=false tidy fetch`. `cargo tidy workspaces` and `cargo tidy chips` print the repository model.
 - Work on a branch in its own worktree. `main` changes only through pull requests: `cargo xtask push` pushes the branch with `git push` and opens its pull request as a draft, with no checks and no review; a person marks it ready and merges it.
-- Commits use Conventional subjects (`feat(blobray): …`, `fix(esp32s31): …`), scoped and imperative. A production change that Blobray or verification work needs lands in its own product-scoped commit. A PR names the ownership boundary, the tests run, any qualification/HIL evidence and every generated SVD/PAC change.
+- Commits use Conventional subjects (`feat(blobray): …`, `fix(esp32s31): …`), scoped and imperative. A production change that Blobray or verification work needs lands in its own product-scoped commit. A PR names every generated SVD/PAC change.
 
 ## Map
 
@@ -58,13 +54,9 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `tools/` | Repository commands (xtask, tidy), dev kit (`cargo fw`: flash an image bundle or an ESP-IDF catalog image such as a `hil/peers` reference, monitor, devices, compare), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
 | `stand/` | `cargo stand` and the shared stand's packages: [stand guide](hil/host/stand.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |
-| `docs/` | Cross-owner contracts: [architecture](docs/architecture.md), [documentation](docs/documentation.md), [verification and qualification](docs/verification-and-qualification.md) |
+| `docs/` | Cross-owner contracts and reference: [architecture](docs/architecture.md), [source policy](docs/source-policy.md), [hardware errata](docs/hardware-errata.md), [protocol naming](docs/protocol-naming.md), PHY and vendor notes |
 
-Task workflows live in `.claude/skills/`: `protocol-change`,
-`driver-or-hardware-change`, `new-package`, `qualification-entry`,
-`vendor-evidence` and `hil-run`.
-
-One task is one session and one PR. A block guide skill (`block-wifi`,
+A block guide skill (`block-wifi`,
 `block-bluetooth`, `block-ieee802154`) maps
 a block's packages across layers, its shared contracts, traps and checks; the
 agent profile of the same name in `.claude/agents/` starts a session with it
@@ -77,9 +69,7 @@ least two blocks have proven in code. Changing or removing existing public API
 of a shared crate follows the
 [shared-change procedure](docs/architecture.md#changing-a-shared-contract): a
 prototype in a block that shows the failing case and a cost table; the
-repository owner decides, and it merges before dependents build on it: a
-shared contract does not change while a block that depends on it has work in
-flight. An additive change (a new PAC or SVD field, a new HAL accessor,
+repository owner decides. An additive change (a new PAC or SVD field, a new HAL accessor,
 nothing existing changed) is the block's own; its pull request names the
 shared crate it extends. Bounds, cancellation and each terminal's slot are specified before a
 contract's shape.

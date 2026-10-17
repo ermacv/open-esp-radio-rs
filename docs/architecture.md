@@ -893,8 +893,7 @@ missing checks or turns the whole project into one readiness gate. Knowledge
 and source facts remain useful outside a selected qualification program.
 Implementation, host coverage and async states are reviewed declarations;
 vendor/HIL states are derived from evidence. A valid incomplete capability
-program is not a passing readiness gate. The exact rules are defined in the
-[verification and qualification contract](verification-and-qualification.md).
+program is not a passing readiness gate.
 
 ## Hardware descriptions and providers
 

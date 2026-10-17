@@ -68,14 +68,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ci-tools-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ci-tools-${{ runner.os }}-
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install the conformance tools whose versions enter the plan
         run: sudo apt-get update && sudo apt-get install -y clang lld
       - id: plan
@@ -101,14 +96,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: host-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: host-${{ runner.os }}-
+          # The job builds the repository's own crates: cache them too.
+          cache-workspace-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -129,14 +121,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: host-lint-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: host-lint-${{ runner.os }}-
+          # The job builds the repository's own crates: cache them too.
+          cache-workspace-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -157,14 +146,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: architecture-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: architecture-${{ runner.os }}-
+          # The job builds the repository's own crates: cache them too.
+          cache-workspace-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -184,14 +170,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: architecture-clippy-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: architecture-clippy-${{ runner.os }}-
+          # The job builds the repository's own crates: cache them too.
+          cache-workspace-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -212,16 +195,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            hil/targets/*/target
-            verification/*/hardware/*/target
-          key: firmware-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: firmware-${{ runner.os }}-
+          workspaces: |
+            . -> target
+            hil/targets/esp32s31 -> target
+            hil/targets/esp32c5 -> target
+            verification/esp32s31/hardware/boot-state-probe -> target
+            verification/esp32c5/hardware/register-probe -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -240,14 +222,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: models-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: models-${{ runner.os }}-
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -267,15 +244,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            tools/blobray/target
-          key: isa-conformance-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'tools/blobray/cli/tests/riscv_conformance/inputs.toml') }}
-          restore-keys: isa-conformance-${{ runner.os }}-
+          workspaces: |
+            . -> target
+            tools/blobray -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install clang and lld
         run: sudo apt-get update && sudo apt-get install -y clang lld
       - name: Fetch every workspace
@@ -297,15 +271,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            tools/blobray/target
-          key: images-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: images-${{ runner.os }}-
+          workspaces: |
+            . -> target
+            tools/blobray -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Put the toolchain's LLVM tools on PATH
         run: |
           host=$(rustc -vV | sed -n 's/^host: //p')
@@ -333,18 +304,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/*
-            !target/vendor-firmware
-            !target/blobray-research
-            !target/verification/*/evidence
-            !target/vendor-evidence-base
-          key: verification-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
-          restore-keys: verification-${{ runner.os }}-
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
@@ -401,14 +363,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ci-tools-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ci-tools-${{ runner.os }}-
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Verify every planned result
         env:
           CI_NEEDS: ${{ toJSON(needs) }}

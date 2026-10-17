@@ -589,7 +589,7 @@ impl ModemSleep {
     fn try_transition<R>(
         &mut self,
         clock: PmClock,
-        step: impl Fn(&mut Self, Places<'_, PM_ACTION_CAPACITY>) -> Result<R, PmScheduleError>,
+        step: impl FnOnce(&mut Self, Places<'_, PM_ACTION_CAPACITY>) -> Result<R, PmScheduleError>,
     ) -> Result<(R, PmActions), PmScheduleError> {
         let mut next = self.clone();
         let mut actions = PmActions {

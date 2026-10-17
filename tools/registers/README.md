@@ -94,20 +94,21 @@ memory ranges, API safety and generated source consistency. They do not qualify
 hardware or prove equivalence to vendor behavior. Review policy, source provenance
 and required recovered tables remain with `registers/`.
 
-## Checks the gate calls
+## Register checks
 
-`oer_register_tool::checks` holds the register rules other tools run, so no
-caller keeps its own copy:
+`oer_register_tool::checks` holds the register rules, so no caller keeps its
+own copy:
 
 - `pac_transactions::check`: a handwritten PAC module
   (`crates/hardware/*/pac/src`) never loops, except a `while` walking an
   index over a fixed-length table; polling and retries belong to the HAL.
-  `cargo xtask check architecture` runs it.
+  `cargo registers check pac-transactions <directory>` runs it.
 - `shared_words::check`: every MMIO word a write transaction of the radio
   PAC (`policy/api.toml`, through the published SVD) and pinned esp-hal both
   store to has a reviewed entry in `registers/<chip>/shared-words.toml`, and
-  no reviewed word is no longer shared. `cargo xtask check architecture`
-  resolves the esp-hal and platform PAC sources and runs it.
+  no reviewed word is no longer shared. `cargo registers check shared-words
+  --chip <chip> --esp-hal-src <dir> --pac-src <dir>` runs it on the given
+  esp-hal and PAC sources.
 - `inventory`: the publication's owned MMIO regions and declared words
   (`model`), Blobray's `register-accesses` records (`observations`), their
   classification and the report; `inventory::run` (behind `cargo registers

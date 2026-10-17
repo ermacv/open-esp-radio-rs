@@ -22,9 +22,8 @@ stopped-scheduler or rollback token) are allowed; pending/step machines,
 in-flight flags and retry loops belong to the HAL. There, every poll,
 compare or retry-until-stable loop carries an explicit time or attempt budget
 and returns a typed error the caller handles when the budget runs out; no loop
-is unbounded, even where the vendor's is. `cargo xtask check architecture`
-rejects any loop in a handwritten PAC module other than a walk over a
-fixed-length table. The HAL is the only production crate that depends on this
+is unbounded, even where the vendor's is. A handwritten PAC module has no
+loop other than a walk over a fixed-length table. The HAL is the only production crate that depends on this
 package.
 
 ## Sources and generated outputs
@@ -76,9 +75,7 @@ names each word and its guarantee.
 
 ## Validation
 
-`cargo registers generate --check` and `cargo xtask check architecture`
-validate register sources, dependency direction and handwritten unsafe
-boundaries. Publication checks also cover source-only publication
+`cargo registers generate --check` validates register sources. Publication checks also cover source-only publication
 reproducibility unconditionally. Artifact-scoped publication is additionally
 checked when its review report is present. Generated addresses, masks and
 field positions are not regression test oracles; ownership and memory

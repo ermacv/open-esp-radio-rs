@@ -82,7 +82,6 @@ policies, without loading an investigation or executing vendor code.
 
 ```console
 cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
-cargo xtask check blobray-standalone
 ```
 
 Concrete execution supports phased RV32 integer/stack arguments, atomics, explicit

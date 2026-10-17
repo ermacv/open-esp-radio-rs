@@ -12,7 +12,7 @@ commands belong to each component's README and Rust documentation.
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
 | [Blobray](../tools/blobray/README.md) | Binary analysis, reviewed research and bounded comparisons | Generic engine; target facts are selected through providers and projects |
 | [ELF view](../tools/elf/README.md) and [vendor provenance](../tools/vendor-provenance/README.md) | The one ELF/archive reader with the RV32 relocation table; the one vendor function fingerprint | Read by every tool; image placement is audited by the image pipeline |
-| [Repository tooling](../tools/xtask/README.md) | Cargo graphs, source checks and build orchestration | Calls domain tools; does not duplicate their validators |
+| [Repository tooling](../tools/xtask/README.md) | Push, API docs, firmware lockfiles, worktrees, UI and feature-set checks | Calls domain tools; does not duplicate their validators |
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
 | [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
@@ -30,15 +30,15 @@ Every Cargo package declares `package.metadata.open-radio.layer` and
 `composition` and `facade` layers are production, `experiment` is
 experimental, and every other layer is development. The repository model
 (`oer-repo`) is the one reader of the table: it types every key and rejects
-unknown ones, and `oer-tidy` checks every package in seconds; platform is `portable`, `host`,
+unknown ones; platform is `portable`, `host`,
 `chip` or `family`. Chip applicability requires a separate `chip` identifier, such as
 `esp32s31`, and family applicability a separate `family` identifier, such as
 `espressif`; no other classification carries either.
 A `family` package holds code that is vendor-specific but not chip-specific:
 a ported vendor driver, recovered coexistence tables, a register protocol
 every chip of the vendor shares. `platform/<chip>/chip.toml` names each
-chip's `family`. The architecture check builds a family package for the Rust
-target of every chip of its family; the chips of that family may depend on
+chip's `family`. A family package builds for the Rust target of every chip
+of its family; the chips of that family may depend on
 it, and it may depend only on portable packages and packages of its own
 family. Portable and host packages never depend on a family
 package, and a family package never depends on a chip package, so code shared
@@ -59,8 +59,8 @@ their declared profiles; an empty feature set need not form a usable system.
 ### Layer dependencies
 
 The repository model discovers every manifest and workspace member before
-reading classification, and its dependency policy (`oer_repo::policy`, run
-by `cargo tidy check`) is the one statement of these rules. Missing or
+reading classification, and its dependency policy (`oer_repo::policy`) is
+the one statement of these rules. Missing or
 inconsistent classification is an error. Production path dependencies,
 including optional and build dependencies, must resolve to classified
 production packages. Test dependencies may compose an
@@ -83,7 +83,7 @@ Every development package that runs on the host (`platform = "host"`)
 declares `package.metadata.open-radio.host-layer`; a portable development
 package may. A host package depends, through any dependency kind, only on
 packages of its own host layer and the layers below it
-(`oer_repo::policy::host_edge_allowed`, run by `cargo tidy check`):
+(`oer_repo::policy::host_edge_allowed`):
 
 | Host layer | Holds | Examples |
 | --- | --- | --- |
@@ -100,9 +100,8 @@ never reaches HIL execution or orchestration, and the foundation depends
 on nothing above it. The shared relation library in
 `hil/phy/esp32s31/relation/` belongs to the `verification` host layer, so
 verification scenarios and probes may depend on it. Only entry crates
-run a repository command line: `cargo tidy check` rejects a
-non-entry package whose code spawns `cargo hil` or `cargo xtask`
-(`oer_tidy::spawns`); a library calls the owning library instead.
+run a repository command line: a non-entry package never spawns `cargo hil`
+or `cargo xtask`; a library calls the owning library instead.
 
 ### Host applications
 
@@ -119,7 +118,7 @@ running it as a process or by reading what it wrote.
 | Blobray | `cargo blobray` (its own workspace, [Blobray](../tools/blobray/README.md)) | Binary analysis | Binary analysis libraries, foundation |
 | Registers | `cargo registers` ([register tool](../tools/registers/README.md)) | Register model, review, SVD/PAC/bindings publication | Foundation, chip profiles, the bindings format |
 | Qualification | `cargo qualification` ([evaluator](../qualification/README.md)) | Catalogs, programs, assessment | The run bundle, scenario catalog and shard formats, the repository model, foundation; never the runner, lab, HIL images or stand operation |
-| Gate | `cargo xtask`, `cargo tidy` ([xtask](../tools/xtask/README.md), [tidy](../tools/tidy/README.md)) | Check registry, push, CI state, worktrees, sweeps, text policy | The repository model and foundation; every other application runs as a process |
+| Gate | `cargo xtask`, `cargo tidy` ([xtask](../tools/xtask/README.md), [tidy](../tools/tidy/README.md)) | Push and draft PR, API docs, firmware lockfiles, worktrees, workspace and chip discovery | The repository model and foundation; every other application runs as a process |
 
 Every host-layer package declares `host-app` and `host-boundary` in
 `package.metadata.open-radio`. The application values are `gate`, `fw`,
@@ -148,10 +147,10 @@ The `formats` owner exposes only `format` packages. Test dependencies may
 compose applications for a regression; they still follow host layer rules.
 The dependency policy is `oer_repo::policy::application_edge_allowed`.
 
-`cargo tidy check` holds the dependency rules: the [host layers](#host-layers), these application boundaries,
+The dependency rules are the [host layers](#host-layers), these application boundaries,
 qualification's ban on HIL orchestration and stand operation
 (`oer_repo::policy::qualification_edge_allowed`), and one release profile for
-every firmware workspace (`oer_tidy::workspaces::release_profiles`).
+every firmware workspace.
 
 **Device foundation.** Every application that touches a board goes through
 the devices layer ([`tools/device/`](../tools/device/README.md)): `oer-devices`
@@ -205,8 +204,8 @@ Protocol logic is sans-IO. A `protocol` package is a set of state machines:
 received frames, completed operations and the current time enter as values
 (`oer_time::Instant`), and the actions to take and the next deadline leave as
 values. It may declare the asynchronous ports its drivers implement, but it
-never awaits; the architecture check rejects every `async` body and `.await`
-in a protocol package's library sources. The drivers that wait on ports and
+never awaits: a protocol package's library sources hold no `async` body and
+no `.await`. The drivers that wait on ports and
 timers and feed the state machines are `service` packages, and a runtime or
 an adapter polls them. The same state machine therefore runs under any
 executor, in a synchronous interrupt context and against a host model with
@@ -535,20 +534,15 @@ block depends on it directly. `registers/` follows the PAC. A block package
 carries its block's domain token in its name (`ieee80211`, `bluetooth`,
 `ieee802154`) and is production code by its layer's scope (`Layer::scope`
 in `oer-repo`'s classification); a name carrying two blocks' tokens is
-refused ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231802807)). A HIL, verification or tool package with a token
+not allowed ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231802807)). A HIL, verification or tool package with a token
 is no block package, and what only such packages reach is not shared.
-Neither is a closed register PAC of the architecture policy (`CLOSED_PACS`:
-`oer-ieee80211-pac`, `oer-ieee80211-pac-raw`, `oer-ieee802154-pac`), which the
+Neither is a closed register PAC (`oer-ieee80211-pac`,
+`oer-ieee80211-pac-raw`, `oer-ieee802154-pac`), which the
 shared chip PAC re-exports; it is listed when two blocks reach it ([owner
 decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6235017175)). What
 block packages reach counts whatever its own scope: a development crate two
-blocks' production code reaches is listed. The list
-is derived, never written by hand: the `shared-crates` check
-(`cargo xtask check tier fast --job host-lint --checks shared-crates`, on every
-change to a manifest, this document, the check, its closed PAC list or the
-repository model) fails
-when the table below differs
-from the derivation. Host tooling and HIL infrastructure change under their
+blocks' production code reaches is listed. The table below follows this
+derivation, never a choice made by hand. Host tooling and HIL infrastructure change under their
 owners' process ([#761](https://github.com/ermacv/open-esp-radio-rs/issues/761),
 [#783](https://github.com/ermacv/open-esp-radio-rs/issues/783)), not this
 procedure. Each
@@ -623,7 +617,7 @@ an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
 directory names alike; the facade feature `wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
 `open-esp-radio` (library `oer`) is the only branded name.
-`oer-tidy` (`cargo tidy check`) enforces the prefix. The Blobray
+The Blobray
 workspace names its own packages.
 
 ## Radio ports
@@ -945,13 +939,11 @@ its initializer says. A static in a zeroed region is declared only through
 initial state, derived with `#[derive(bytemuck::Zeroable)]` from fields
 that are), and its initializer is `zeroed()`. A value with no zero representation is a
 `ZeroedStatic<MaybeUninit<T>>` written when its owner claims it, or a
-`ZeroedOnce<T>` written once and then shared (an interrupt's waker). `cargo
-xtask check architecture` refuses a `link_section` literal naming a zeroed
-region anywhere in Rust source, so the macro is the only way to place one.
-The image linker (`tools/image/linker`) is the backstop for what that scan
-does not read, vendor
-archives included: an input section bound for a zeroed region that holds a
-non-zero byte or a relocation fails the link.
+`ZeroedOnce<T>` written once and then shared (an interrupt's waker). Rust
+source never names a zeroed region in a `link_section` literal, so the macro
+is the only way to place one. The image linker (`tools/image/linker`) checks
+every input, vendor archives included: an input section bound for a zeroed
+region that holds a non-zero byte or a relocation fails the link.
 
 ## HIL and operating-system boundaries
 
@@ -968,9 +960,9 @@ builds (`oer-hil-image`), arbitration and its spectrum claims
 shapes what a run observes. Operation packages only operate the stand —
 boards and flashing (`oer-stand-board`, `oer-hil-flash`), the stand file,
 the `cargo hil` and `cargo stand` command lines — and never shape a passed observation, so the evaluator leaves
-them out of every evidence closure by this role alone. `cargo tidy check`
-rejects an observation package that depends on an orchestration or
-operation package, so neither can change what a run observes through it; an
+them out of every evidence closure by this role alone. An observation
+package never depends on an orchestration or operation package, so neither
+can change what a run observes through it; an
 image build reaches a run's evidence through the build inputs the run
 records.
 

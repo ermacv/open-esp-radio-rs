@@ -255,13 +255,6 @@ commit/dirty state and configured evidence provenance; a catalog or manifest
 hash is source identity, never firmware identity. All outputs are ignored
 views, not another readiness decision or tracked snapshot.
 
-`cargo xtask check docs` invokes the static catalog owner for all catalogs and
-program selections, and renders the complete catalog set in both input orders
-to check deterministic presentation. It uses `catalog check --catalog`,
-`catalog check --manifest`, and `catalog render --catalog`; it does not use
-manifest rendering, `validate` or `evaluate`, and it does not read
-vendor evidence or HIL runs. Its ignored static views live below
-`target/docs/catalogs/` and carry no readiness verdict.
 
 
 ### Validate and evaluate a program
@@ -338,8 +331,7 @@ Every capability has five independent axes:
 
 - `implementation` is the reviewed declaration `complete` or `incomplete`;
 - `host` is the reviewed declaration `covered` or `incomplete`. The evaluator
-  checks consistency with declared gaps; it does not find or run Rust tests.
-  Workspace testing remains a separate repository check;
+  checks consistency with declared gaps; it does not find or run Rust tests;
 - `vendor` is derived from the vendor evidence index of the program's chip,
   derived data in `target/verification/<chip>/evidence` that
   `cargo verification evidence --chip <chip>` computes for the checkout. It
@@ -395,8 +387,7 @@ axes, evidence requirements or capability dependency graph.
 The catalog states what is supported; a code anchor states where. A
 `// CAPABILITY: <id>[, <id>...]` line comment directly above a Rust item,
 after its doc comments and attributes, names the inventory items, source
-facts or catalog capabilities that item owns (the line grammar has one
-recogniser, `oer_tidy::anchors`, which `cargo tidy check` uses too):
+facts or catalog capabilities that item owns:
 
 ```rust
 /// Fixed pool of role instances of one kind.
@@ -405,9 +396,8 @@ pub struct SchedulerRolePool { /* ... */ }
 ```
 
 `cargo qualification catalog anchors --catalog PATH ...` scans every Rust file
-of the repository and checks the anchors against the selected catalogs; `cargo
-xtask check capabilities` passes all of them, because an anchor may name an
-entry of any catalog. The rules follow the declared source status:
+of the repository and checks the anchors against the selected catalogs; pass
+all of them, because an anchor may name an entry of any catalog. The rules follow the declared source status:
 
 | Declared state | Anchors required |
 | --- | --- |
@@ -605,12 +595,12 @@ Q7, [`oer-hil-evidence-archive`](../hil/host/evidence-archive/README.md)):
    interrupted is deleted by hand, which keeps rule 5 because a draft is not
    yet in the archive. It then writes the pin `evidence/archive.toml` in
    `qualification/`, which repeats the manifest;
-4. `cargo qualification check references`, in the gate and CI, checks
+4. `cargo qualification check references` checks
    offline that the pin hashes to its version, that every cited run is in it
    with the same digest (rule 2) and that it holds no run nothing cites
    (rule 1) (owner decision
    [6225000924](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6225000924));
-   the gate reads no runs;
+   it reads no runs;
 5. `cargo hil archive fetch --out DIR` downloads the pinned version where
    the archive is reachable, and `status`, `next`, `plan`, `readiness` and
    `evaluate --archive DIR` read only that copy, verified against the pin
@@ -709,7 +699,7 @@ recovery and applicability to another build are separate from this completion.
 
 ### Evidence reports and absent directories
 
-Use a JSON report for CI and downstream presentation:
+Use a JSON report for downstream presentation:
 
 ```console
 cargo qualification evaluate \
@@ -754,19 +744,7 @@ capability's readiness drops when one of its axes was terminal and is no
 longer, or when it was proof-ready or ready and is no longer; a capability or
 program only one side has is a reviewed catalog change, not a drop. Each drop
 prints as `READINESS-DROP`, and with `--drops` they are written as a Markdown
-table (the file is removed when nothing dropped). Nightly runs it after its
-verification checks against the last good reports, the
-`qualification-readiness` artifact of a `main` run: while a readiness issue is
-open, those of the run its marker names, the last before the drop; otherwise
-the previous night's. A drop opens a `kind:bug`, `area:qualification`,
-`priority:P1` issue; each later night updates its table, comments on a further
-drop and closes it once readiness is back. Closing it by hand accepts the
-drop, and the next night's base is the previous night's reports again. When
-the issue's base reports expired, its marker becomes `expired-base-run`: the
-issue stays open, uncompared, and the previous night's reports are the base.
-Only a complete evaluation is reported, and the night's reports are published
-as a later base only after their drop is recorded; a base that fails to
-download fails the step rather than being replaced.
+table (the file is removed when nothing dropped).
 
 ### Host observer identity
 

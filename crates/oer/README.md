@@ -35,10 +35,6 @@ the facade does not establish hardware readiness or concurrent-radio
 operation. Bluetooth support retains the limitations of the
 [Bluetooth capability map](../hardware/esp32s31/driver/bluetooth/FEATURES.md).
 
-Architecture checks resolve isolated consumers to catch unwanted dependencies,
-compile no-default/default and declared feature profiles, and test the public
-type identities. Bluetooth and IEEE 802.15.4 are checked independently of Wi-Fi.
-
 Internal libraries depend on their specific contracts and on `oer-radio-port`
 for the radio port lifecycle, using the corresponding `oer-*` Cargo package names. They must
 never depend on this facade. Association types are shared with the underlying

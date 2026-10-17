@@ -1,7 +1,6 @@
 # The single pin of the inputs of the RISC-V executor conformance test
-# (`cli/tests/riscv_conformance.rs`). `cargo xtask check isa-conformance`
-# fetches both into `target/isa-conformance/`, verifies them against this
-# file and runs the test.
+# (`cli/tests/riscv_conformance.rs`): fetch both at these revisions and point
+# the test at them as its documentation says.
 schema = 1
 
 # The official architectural tests and their test environment. `revision` is

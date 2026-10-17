@@ -28,8 +28,7 @@ and the host stands ([`esp32s31/host/ieee802154`](../esp32s31/host/ieee802154/RE
 
 Without `producers` this library exposes comparison policy and the index
 API. `producers` adds toolchain, chip profiles and the probe orchestration.
-The gate invokes verification through its command line; qualification reads
-only the shared format.
+Qualification reads only the shared format.
 
 ```console
 cargo test --manifest-path verification/Cargo.toml -p oer-vendor-evidence --features producers

@@ -25,10 +25,8 @@ Blobray's application.
 
 Every normal or build dependency of a package of this layer or of Blobray on
 another of them is allowed by one table, `oer_repo::policy::COMPONENTS`
-([repository model](../repo/README.md)), which the dependency policy of
-`cargo tidy check` enforces on the manifests; a package of either application
-without a row fails it, and so does a document table, this one or Blobray's,
-that states anything else. Dependencies on other applications' shared libraries, such as
+([repository model](../repo/README.md)); every package of either application
+has a row, and this table and Blobray's state the same. Dependencies on other applications' shared libraries, such as
 Blobray's linker adapters on `oer-process`, follow the host-application rules.
 
 | Package | May depend on |

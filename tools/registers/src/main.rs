@@ -44,7 +44,7 @@ enum Command {
         #[arg(long)]
         output: Option<PathBuf>,
     },
-    /// The register checks the gate runs.
+    /// The register checks.
     #[command(subcommand)]
     Check(Check),
 }

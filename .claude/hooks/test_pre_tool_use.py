@@ -1,7 +1,6 @@
 """Regressions of pre_tool_use.py, run as Claude Code runs it: JSON on stdin.
 
-`cargo xtask check` runs them (check `claude-hooks`) when `.claude/hooks/`
-changes; by hand: `python3 -m unittest discover -s .claude/hooks`.
+Run them by hand: `python3 -m unittest discover -s .claude/hooks`.
 """
 
 import json
@@ -36,7 +35,6 @@ class Edits(unittest.TestCase):
             ("Edit", "registers/esp32s31/published/platform.bindings.toml", "cargo registers generate"),
             ("Edit", "/w/verification/esp32s31/facts/provenance.toml", "--accept"),
             ("Write", "verification/esp32s31/facts/names/libble_app.toml", "oer-symbol-lineage"),
-            ("Edit", "/w/.claude/hooks/heavy-commands.json", "cargo xtask hooks"),
         ]:
             self.assert_blocked(tool, path, command)
 
@@ -52,31 +50,29 @@ class Edits(unittest.TestCase):
 
 
 class Reads(unittest.TestCase):
-    def test_bash_never_prints_an_observer_json_whole(self):
-        status, stderr = run("Bash", command="cat target/hil/runs/r1/observers/station.json | head")
-        self.assertEqual(status, 2)
-        self.assertIn("cargo hil runs why", stderr)
-
-    def test_bash_still_refuses_whole_generated_reads(self):
-        status, stderr = run("Bash", command="head -n 50 registers/esp32s31/published/radio.svd")
+    def test_a_generated_file_is_never_read_whole(self):
+        status, stderr = run("Read", file_path="/w/crates/hardware/esp32s31/pac/src/generated.rs")
         self.assertEqual(status, 2)
         self.assertIn("grep it with an explicit path", stderr)
+        for command in [
+            "head -n 50 registers/esp32s31/published/radio.svd",
+            "cd x && cat verification/esp32s31/facts/provenance.toml",
+            "git show HEAD:crates/hardware/esp32s31/pac/raw/src/lib.rs",
+        ]:
+            status, stderr = run("Bash", command=command)
+            self.assertEqual(status, 2, command)
+            self.assertIn("grep it with an explicit path", stderr)
 
-    def test_listing_observers_is_allowed(self):
-        self.assertEqual(run("Bash", command="ls target/hil/runs/r1/observers/"), (0, ""))
-
-
-class Commands(unittest.TestCase):
-    def test_foreground_builds_are_refused_and_background_ones_run(self):
-        status, stderr = run("Bash", command="cargo test -p oer-tidy")
-        self.assertEqual(status, 2)
-        self.assertIn("run_in_background", stderr)
-        self.assertEqual(run("Bash", command="cargo test -p oer-tidy",
-                             run_in_background=True), (0, ""))
-
-    def test_waiting_by_process_name_is_refused(self):
-        status, _ = run("Bash", command="pgrep -f 'cargo hil'")
-        self.assertEqual(status, 2)
+    def test_run_rules_are_gone(self):
+        # Builds in the foreground, waiting by name and other commands are
+        # not this guard's business.
+        for command in [
+            "cargo build -p oer-xtask",
+            "pkill -f cargo",
+            "sleep 30",
+            "grep -n x registers/esp32s31/published/radio.svd",
+        ]:
+            self.assertEqual(run("Bash", command=command), (0, ""), command)
 
 
 if __name__ == "__main__":

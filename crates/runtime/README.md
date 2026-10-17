@@ -9,14 +9,14 @@ boundaries describe the execution responsibility of each package.
 ## Execution and time contract
 
 A runtime exposes futures and never spawns, names or requires an executor; any
-executor that polls them is valid, and the architecture check rejects executor
-dependencies below adapters and compositions. The portable primitives are
+executor that polls them is valid, and nothing below adapters and compositions
+depends on an executor. The portable primitives are
 `embassy-sync` (bounded mailboxes and signals over a caller-chosen raw mutex)
 and `embassy-futures` (select/join). Time is the [`oer-time`](../time/src/lib.rs)
 contract: a runtime reads and waits on time only through an `oer_time::Clock`
 or `Timer` value that it owns or receives from its caller, never through
-`embassy-time`, which the architecture check confines to adapters,
-compositions and the facade, dev dependencies included. Compositions pass
+`embassy-time`, which only adapters, compositions and the facade use, dev
+dependencies included. Compositions pass
 `oer_time_embassy::EmbassyClock`, which reads the one monotonic timebase the
 final image links; runtime tests pass the per-instance `VirtualClock` or
 `SkipClock` of `oer-time-virtual`. A runtime does not assume which executor

@@ -85,9 +85,6 @@ Error codes are machine interfaces; descriptive prose is not a parsing key.
 ```console
 cargo test --manifest-path tools/blobray/Cargo.toml --workspace
 cargo clippy --manifest-path tools/blobray/Cargo.toml --workspace --all-targets
-cargo xtask check blobray-standalone
 ```
 
-Tests use synthetic binaries. The standalone check extracts only the shipping
-core and runs its tests. It excludes the independent register
-source-publication tool.
+Tests use synthetic binaries.

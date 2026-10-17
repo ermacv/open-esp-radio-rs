@@ -7,8 +7,8 @@
 //!   name (the qualification evaluator binds catalog entries through them,
 //!   tidy keeps them in compiled files).
 //!
-//! It depends on nothing, so the gate, tidy, qualification and vendor
-//! provenance share it without linking each other.
+//! It depends on nothing, so qualification and vendor provenance share it
+//! without linking each other.
 #![forbid(unsafe_code)]
 
 pub mod capability;

@@ -20,13 +20,9 @@ call inside an `unsafe fn` names the `# Safety` contract it relies on. Put the
 comment below any `#[allow(unsafe_code, ...)]` attribute: Clippy 1.97 does
 not accept a comment above an attribute that spans several lines.
 
-`cargo clippy --workspace --all-targets` applies these lints on the host, and
-`cargo xtask check architecture` runs Clippy for every production feature
-profile on the target. It also
-[checks](../tools/xtask/src/checks/architecture/unsafe_policy.rs) that the
-reviewed audited-unsafe list and the crate-root attributes agree, and the
-direct-PAC-dependency list; generated PAC code has no crate-root unsafe
-attribute. The table below maps package identities to source owners.
+`cargo clippy --workspace --all-targets` applies these lints on the host.
+Generated PAC code has no crate-root unsafe attribute. The table below maps
+package identities to source owners.
 
 ## Generated access and trusted handwritten code
 

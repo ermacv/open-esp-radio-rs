@@ -7,9 +7,8 @@ description: Use when creating, splitting, moving, renaming or reclassifying a C
 
 Read first (about 3k tokens): [package names](../../../docs/architecture.md#package-names),
 [package classification](../../../docs/architecture.md#package-classification),
-[layer dependencies](../../../docs/architecture.md#layer-dependencies),
-[host layers](../../../docs/architecture.md#host-layers) and the
-[tidy checks](../../../tools/tidy/README.md).
+[layer dependencies](../../../docs/architecture.md#layer-dependencies) and
+[host layers](../../../docs/architecture.md#host-layers).
 
 ## Checklist
 
@@ -23,7 +22,7 @@ Read first (about 3k tokens): [package names](../../../docs/architecture.md#pack
    scope: production, experimental or development) and a `platform` —
    `portable`, `host`, `chip` (with `chip = "<id>"`) or `family` (with
    `family = "<id>"`). Declare `inputs` for repository files
-   outside the package its tests read, so the gate follows them. A HIL
+   outside the package its tests read. A HIL
    package names its `hil` role (`observation`, `orchestration` or
    `operation`), a verification package its `evidence` role, and every host
    development package its `host-layer` (`entry`, `orchestration`,
@@ -46,13 +45,11 @@ Read first (about 3k tokens): [package names](../../../docs/architecture.md#pack
    The PR body carries the search command that found every place and its
    output ([inventories with proof](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828)); the reviewer reruns it.
 
-## Commands (all `run_in_background: true`)
+## Commands
 
 ```console
-cargo tidy check
+cargo test -p <package>
 cargo xtask lock --check
-cargo xtask check architecture
-cargo xtask check changed
 ```
 
 `cargo tidy workspaces --json` lists the workspaces tidy discovered.

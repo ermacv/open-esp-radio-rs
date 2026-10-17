@@ -209,7 +209,7 @@ The station owns `Counter`, the saturating diagnostic value its data path
 and service loop report. It carries no lower-MAC contract, resource capacity
 or protocol-state decision.
 
-The crate uses tidy's canonical strict lint block. Compile-time checks use
+The crate uses the canonical strict lint block. Compile-time checks use
 private functions scoped inside const expressions, with the explicit
 `expect(clippy::panic, reason = "evaluated at build")`. Those functions cannot
 be called from the runtime path; their checked values remain in closed types.

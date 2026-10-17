@@ -140,7 +140,7 @@ on the fallback channel and reopened its gate. A refused return never
 publishes that restart, including when the scan ended on another channel.
 The coordinator
 cannot be copied into another owner. The crate uses the canonical strict
-lint block checked by tidy.
+lint block.
 
 Beacon schedules carry `BeaconInterval`, which rejects zero at construction.
 The arbiter and coordinator use the same TBTT grid: absences start at TBTT

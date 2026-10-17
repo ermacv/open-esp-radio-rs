@@ -39,7 +39,7 @@ chip's interrupt matrix as the table drives it; `__fake_matrix!` is a host
 model for tests.
 
 On the ESP32-S31 the table is the only owner of routes: every esp-hal build
-for the chip enables the fork's `static-interrupts` (a tidy check), under
+for the chip enables the fork's `static-interrupts`, under
 which esp-hal has no API that binds a handler or maps a source at run time.
 The platform's table adopts esp-hal's one routing capability; an esp-hal
 driver that needs its interrupt (`into_async`) panics unless the image's

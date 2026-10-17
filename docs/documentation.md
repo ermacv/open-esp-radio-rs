@@ -19,7 +19,7 @@ changes.
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
 | Root and directory `CLAUDE.md` | Agent rules and navigation: always-relevant rules at the root; a directory's layout, local rules and commands; links to the owner documents instead of restating them |
 | Root and directory `AGENTS.md` | Relative symlinks to the colocated `CLAUDE.md`, exposing the same scoped instructions to Codex without a second copy |
-| `.claude/` | Claude Code task skills (checklists that link to owner sections), block guide skills (a block's packages, shared contracts, traps and checks), frontmatter-only agent profiles in `agents/` that start a session with a block guide, shared permissions and the hooks that enforce agent rules. Guidance cites code by path and item, not line number; `cargo tidy check` holds the links, skill and profile frontmatter and that rule |
+| `.claude/` | Claude Code task skills (checklists that link to owner sections), block guide skills (a block's packages, shared contracts, traps and checks), frontmatter-only agent profiles in `agents/` that start a session with a block guide, shared permissions and the hook that guards generated files. Guidance cites code by path and item, not line number |
 | `.agents/skills` | Relative symlink to `.claude/skills`, exposing all task and block guide skills to Codex; [agent entry points](../CLAUDE.md#agent-entry-points) name the links to keep |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
@@ -80,9 +80,9 @@ register meaning or matching semantic leaf is not complete protocol support.
 
 A catalog entry that claims support names its owning code with a
 [code anchor](../qualification/README.md#code-anchors), a
-`// CAPABILITY: <id>` comment above the owning item; `cargo xtask check
-capabilities` keeps the two consistent, so a feature view cannot outlive the
-code it describes.
+`// CAPABILITY: <id>` comment above the owning item; `cargo qualification
+catalog anchors` checks the two against each other, so a feature view cannot
+outlive the code it describes.
 
 Describe an unsupported feature as a current limitation. Do not turn that row
 into a task list, promised delivery order or speculative API. Throughput and
@@ -105,18 +105,7 @@ depend on documentation paths. Update those consumers without changing the
 meaning of evidence or inventing a replacement proof.
 
 Use the repository's pinned toolchain for examples and API documentation.
-`cargo xtask check docs` checks owned local Markdown links, checks that every
-repository path named in inline code (such as `crates/memory/`) still exists,
-checks every `cargo xtask`, `cargo tidy`, `cargo hil`, `cargo qualification`,
-`cargo registers` and `cargo blobray` command in inline code and shell code
-blocks against the command tree the tool prints for `__command-tree` (each
-subcommand exists, each long flag is accepted by its command or an ancestor;
-Blobray's tree is the committed `tools/blobray/cli/command-tree.json`, which
-its tests keep current), and checks/renders static
-qualification catalogs and programs. It does not build API documentation. Name
-a moved or removed path or command correctly in the same change; a path with a
-placeholder (`verification/<chip>/`) is not checked, and a command is checked
-up to its first placeholder (`<scenario>`, `RUN_ID`) or forwarded argument.
+Name a moved or removed path or command correctly in the same change.
 API documentation follows docs.rs conventions: each package is documented once,
 for the target and features in its `[package.metadata.docs.rs]` table. Portable
 and host packages use the host; chip packages set

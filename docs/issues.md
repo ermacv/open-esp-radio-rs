@@ -18,9 +18,7 @@ profile and features in the body. A native Issue Type does not replace a kind
 label: a Task can deliver a feature, refactor, decision or validation.
 
 The [label catalog](../.github/labels.json) defines managed names, descriptions
-and colors. The [issue-label workflow](../.github/workflows/issue-labels.yml)
-creates missing definitions and repairs description/color drift. Change the
-catalog through a PR; manual description/color edits are reverted. Renaming a
+and colors. Change the catalog through a PR. Renaming a
 managed label also requires migrating its issues in the same task. Unmanaged
 labels are preserved. Unknown names in a managed namespace and
 conflicting kinds or priorities violate the invariant.
@@ -75,16 +73,12 @@ is open.
 - 🔵 covers only what does not change behaviour: wording, names, test
   clarity. Correctness, safety, conformance to an owner decision and current
   documentation are always 🟡 at least.
-- A 🔵 finding rides along when the pull request changes anyway. Otherwise
-  it is filed as a `review: …` issue, which the same session fixes before
-  any new work.
+- A 🔵 finding rides along when the pull request changes anyway.
 - A fix round is reviewed against the diff from the previous head, every
   earlier finding, and every owner decision the pull request implements, end
   to end, including the unchanged code around it.
 - A full review is repeated when a fix touches concurrency, `unsafe`, a
   public API shape or a shared crate.
-- `claude-runtime-review` in CI stays the independent second check when the
-  owner opens the pull request for review.
 
 **Inventories with proof.** When a pull request deletes, renames or
 reclassifies something everywhere (catalog entries, call sites, features,
@@ -116,35 +110,14 @@ For another creation tool, run `validate` on exactly the labels sent to it and
 verify its result. Do not create an unlabeled draft and patch labels later.
 
 Forms require an explicit primary area and, for executable results, priority.
-The change form also requires its feature/refactor/docs kind. When an issue
-opens, the workflow applies only these explicit canonical selections and
-validates the live labels. It never guesses classification from prose, Issue
-Type or a default priority. Form answers are initial input; later triage edits
-the labels, and old answers are never reapplied on edits or label removal.
-
-GitHub has no repository setting that rejects every unlabeled API creation.
-Disabling blank UI issues requires a form but does not restrict the API. Forms
-therefore begin with the derived `triage:incomplete` flag until the workflow
-has applied and checked their choices. A bypass through another tool is detected
-after creation: missing, unknown or conflicting classification gets that flag
-and an actionable workflow summary. Fix the actual labels; the guard removes
-the flag when valid. Do not start work or move an incomplete card out of Triage.
-The guard never closes issues or selects a priority for their author.
-
-The workflow reads current GitHub state on issue creation, edits, label changes,
-reopening and closure. Per-issue concurrency uses `queue: max` so pending
-`opened` events are retained alongside `labeled` events. Source-repository
-`transferred` events are excluded; the target receives `opened`. API redirects
-are refused, so a moved issue cannot redirect this policy into another repository.
-The workflow also reconciles all open issues on catalog/form changes,
-label-definition changes, a manual run and every six hours. This reconciliation
-can add or remove the derived flag and repair catalog definitions; it covers
-missed events, including events suppressed by `GITHUB_TOKEN`. Historical
-closed cards and pull requests are outside the active issue invariant.
-An incomplete card is reported and flagged without making source CI red;
-API failures or a broken reconciler fail its workflow. The separate read-only
-`python3 .github/scripts/issue_labels.py audit` command exits nonzero on violations.
-The fast host gate tests the same policy offline through the check registry.
+The change form also requires its feature/refactor/docs kind. A form issue
+opens with the derived `triage:incomplete` flag; triage applies its explicit
+canonical selections as labels and clears the flag once they are valid, never
+guessing classification from prose, Issue Type or a default priority.
+Disabling blank UI issues requires a form but does not restrict the API.
+Historical closed cards and pull requests are outside the active issue
+invariant. The read-only `python3 .github/scripts/issue_labels.py audit`
+command exits nonzero on violations among open issues.
 
 ## Write the card
 
@@ -211,13 +184,12 @@ interest or task size. Do not use dates or priority to promise a delivery.
 
 | Priority | Use |
 | --- | --- |
-| `priority:P0` | Unexpected failure of the mandatory main gate or a proven critical defect in an active path; interrupt other work |
+| `priority:P0` | A proven critical defect in an active path; interrupt other work |
 | `priority:P1` | Required for the selected near-term product result or removal of its concrete blocker |
 | `priority:P2` | Useful, scoped work that does not block the selected result |
 | `priority:P3` | Optional or future work with an explicit trigger for activation |
 
-Accepted gate exceptions stay explicit; they do not become new P0 incidents
-merely because a dashboard remains red. An uncertain defect stays uncertain.
+An uncertain defect stays uncertain.
 Do not claim a root cause or a fix from a clean run alone.
 
 ## Use one Project

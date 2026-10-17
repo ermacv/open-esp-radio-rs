@@ -6,7 +6,7 @@ use oer_process::Checkout;
 use oer_xtask::{Result, checks};
 
 #[derive(Parser)]
-#[command(about = "Repository checks and build orchestration")]
+#[command(about = "Repository build and test commands")]
 struct Cli {
     #[arg(long, global = true)]
     root: Option<PathBuf>,
@@ -23,20 +23,10 @@ enum Task {
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
-    /// Run the fast gate and the local Claude review on exactly the
-    /// committed tree, push this branch and open its pull request as a draft
+    /// Push this branch with `git push` and open its pull request as a draft
     /// when it has none; a person marks it ready and merges it. Refused on
     /// main.
-    Push {
-        /// Push without the local review, recording REASON on the pull
-        /// request; the review in CI blocks nothing.
-        #[arg(long, value_name = "REASON")]
-        skip_review: Option<String>,
-    },
-    /// Review this branch's committed diff against origin/main with a
-    /// separate headless Claude Code run, by REVIEW.md, as CI's review does;
-    /// fails on an important or nit finding.
-    Review,
+    Push,
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.
     Lock {
@@ -50,65 +40,9 @@ enum Task {
         #[command(subcommand)]
         worktree: Worktree,
     },
-    /// Print the state of GitHub CI on main: each workflow whose newest
-    /// finished run failed, or that main is green.
-    CiStatus,
-    /// Plan CI jobs by their complete inputs, without executing checks.
-    Ci {
-        #[command(subcommand)]
-        ci: Ci,
-    },
-    /// Write the heavy-command list the Claude Code hooks read
-    /// (`.claude/hooks/heavy-commands.json`).
-    Hooks {
-        /// Only fail when the committed list is stale.
-        #[arg(long)]
-        check: bool,
-    },
     Check {
         #[command(subcommand)]
         check: Check,
-    },
-}
-
-#[derive(Subcommand)]
-enum Ci {
-    /// Record the runner and toolchain versions for a local input plan.
-    Environment {
-        #[arg(long)]
-        workflow: oer_xtask::registry::Workflow,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Compute input identities without running checks or querying GitHub.
-    Plan {
-        #[arg(long)]
-        workflow: oer_xtask::registry::Workflow,
-        #[arg(long)]
-        environment: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Select jobs using successful GitHub coverage (CI_REUSE_MODE).
-    Prepare {
-        #[arg(long)]
-        workflow: oer_xtask::registry::Workflow,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Require the planned jobs to pass and record their coverage.
-    Verify {
-        #[arg(long)]
-        workflow: oer_xtask::registry::Workflow,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Qualify a job's actual tools for reusable coverage of the input plan.
-    CheckEnvironment {
-        #[arg(long)]
-        workflow: oer_xtask::registry::Workflow,
-        #[arg(long)]
-        job: String,
     },
 }
 
@@ -131,64 +65,11 @@ enum Worktree {
 
 #[derive(Subcommand)]
 enum Check {
-    /// Run every check of the registry that `--job` has up to TIER over the
-    /// whole tree, as that CI job does; `--list` prints the registry.
-    #[command(group(clap::ArgGroup::new("selection").required(true).args(["tier", "list"])))]
-    Tier {
-        #[arg(requires = "job")]
-        tier: Option<oer_xtask::registry::Tier>,
-        #[arg(long)]
-        job: Option<String>,
-        /// Run only these checks of the job, comma-separated, as a pull
-        /// request's CI plan selects them; `all` runs every one.
-        #[arg(long, requires = "job", default_value = "all")]
-        checks: String,
-        #[arg(long)]
-        list: bool,
-    },
-    /// The push gate over what this checkout changed against the merge base
-    /// with BASE, committed or not: tidy, formatting, lock, capabilities,
-    /// Clippy of the changed packages and their dependents, and the tests of
-    /// the changed packages.
-    Changed {
-        #[arg(long, default_value = "origin/main")]
-        base: String,
-        /// Also what CI checks on the pull request: the tests of the
-        /// dependents, the Markdown check, workspace Clippy, API docs, HIL
-        /// image type checks, PHY, network, register and provenance audits.
-        #[arg(long)]
-        full: bool,
-    },
-    Metadata,
     /// Test every root-workspace package with the feature sets its
     /// `open-radio.test-feature-sets` declares.
     FeatureSets,
-    Architecture,
     /// Compile contract misuses and their positive twins, checking exact rustc diagnostics.
     Ui,
-    /// Audit the resolved dependency graph of every network profile.
-    Network,
-    /// Check local Markdown links and the static qualification catalogs.
-    Docs,
-    /// Check the `// CAPABILITY: <id>` anchors in code against every catalog
-    /// entry, and list the entries anchored in the given changed files.
-    Capabilities {
-        #[arg(long)]
-        changed: Vec<std::path::PathBuf>,
-    },
-    /// Build the PHY library for the chip target and audit its artifact and graph.
-    Phy {
-        #[arg(long)]
-        chip: String,
-    },
-    BlobrayStandalone,
-    /// Run Blobray's RISC-V executor on the pinned architectural tests and
-    /// compare every signature with the Sail formal model's.
-    IsaConformance {
-        /// A clang with the riscv32 target and lld.
-        #[arg(long, default_value = "clang")]
-        cc: PathBuf,
-    },
 }
 
 fn run() -> Result<std::process::ExitCode> {
@@ -219,45 +100,25 @@ fn run() -> Result<std::process::ExitCode> {
 }
 
 /// The log of a command whose child output is logged by default: the
-/// checks, `doc`, `lock` and `push`.
+/// checks, `doc` and `lock`.
 fn log_name(command: &Task) -> Option<String> {
     let name = match command {
         Task::Check {
-            check: Check::Tier { list: true, .. },
-        } => return None,
-        Task::Check { check } => format!("check-{}", check_name(check)),
+            check: Check::FeatureSets,
+        } => String::from("check-feature-sets"),
+        Task::Check { check: Check::Ui } => String::from("check-ui"),
         Task::Doc => String::from("doc"),
         Task::Lock { .. } => String::from("lock"),
-        Task::Push { .. } => String::from("push"),
-        Task::Review => String::from("review"),
         _ => return None,
     };
     Some(name)
-}
-
-fn check_name(check: &Check) -> &'static str {
-    match check {
-        Check::Tier { .. } => "tier",
-        Check::Changed { .. } => "changed",
-        Check::Metadata => "metadata",
-        Check::FeatureSets => "feature-sets",
-        Check::Architecture => "architecture",
-        Check::Ui => "ui",
-        Check::Network => "network",
-        Check::Docs => "docs",
-        Check::Capabilities { .. } => "capabilities",
-        Check::Phy { .. } => "phy",
-        Check::BlobrayStandalone => "blobray-standalone",
-        Check::IsaConformance { .. } => "isa-conformance",
-    }
 }
 
 fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
     let ctx = ctx.clone();
     match command {
         Task::Doc => oer_xtask::doc::run(&ctx),
-        Task::Push { skip_review } => oer_xtask::push::run(&ctx, skip_review.as_deref()),
-        Task::Review => oer_xtask::review::run(&ctx),
+        Task::Push => oer_xtask::push::run(&ctx),
         Task::Lock { check: false } => checks::metadata::update_locks(&ctx),
         Task::Lock { check: true } => checks::metadata::check_locks(
             &ctx,
@@ -272,57 +133,9 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
             Worktree::Remove { path } => oer_xtask::worktree::remove(&ctx, &path),
             Worktree::Prepare => oer_xtask::worktree::prepare(&ctx),
         },
-        Task::CiStatus => {
-            oer_xtask::ci_status::print(&ctx, "ci");
-            Ok(())
-        }
-        Task::Ci { ci } => match ci {
-            Ci::Environment { workflow, output } => {
-                oer_xtask::ci::write_environment(&ctx.root, workflow, &output)
-            }
-            Ci::Plan {
-                workflow,
-                environment,
-                output,
-            } => oer_xtask::ci::plan(&ctx.root, workflow, &environment, &output),
-            Ci::Prepare { workflow, output } => {
-                oer_xtask::ci::prepare(&ctx.root, workflow, &output)
-            }
-            Ci::Verify { workflow, output } => oer_xtask::ci::verify(&ctx.root, workflow, &output),
-            Ci::CheckEnvironment { workflow, job } => {
-                oer_xtask::ci::check_environment(&ctx.root, workflow, &job)
-            }
-        },
-        Task::Hooks { check } => oer_xtask::hooks::run(&ctx.root, check),
         Task::Check { check } => match check {
-            Check::Tier { list: true, .. } => {
-                print!("{}", oer_xtask::registry::list());
-                Ok(())
-            }
-            Check::Tier {
-                tier: Some(tier),
-                job: Some(job),
-                checks,
-                ..
-            } => {
-                let only: Option<Vec<String>> =
-                    (checks != "all").then(|| checks.split(',').map(str::to_owned).collect());
-                oer_xtask::registry::run_tier(&ctx, tier, &job, only.as_deref())
-            }
-            Check::Tier { .. } => Err("select a tier and a --job, or --list".into()),
-            Check::Changed { base, full } => checks::changed::run(&ctx, &base, full),
-            Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::FeatureSets => checks::feature_sets::run(&ctx),
-            Check::Architecture => {
-                checks::architecture::run(&ctx).and_then(|()| checks::architecture::clippy(&ctx))
-            }
             Check::Ui => checks::ui::run(&ctx),
-            Check::Network => checks::network::run(&ctx),
-            Check::Docs => checks::docs::run(&ctx),
-            Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),
-            Check::Phy { chip } => checks::phy::run(&ctx, &chip),
-            Check::BlobrayStandalone => checks::standalone::run(&ctx),
-            Check::IsaConformance { cc } => checks::isa_conformance::run(&ctx, &cc),
         },
     }?;
     Ok(std::process::ExitCode::SUCCESS)
@@ -349,45 +162,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn checks_log_by_default_and_stream_with_verbose() {
-        let cli = Cli::try_parse_from(["xtask", "check", "changed", "--full"]).unwrap();
+    fn builds_and_tests_log_by_default_and_stream_with_verbose() {
+        let cli = Cli::try_parse_from(["xtask", "check", "ui"]).unwrap();
         assert!(!cli.verbose);
-        assert_eq!(log_name(&cli.command).as_deref(), Some("check-changed"));
+        assert_eq!(log_name(&cli.command).as_deref(), Some("check-ui"));
         let cli = Cli::try_parse_from(["xtask", "--verbose", "push"]).unwrap();
         assert!(cli.verbose);
-        assert_eq!(log_name(&cli.command).as_deref(), Some("push"));
+        assert_eq!(log_name(&cli.command), None);
         let cli = Cli::try_parse_from(["xtask", "lock", "--check"]).unwrap();
         assert!(matches!(cli.command, Task::Lock { check: true }));
-        assert!(Cli::try_parse_from(["xtask", "fetch"]).is_err());
-    }
-
-    #[test]
-    fn a_tier_runs_for_a_job_or_lists_the_registry() {
-        let cli = Cli::try_parse_from(["xtask", "check", "tier", "full", "--job", "host"]).unwrap();
-        assert_eq!(log_name(&cli.command).as_deref(), Some("check-tier"));
-        let cli = Cli::try_parse_from(["xtask", "check", "tier", "--list"]).unwrap();
-        assert_eq!(log_name(&cli.command), None);
-        assert!(Cli::try_parse_from(["xtask", "check", "tier", "full"]).is_err());
-        assert!(
-            Cli::try_parse_from(["xtask", "check", "tier", "weekly", "--job", "host"]).is_err()
-        );
-    }
-
-    #[test]
-    fn every_heavy_xtask_command_the_hooks_name_exists() {
-        use clap::CommandFactory as _;
-        let command = Cli::command();
-        let names: Vec<&str> = command.get_subcommands().map(|c| c.get_name()).collect();
-        for heavy in oer_xtask::hooks::XTASK {
-            assert!(
-                names.iter().any(|name| name.starts_with(heavy)),
-                "the hooks name `cargo xtask {heavy}`, which does not exist"
-            );
+        // The gate, CI and review commands are gone.
+        for removed in [
+            &["xtask", "check", "changed"][..],
+            &["xtask", "check", "tier", "--list"],
+            &["xtask", "review"],
+            &["xtask", "ci-status"],
+            &["xtask", "hooks"],
+        ] {
+            assert!(Cli::try_parse_from(removed).is_err(), "{removed:?}");
         }
-    }
-
-    #[test]
-    fn the_integrity_tier_is_cargo_tidy_alone() {
-        assert!(Cli::try_parse_from(["xtask", "check", "tidy"]).is_err());
     }
 }

@@ -6,10 +6,6 @@ vendor ABI symbols whether defined or referenced. Unresolved references
 must belong to the allowed source crates or the reviewed core and compiler
 support functions.
 
-The [xtask PHY check](../xtask/README.md#firmware-builds-and-image-checks)
-passes the archive and its allowed source crates to this tool as a separate
-process. This keeps the ELF reader outside the gate's dependency graph.
-
 ```console
 cargo run -p oer-check-phy-archive -- <archive.rlib> --source <crate>
 ```

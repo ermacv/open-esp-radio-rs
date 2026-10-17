@@ -38,7 +38,7 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
 | Assess a selected scope | [Qualification programs](qualification/README.md) |
-| Check source and dependency policy | [Repository tooling](tools/xtask/README.md) |
+| Build API docs, lockfiles and worktrees | [Repository tooling](tools/xtask/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
 | Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
 | Review register/PAC publication | [Registers](registers/README.md) |
@@ -73,69 +73,18 @@ supported feature profiles; lockfiles pin their resolution.
 cargo check --workspace --locked --offline
 cargo test --workspace --locked --offline
 cargo fmt --all -- --check
-cargo xtask check docs
 ```
 
-`cargo xtask push` runs the fast gate and the local review, pushes the branch
-and opens its pull request as a draft, which a person marks ready and merges
-once CI passes; `cargo xtask check changed` runs the
-gate over uncommitted work: formatting of every affected workspace, the lock
-and capability-anchor checks where they apply, Clippy of the changed packages
-and every package depending on them, and the tests of the changed packages.
-`--full` adds what CI checks on the pull request. The
-[tooling reference](tools/xtask/README.md) lists every check.
-
-The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch,
-in a few jobs that each run a sequence of checks over one build cache: each
-job is `cargo xtask check tier full --job <job>`, on a branch without the
-chip-target Clippy and API documentation its change does not reach (`main` runs
-every check), and the check registry
-(`cargo xtask check tier --list`, the [tooling reference](tools/xtask/README.md#the-check-registry))
-decides what it runs — formatting of every workspace, Clippy and the tests
-of the root workspace, the policy and architecture checks, type checks of the
-final HIL images with the image compiler flags, both final images built with
-their audits, the ESP32-C5 workspaces, every register
-publication and qualification program, and the provenance of every cited
-vendor function; a newer push to the same branch cancels the run it
-supersedes, except on `main`. The [CI input planner](tools/xtask/README.md#ci-input-reuse)
-in xtask can reuse successful checks for an identical Git tree and tool
-versions, including after a PR merge changes the commit ID. Its default
-`observe` mode executes all checks while reporting possible reuse; the
-repository variable `CI_REUSE_MODE=reuse` enables skipping covered jobs.
-The [Documentation workflow](.github/workflows/docs.yml)
-checks the Markdown documents and the API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
-runs the nightly tier: every HIL image class and every ESP32-S31 example
-built with their audits, the RV32 decoder against the toolchain's
-`llvm-objdump`, Blobray and each chip's vendor probes and host stands. The
-vendor evidence index (every vendor scenario, its ESP-IDF firmware inputs
-built from the tracked recipes) is a full-tier check of the `verification`
-job: it runs on `main`, nightly and for every change that reaches what the
-index is computed from.
+`cargo xtask push` pushes the branch and opens its pull request as a draft,
+which a person marks ready and merges.
 
 For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per
 documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's
 `[package.metadata.docs.rs]` selects, and `cargo test --doc --workspace`. Run
 focused package tests and the relevant target profile while iterating.
 
-The complete source checkpoint is CI's full tier, and every job also runs
-locally:
-
-```console
-cargo xtask check tier --list
-cargo xtask check tier full --job host
-cargo xtask check tier full --job host-lint
-cargo xtask check tier full --job architecture
-cargo xtask check tier full --job architecture-clippy
-cargo xtask check tier full --job firmware
-cargo xtask check tier full --job models
-```
-
-They need the embedded target; the `images` job also needs the toolchain's
-`llvm-tools` component and fetches the pinned ROM ELF itself.
-Together they check dependency
-and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,
-integration, HIL and Blobray workspaces have their own build configuration; the
-root workspace check alone does not cover them. Blobray host tests run with
+Independent example, integration, HIL and Blobray workspaces have their own
+build configuration; the root workspace check alone does not cover them. Blobray host tests run with
 `cargo test --manifest-path tools/blobray/Cargo.toml --workspace --locked --offline`
 and need LLD plus a GNU RV32 linker from binutils 2.47 or later.
 

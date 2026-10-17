@@ -1,6 +1,5 @@
-//! The source-only PHY archive's policy over its compiled symbols: the gate
-//! runs it as a process (`cargo run -p oer-check-phy-archive -- RLIB`), so
-//! the gate links no ELF reader. ELF is read natively; LLVM bitcode members
+//! The source-only PHY archive's policy over its compiled symbols, run as a
+//! process (`cargo run -p oer-check-phy-archive -- RLIB`). ELF is read natively; LLVM bitcode members
 //! use the llvm-nm shipped with the active Rust toolchain.
 #![forbid(unsafe_code)]
 

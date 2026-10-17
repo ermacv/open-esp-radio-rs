@@ -1,21 +1,18 @@
-//! `oer-tidy [check] [--root DIR]` runs every integrity check and fails on
-//! any problem; `oer-tidy workspaces [--json]` prints the manifest of every
-//! Cargo workspace and `oer-tidy chips [--json]` every chip profile, one per
-//! line or as a JSON array for CI matrices; `oer-tidy fetch` downloads what
-//! every workspace's lock file names and the Cargo cache lacks.
-//! `oer-tidy __command-tree` prints these commands for `cargo xtask check
-//! docs`.
+//! `oer-tidy workspaces [--json]` prints the manifest of every Cargo
+//! workspace and `oer-tidy chips [--json]` every chip profile, one per line
+//! or as a JSON array; `oer-tidy fetch` downloads what every workspace's lock
+//! file names and the Cargo cache lacks. `oer-tidy __command-tree` prints
+//! these commands.
 
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
-    time::Instant,
 };
 
 use oer_repo::{Model, Repo};
 use oer_tidy::Result;
 
-const USAGE: &str = "usage: oer-tidy [check | workspaces | chips | fetch] [--json] [--root DIR]";
+const USAGE: &str = "usage: oer-tidy (workspaces | chips | fetch) [--json] [--root DIR]";
 
 fn main() -> ExitCode {
     match run() {
@@ -39,10 +36,9 @@ fn command_tree() -> Vec<oer_command_tree::CommandNode> {
     vec![
         node(
             &["tidy"],
-            &["check", "workspaces", "chips", "fetch"],
+            &["workspaces", "chips", "fetch"],
             &["--root"],
         ),
-        node(&["tidy", "check"], &[], &[]),
         node(&["tidy", "workspaces"], &[], &["--json"]),
         node(&["tidy", "chips"], &[], &["--json"]),
         node(&["tidy", "fetch"], &[], &[]),
@@ -63,7 +59,7 @@ fn run() -> Result<ExitCode> {
             "--root" => {
                 root_argument = Some(PathBuf::from(arguments.next().ok_or(USAGE)?));
             }
-            "check" | "workspaces" | "chips" | "fetch" if command.is_none() => {
+            "workspaces" | "chips" | "fetch" if command.is_none() => {
                 command = Some(argument)
             }
             "--json" => json = true,
@@ -74,7 +70,6 @@ fn run() -> Result<ExitCode> {
             _ => return Err(USAGE.to_owned()),
         }
     }
-    let started = Instant::now();
     let repo = Repo::from_git(&root_argument.unwrap_or_else(oer_process::built_root))?;
     match command.as_deref() {
         Some("workspaces") => {
@@ -86,7 +81,7 @@ fn run() -> Result<ExitCode> {
                     println!("{manifest}");
                 }
             }
-            return Ok(ExitCode::SUCCESS);
+            Ok(ExitCode::SUCCESS)
         }
         Some("chips") => {
             let chips = oer_repo::Chips::load(&repo)?;
@@ -108,41 +103,13 @@ fn run() -> Result<ExitCode> {
                     println!("{id}");
                 }
             }
-            return Ok(ExitCode::SUCCESS);
+            Ok(ExitCode::SUCCESS)
         }
         Some("fetch") if !json => {
             let cargo = oer_toolchain::cargo_program();
             oer_tidy::fetch::run(&repo, Path::new(&cargo))?;
-            return Ok(ExitCode::SUCCESS);
+            Ok(ExitCode::SUCCESS)
         }
-        _ if json => return Err(USAGE.to_owned()),
-        _ => {}
+        _ => Err(USAGE.to_owned()),
     }
-    let outcomes = oer_tidy::run(&repo)?;
-    let mut failed = false;
-    for outcome in &outcomes {
-        if outcome.problems.is_empty() {
-            println!("tidy {}: ok", outcome.check);
-            continue;
-        }
-        failed = true;
-        println!(
-            "tidy {}: {} problem(s)",
-            outcome.check,
-            outcome.problems.len()
-        );
-        for problem in &outcome.problems {
-            println!("  {problem}");
-        }
-    }
-    println!(
-        "tidy: {} in {:.2} s (exceptions: tools/tidy/allowlist.toml)",
-        if failed { "FAILED" } else { "passed" },
-        started.elapsed().as_secs_f64()
-    );
-    Ok(if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
 }

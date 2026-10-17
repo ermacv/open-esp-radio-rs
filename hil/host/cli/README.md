@@ -1,8 +1,7 @@
 # oer-hil-cli
 
 `cargo hil`. The workspace alias runs this package's binary
-(`run --quiet -p oer-hil-cli --`); it is not part of xtask, so a change to the
-repository checks never rebuilds it and a stand command builds only the HIL
+(`run --quiet -p oer-hil-cli --`); it is not part of xtask, and a stand command builds only the HIL
 host packages it uses.
 
 The binary handles the stand's own commands and forwards every other one to

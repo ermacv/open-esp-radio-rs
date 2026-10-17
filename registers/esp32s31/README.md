@@ -92,9 +92,7 @@ write transaction of this PAC and pinned ESP-HAL both store to has a reviewed
 entry in [`shared-words.toml`](shared-words.toml) that says how the writers
 are kept apart: a shared lock, a disjoint lifecycle (ESP-HAL writes only
 before any radio owner exists), an ESP-HAL writer that nothing calls, or
-whole-word stores. `cargo xtask check architecture` derives the shared words
-from [`policy/api.toml`](policy/api.toml), the published SVD and the pinned
-ESP-HAL and platform PAC sources, and fails on an unreviewed or stale entry.
+whole-word stores.
 Words the radio only requests through ESP-HAL, such as `MODEM_LPCON.CLK_CONF`
 (reference-counted gates) and `HP_SYS_CLKRST.REF_160M_CTRL0`, are not
 published here and have one writer.

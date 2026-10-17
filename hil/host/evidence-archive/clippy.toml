@@ -1,7 +1,7 @@
 # copies: hil-scenario
 # Every new HIL scenario crate (hil/model, hil/host/executor, the future
-# hil/scenarios/<block>) holds this same file; `cargo tidy check` keeps the
-# copies identical. After #761 step 10 removes the old runner, the copies
+# hil/scenarios/<block>) holds this same file; the copies stay
+# identical. After #761 step 10 removes the old runner, the copies
 # become one hil/clippy.toml.
 #
 # The nearest clippy.toml wins, so this repeats the workspace's rule. HIL

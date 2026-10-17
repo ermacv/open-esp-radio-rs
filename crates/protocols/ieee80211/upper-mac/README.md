@@ -93,7 +93,7 @@ fixed arrays of Copy metadata, never on affine MPDUs or payload owners.
 It swaps selected entries into the prefix in order, without a full-array
 temporary. Only the first 64 entries are addressable by its mask; callers
 consume the returned prefix length and do not inspect the remaining suffix.
-The crate uses the canonical strict lint block checked by tidy.
+The crate uses the canonical strict lint block.
 
 ## What stays outside
 

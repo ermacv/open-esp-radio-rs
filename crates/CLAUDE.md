@@ -14,8 +14,8 @@ Production libraries, one directory per layer; the
 
 ## Rules
 
-- Dependencies follow the [layer table](../docs/architecture.md#layer-dependencies);
-  `cargo xtask check architecture` enforces it independently of directories.
+- Dependencies follow the [layer table](../docs/architecture.md#layer-dependencies),
+  independently of directories.
 - A `protocol` package never awaits: time and events enter as values
   ([sans-IO](../docs/architecture.md#sans-io-protocols-executors-and-time)).
   Only adapters and the facade use `embassy-time` or an executor.
@@ -35,9 +35,8 @@ field positions or PAC type names. Memory-protocol tests check behavior and
 ownership, not the implementation's raw image or layout constants. Runtime
 tests use the virtual clocks of `oer-time-virtual`.
 
-## Commands (in the background)
+## Commands
 
-- `cargo test -p <package> <test>`; `cargo xtask check changed` before committing.
-- `cargo xtask check architecture` after a change to dependencies, features, layers or unsafe policy.
+- `cargo test -p <package> <test>`.
 - `cargo hil images check --class <class> --type-check` to type-check an image class.
 - `cargo xtask doc` after an API change.

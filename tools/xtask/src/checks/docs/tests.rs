@@ -90,8 +90,10 @@ fn owned_document_discovery_excludes_arbitrary_untracked_markdown() {
     let documents = owned_documents(&context, &repo, &[]).unwrap();
     assert!(documents.iter().any(|path| path.ends_with("README.md")));
     assert!(documents.iter().any(|path| path.ends_with("docs/new.md")));
+    // An untracked root document without an owner document's name is a
+    // task note.
     assert!(
-        documents
+        !documents
             .iter()
             .any(|path| path.ends_with("CONTRIBUTING.md"))
     );

@@ -84,6 +84,16 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    since the next review reports the ones left. Findings of other branches
    are only counted: they are ordinary issues, taken up by their priority
    like any other.
+10. **When a PR is ready** ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828),
+    [review and readiness](../../../docs/issues.md#review-and-readiness)):
+    - no 🔴 and no 🟡 finding is open;
+    - 🔵 covers only wording, names and test clarity; it rides along or is
+      filed as a `review: …` issue;
+    - a fix round is reviewed against the diff from the previous head, every
+      earlier finding and every implemented owner decision, end to end;
+    - a full review is repeated when a fix touches concurrency, `unsafe`, a
+      public API shape or a shared crate;
+    - `claude-runtime-review` stays the second check.
 
 ## Other workspaces and dependencies
 

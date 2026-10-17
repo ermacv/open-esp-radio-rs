@@ -8,6 +8,7 @@ pub mod isa_conformance;
 pub mod metadata;
 pub mod network;
 pub mod phy;
+pub mod shared;
 pub mod standalone;
 pub mod ui;
 

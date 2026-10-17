@@ -159,9 +159,7 @@ pub fn select(tree: &Tree, changed: &[String]) -> Selection {
     for path in changed {
         let name = path.rsplit('/').next().unwrap_or(path);
         let extension = name.rsplit_once('.').map_or("", |(_, extension)| extension);
-        // Markdown and every input of the mdBook guides under `docs/`
-        // (`book.toml`, theme and scripts).
-        if extension == "md" || path.starts_with("qualification/") || path.starts_with("docs/") {
+        if extension == "md" || path.starts_with("qualification/") {
             selection.docs = true;
         }
         if extension == "rs" || path.starts_with("qualification/catalog/") {

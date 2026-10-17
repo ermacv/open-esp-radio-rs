@@ -186,6 +186,29 @@ pub const CHECKS: &[Check] = &[
         },
     },
     Check {
+        id: "shared-crates",
+        tier: Tier::Fast,
+        job: "host-lint",
+        summary: "docs/architecture.md's table of shared crates against the derivation from the package graph",
+        // The package graph, the table, the derivation, the closed PAC list
+        // it reads and the repository model it reads the graph from.
+        trigger: Some(|change| {
+            change
+                .files
+                .iter()
+                .any(|file| manifest(file) || file == "docs/architecture.md")
+                || touches(
+                    change,
+                    &[
+                        "tools/xtask/src/checks/shared.rs",
+                        "tools/xtask/src/checks/architecture/unsafe_policy.rs",
+                        "tools/repo/",
+                    ],
+                )
+        }),
+        run: |ctx, _| checks::shared::run(ctx),
+    },
+    Check {
         id: "claude-hooks",
         tier: Tier::Fast,
         job: "host-lint",

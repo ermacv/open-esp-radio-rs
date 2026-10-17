@@ -297,6 +297,30 @@ fn a_change_never_runs_a_whole_tier_check_or_one_above_its_tier() {
     assert!(!selected.contains(&"image-classes"));
 }
 
+/// The shared-crates check runs on a change to the package graph, its
+/// table, its derivation or the repository model, and on no other change.
+#[test]
+fn the_shared_crates_check_runs_when_its_inputs_change() {
+    for file in [
+        "crates/radio/port/Cargo.toml",
+        "docs/architecture.md",
+        "tools/xtask/src/checks/shared.rs",
+        "tools/xtask/src/checks/architecture/unsafe_policy.rs",
+        "tools/repo/src/manifest.rs",
+    ] {
+        assert!(
+            ids(of_change(&change(&[file], Tier::Fast))).contains(&"shared-crates"),
+            "{file}"
+        );
+    }
+    for file in ["crates/radio/port/src/lib.rs", "docs/issues.md"] {
+        assert!(
+            !ids(of_change(&change(&[file], Tier::Fast))).contains(&"shared-crates"),
+            "{file}"
+        );
+    }
+}
+
 #[test]
 fn a_job_runs_its_checks_up_to_its_tier() {
     let full: Vec<&str> = ids(of_job(Tier::Full, "verification"));

@@ -20,8 +20,10 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-espressif-interrupt-table-esp-hal",
     "oer-interrupt-table",
 ];
-/// The closed PAC crates of the register layouts chips share.
-const CLOSED_PACS: &[&str] = &[
+/// The closed PAC crates of the register layouts chips share. Their names
+/// carry a block's token, but they are no block packages: the shared crates'
+/// derivation (`checks::shared`) lists them when two blocks reach them.
+pub(crate) const CLOSED_PACS: &[&str] = &[
     "oer-ieee80211-pac-raw",
     "oer-ieee80211-pac",
     "oer-ieee802154-pac",

@@ -110,6 +110,12 @@ class Policy(unittest.TestCase):
                             for t in commands), commands)
         self.assertNotIn("Bash", review.ALLOWED_TOOLS)
 
+    def test_the_review_can_rerun_an_inventorys_search(self):
+        for command in ("ls-files", "ls-tree"):
+            self.assertIn(f"Bash(git -C pr {command} *)", review.ALLOWED_TOOLS)
+        # `git grep -O` runs a program.
+        self.assertFalse(any("grep" in tool for tool in review.ALLOWED_TOOLS if tool.startswith("Bash(")))
+
     def test_the_prompt_names_every_allowed_command_and_the_inputs(self):
         policy = review.tool_policy()
         for tool in review.ALLOWED_TOOLS:

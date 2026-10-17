@@ -378,9 +378,8 @@ Runs retain all firmware subjects through a SHA-256 content-addressed
 store under `target/hil/<target>/objects/`. The files inside a run are ordinary
 hard links when the filesystem supports them, or independent copies
 otherwise. This keeps a copied run self-contained without allocating another
-large runtime ELF for every repeated scenario. Build provenance follows the
-subjects/materials/recipe separation described in
-[build and report reproducibility](../../docs/hil-reproducibility.md). A tracked dirty delta is stored
+large runtime ELF for every repeated scenario. Build provenance separates
+subjects, materials and recipe. A tracked dirty delta is stored
 as a binary Git patch; untracked content is identified but never copied
 implicitly, and makes source reconstruction incomplete.
 
@@ -411,8 +410,7 @@ all radio, lifecycle and traffic evidence uses the typed HIL protocol.
 
 ## Source ownership
 
-The host packages follow the roles of the
-[HIL terminology](../../docs/hil-terminology.md#roles-and-their-owners):
+The host packages own these roles:
 
 - `oer-hil-scenario` owns catalog values, discovery, semantic acceptance
   rules and the campaign plan, with the requirements, Wi-Fi link vocabulary

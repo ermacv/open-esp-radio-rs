@@ -35,5 +35,3 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 - `cargo hil scenario validate` and `cargo hil plan <scenario>`: no hardware.
 - `cargo hil run <scenario> --enqueue` (returns a job id) then `cargo hil wait <job>`.
 - `cargo stand queue`: holders, queue and board state.
-
-Workflow: the `hil-run` skill.

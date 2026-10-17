@@ -46,8 +46,7 @@ scenario subcommand takes the same `--index` and writes only its own shard.
 The index is derived data: `cargo verification evidence --chip esp32s31`
 computes it into `target/verification/esp32s31/evidence`, and after any
 production, probe, scenario or Blobray change it depends on qualification
-counts no evidence from it, and reports it stale, until it is computed again. See
-[vendor verification](../../docs/verification-and-qualification.md#vendor-verification-path).
+counts no evidence from it, and reports it stale, until it is computed again.
 
 `LLD` below is the pinned Rust toolchain's linker, which
 `cargo verification evidence` picks by default; Ubuntu's LLD 18 fails these

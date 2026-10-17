@@ -116,7 +116,7 @@ tracking scenario's reviewed relation. No HIL scenario captures both sides
 now; the scenarios return with the HIL architecture of #761. A run that
 evidence cites enters the pinned HIL evidence archive. The only path from
 comparison or HIL evidence to product readiness is the independent
-[verification and qualification contract](../docs/verification-and-qualification.md).
+[qualification evaluator](../qualification/README.md).
 
 Private inputs never enter the repository: `_oracles/` and fetched artifacts
 stay ignored, and checked configuration never names machine-local paths.

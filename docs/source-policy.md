@@ -77,8 +77,7 @@ policy throughout the repository.
 
 Audit reports, work plans, experiment diaries and migration histories are not
 tracked documentation. Run outputs belong under their owner's ignored output
-directory. The [documentation policy](documentation.md) defines the retained
-documentation and its ownership.
+directory.
 
 References to vendor/ROM symbol names in comments describe provenance and
 behavioural comparison only. They are not link dependencies.

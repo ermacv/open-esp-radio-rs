@@ -4,7 +4,7 @@ labels: ["triage:incomplete","kind:bug"]
 body:
   - type: markdown
     attributes:
-      value: "Name one accepted result. Follow [issue management](https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/issues.md). Choose classification before submitting. The issue-label guard applies your explicit selections; triage reviews them. Research and implementation do not establish hardware readiness."
+      value: "Name one accepted result. Choose classification before submitting. Research and implementation do not establish hardware readiness."
   - type: textarea
     id: behavior
     attributes:
@@ -16,7 +16,7 @@ body:
     id: area
     attributes:
       label: "Primary area"
-      description: "The owner of the result; the guard applies this explicit area selection."
+      description: "The owner of the result."
       options: ["area:wifi","area:bluetooth","area:ieee802154","area:radio","area:registers","area:platform","area:tooling","area:hil","area:qualification"]
     validations:
       required: true

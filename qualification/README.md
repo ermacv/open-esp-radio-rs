@@ -362,8 +362,8 @@ A capability may attach `[[capabilities.source-contracts]]` reference entries
 to describe its hardware-facing implementation paths. Cold calibration/cache,
 Bluetooth DTM and PHY lifetime, coexistence, and IEEE 802.15.4 lower operation
 contracts make implemented subsets visible without promoting their broader parents.
-The [inventory agreement contract](../docs/verification-and-qualification.md#agreement-with-feature-inventories)
-requires matching implementation descriptions for the same scope.
+A source contract and a feature inventory that cover the same scope carry
+matching implementation descriptions.
 
 Each entry has a unique `id`, an explicit `scope`, `limits`, repository-relative
 `source-paths`, and a `composition`:
@@ -725,10 +725,6 @@ satisfies no HIL obligation. A vendor evidence index
 stale for the checkout holds none either and prints
 `EVIDENCE-DIR stale kind=vendor-evidence path=… shards=0`. A path that an
 existing tracked record names and that does not exist remains an error.
-
-See the canonical
-[verification and qualification contract](../docs/verification-and-qualification.md)
-for evidence strength and the release workflow.
 
 ### Readiness drops
 

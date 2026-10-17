@@ -34,8 +34,7 @@ execution, network service or concurrent collaborative editing.
 SVD/PAC publication belongs to the register tool, which consumes reviewed
 hardware models rather than investigations; its publication policies do not
 shape the analysis engine. Production readiness
-belongs to the independent qualification evaluator, as defined by the
-[repository qualification contract](../../../../docs/verification-and-qualification.md).
+belongs to the independent qualification evaluator.
 Retained evidence belongs to its consumer: the vendor verification evidence
 index is derived from the checkout (`cargo verification evidence`) and never
 committed, and reviewed contracts reach a comparison by content.

@@ -74,8 +74,10 @@ and returns `CoordinatorAction`s; the port's owner carries them out.
 
 [`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
 implements; one submission is one hardware transmission attempt. Optional
-features are its extension traits. `softmac/src/edca.rs` draws the EDCA
-backoff each attempt carries. [`upper-mac`](upper-mac/README.md) decides
+features are its extension traits. The port carries no backoff: the backend
+draws its queue's contention below it, with `softmac/src/edca.rs` where its
+hardware counts a chosen backoff down, and the planner's own draw stays in
+its plan. [`upper-mac`](upper-mac/README.md) decides
 everything else above the port for a transmission: the retry ladder and
 Retry bit, A-MPDU retry selection, protection, and the planner that turns an
 exchange into attempts; `mac/src/block_ack/reorder.rs` reorders received

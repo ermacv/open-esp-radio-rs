@@ -243,7 +243,11 @@ pub struct TxAttemptPlan {
     pub access_category: WmmAccessCategory,
     pub rate: PhyRate,
     pub protection: TxProtectionDecision,
-    /// The CSMA/CA backoff slots the backend counts down after the AIFS.
+    /// The CSMA/CA backoff, in slots, the access category's
+    /// [`EdcaContention`] drew for this attempt: the planner's record of the
+    /// contention window it keeps across the exchange's attempts. The
+    /// lower-MAC port carries no backoff (the backend draws its queue's
+    /// contention below it), so no caller hands this value to the backend.
     pub backoff_slots: u16,
     pub power: TxPower,
     pub coex: CoexPriority,

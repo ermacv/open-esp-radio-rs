@@ -775,8 +775,9 @@ where
     /// selection is applied, and `plan.exchange.publication_limit` is not
     /// consulted. The queue counts down the caller's `backoff_slots` rather
     /// than a draw from the owner's EDCA state: the contention window and
-    /// its widening after failures belong to the caller's retry policy
-    /// above the port. The owner's own EDCA state is left at its minimum.
+    /// its widening after failures belong to the caller, inside the backend,
+    /// since the lower-MAC port carries no backoff. The owner's own EDCA
+    /// state is left at its minimum.
     /// A power ceiling bounds the data and the protection control frame.
     pub fn start_single_attempt<H: TxHardware>(
         &mut self,

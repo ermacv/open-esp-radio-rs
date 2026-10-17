@@ -17,9 +17,11 @@ plans and reports leave as values, and nothing waits.
 | `protection` | RTS/CTS or CTS-to-self and the control-frame rate for each PPDU | `BssProtection`, dot11RTSThreshold, an `HeTxopRtsBudget` |
 | `tx` | `TxPlanner`: the next `TxAttemptPlan` (rate, protection, backoff, power, coexistence, content and Retry bits) of an MPDU or A-MPDU exchange, and its `TxReport` | `TxRequest`, `PublicationReport`, `RadioInstant`, entropy |
 
-The backoff is drawn by `oer-ieee80211-softmac`'s `EdcaContention`, one per
-access category inside the planner: doubled after each failed attempt that
-is retried, reset when the frame ends. Reports are the softmac contract's
+The planner draws a backoff with `oer-ieee80211-softmac`'s `EdcaContention`,
+one per access category: its contention window doubles after each failed
+attempt that is retried and resets when the frame ends. The draw stays in the
+plan: the lower-MAC port carries no backoff, and the backend draws its
+queue's contention below the port. Reports are the softmac contract's
 `MacTxStatus` and `MacAmpduTxStatus`. The checked `WmmAccessCategory` selects
 its cell in the four-entry contention array through the MAC's selector, the
 same mapping used by the station's data admission pools.

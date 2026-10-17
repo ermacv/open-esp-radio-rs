@@ -21,7 +21,7 @@ use crate::{
 /// acquired by the Controller and never cross the public DTM preparation
 /// boundary. This finite error retains only the logical acquisition outcome;
 /// the role-specific preparation failure continues to own every retry resource.
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerTimeAcquisitionError {
     /// Another request or abandoned request still owns the latch worker.
@@ -146,7 +146,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize> SchedulerInitialized<'cells, MOD
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 impl ControllerPoweredTaskRuntime<'_> {
     #[cfg(target_arch = "riscv32")]
     pub fn request_controller_time(
@@ -204,7 +204,7 @@ impl ControllerHalInitialized {
         self.initialize_scheduler_with(runtime, |task| task.clear_scheduler_hardware_list_heads())
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub fn initialize_scheduler_for_validation<'cells, const MODEM_TIMER_CAPACITY: usize>(
         self,
         runtime: ControllerRuntimeResources<'cells, MODEM_TIMER_CAPACITY>,

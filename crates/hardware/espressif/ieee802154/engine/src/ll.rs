@@ -300,7 +300,7 @@ pub fn set_txrx_pti<Ll: Ieee802154LowLevel + ?Sized>(
     }
 }
 
-#[cfg(any(test, feature = "model"))]
+#[cfg(test)]
 pub mod model;
 
 #[cfg(test)]

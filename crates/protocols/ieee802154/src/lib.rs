@@ -19,7 +19,7 @@
 //! deleted (#770, tag `legacy-radio-2026-10-16`), so these types must not be
 //! read as an application start API or as hardware readiness.
 
-#[cfg(any(test, feature = "model"))]
+#[cfg(test)]
 extern crate alloc;
 #[cfg(test)]
 extern crate std;
@@ -51,7 +51,7 @@ pub mod mac {
 /// Hardware-independent radio values.
 pub mod radio;
 
-#[cfg(any(test, feature = "model"))]
+#[cfg(test)]
 pub mod model;
 pub mod owner;
 pub mod port;

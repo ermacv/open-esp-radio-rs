@@ -1,9 +1,9 @@
 # Image pipeline
 
 `oer-image` is the one image pipeline of the repository: `build(ImageSpec)
--> ImageBundle`. Standalone examples (`cargo fw build`) and HIL
-image classes (`oer-hil-image`, through `cargo hil image build`, the runner
-and `cargo hil images check`) build every image here; nothing else
+-> ImageBundle`. HIL image classes (`oer-hil-image`, through `cargo hil
+image build`, the runner and `cargo hil images check`) build every image
+here; nothing else
 compiles, gates or encodes one.
 
 ## Contract
@@ -85,7 +85,8 @@ for the runtime ELF (`audit_runtime_stacks`) and one for the bootstrap ELF
 the pinned ROM and its summaries, and resolves indirect sites with the same
 facts (waker vtables, IPC posts, function-pointer field types). The policy is
 a chip's `platform/<chip>/stack.toml` (schema 5), extended by the HIL
-target's policy unchanged; every image runs one hart. Each stack names the function that runs on
+target's policy. Every image runs its tasks on CPU0; none starts the second
+S31 core, and C5 has one hart. Each stack names the function that runs on
 it from its top (its root, by symbol), its storage (a sized symbol, or a
 linker script's bottom and top symbols) and `minimum_free_bytes`: the root's
 worst-case call chain (`Analysis::bound_with`) must leave the storage that

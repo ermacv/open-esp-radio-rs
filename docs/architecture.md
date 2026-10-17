@@ -112,7 +112,7 @@ running it as a process or by reading what it wrote.
 
 | Application | Command | Owns | Uses |
 | --- | --- | --- | --- |
-| Dev kit | `cargo fw` ([`oer-fw`](../tools/fw/src/main.rs)) | Build an example's image, flash it or any bundle, monitor a board, list boards | Images, devices, chip profiles, foundation; nothing of the stand or HIL |
+| Dev kit | `cargo fw` ([`oer-fw`](../tools/fw/src/main.rs)) | Flash a bundle or a catalog image, monitor a board, list boards, compare images | Images, devices, chip profiles, foundation; nothing of the stand or HIL |
 | Stand | `cargo stand` ([`oer-stand`](../stand/cli/src/main.rs)) | Stand file, boards and hubs, the arbiter's queue and leases, owners (free-form names), journal, host setup, fixture installation | Devices, the stand file format, foundation |
 | HIL | `cargo hil` ([`oer-hil-cli`](../hil/host/cli/README.md)) | Runs, plans, run history, A/B experiments, HIL images | Stand libraries, images with HIL policy checks, devices, the run bundle format |
 | Vendor verification | `cargo verification` (its own workspace, [verification](../verification/README.md)) | Vendor pins and fetch, provenance, typed scenarios, evidence shards, probes | Blobray's engine, binary analysis, vendor pins, the shard format |

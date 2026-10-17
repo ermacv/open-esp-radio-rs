@@ -1,6 +1,6 @@
-//! `cargo fw`, the dev kit: build an example's image, flash it or any
-//! image bundle to an attached board, monitor a board's console and list the
-//! attached boards.
+//! `cargo fw`, the dev kit: flash an image bundle or an ESP-IDF catalog
+//! image to an attached board, monitor a board's console, list the attached
+//! boards and compare two linked images.
 //!
 //! It uses the image pipeline (`oer-image`), the devices
 //! library (`oer-devices`: discovery, the device lock, the flash writer,
@@ -8,26 +8,22 @@
 //! HIL stand. A board busy with another process (a HIL lease, another
 //! `cargo fw`) is refused naming its holder, or waited for with `--wait`.
 
-mod examples;
-
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
     time::Duration,
 };
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use oer_chip_profile::Profile;
 use oer_image_bundle::ImageBundle;
-
-use crate::examples::Example;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Parser)]
 #[command(
     name = "cargo fw",
-    about = "Build, flash and monitor firmware on attached boards"
+    about = "Flash and monitor firmware on attached boards"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -36,29 +32,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Build examples into image bundles below `target/firmware`.
-    Build {
-        /// Examples by name (`thread`) or `<chip>/<name>`.
-        #[arg(required_unless_present = "all")]
-        examples: Vec<String>,
-        /// Every example of every chip.
-        #[arg(long, conflicts_with = "examples")]
-        all: bool,
-        #[command(flatten)]
-        options: BuildOptions,
-        /// Only `cargo check` the runtime with the image's target, features
-        /// and compiler flags: no image, so no image check can run on it.
-        #[arg(long, conflicts_with = "checks")]
-        type_check: bool,
-    },
-    /// Write an image to an attached board and start it: an example (built
-    /// first), an image bundle's directory or an ESP-IDF catalog image
-    /// (built first).
+    /// Write an image to an attached board and start it: an image bundle's
+    /// directory or an ESP-IDF catalog image (built first).
     Flash {
-        #[arg(value_name = "EXAMPLE|BUNDLE|CATALOG-IMAGE")]
+        #[arg(value_name = "BUNDLE|CATALOG-IMAGE")]
         image: String,
-        #[command(flatten)]
-        options: BuildOptions,
         #[command(flatten)]
         device: DeviceOptions,
         /// Monitor the console after the write.
@@ -83,8 +61,6 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// The examples of every chip.
-    List,
     /// Compare two linked ELF images function by function, modulo
     /// placement (a binary analysis: runs with the `checks` build).
     Compare {
@@ -101,26 +77,6 @@ enum Command {
         #[arg(long)]
         show: Vec<String>,
     },
-}
-
-#[derive(clap::Args, Clone, Default)]
-struct BuildOptions {
-    #[arg(long, value_delimiter = ',')]
-    features: Vec<String>,
-    #[arg(long)]
-    no_default_features: bool,
-    /// Checks of the built image: binary analyses with the chip's pinned
-    /// ROM. None by default.
-    #[arg(long = "check", value_enum, value_delimiter = ',')]
-    checks: Vec<CheckArg>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum CheckArg {
-    Stack,
-    Placement,
-    Interrupts,
-    All,
 }
 
 #[derive(clap::Args, Clone, Default)]
@@ -162,47 +118,15 @@ fn run() -> Result<ExitCode> {
     }
     let cli = Cli::parse();
     let root = oer_process::Checkout::discover("cargo fw")?.root;
-    if !cfg!(feature = "checks") && cli.command.checks_requested() {
+    if !cfg!(feature = "checks") && matches!(cli.command, Command::Compare { .. }) {
         return with_checks(&root);
     }
     match cli.command {
-        Command::Build {
-            examples,
-            all,
-            options,
-            type_check,
-        } => {
-            let selected = if all {
-                examples::all(&root)?
-            } else {
-                examples
-                    .iter()
-                    .map(|name| examples::find(&root, name))
-                    .collect::<Result<Vec<_>>>()?
-            };
-            let mut failed = Vec::new();
-            for example in &selected {
-                let result = if type_check {
-                    type_check_example(&root, example, &options)
-                } else {
-                    build_example(&root, example, &options).map(drop)
-                };
-                if let Err(error) = result {
-                    eprintln!("{}: {error}", example.qualified());
-                    failed.push(example.qualified());
-                }
-            }
-            if !failed.is_empty() {
-                return Err(format!("failed: {}", failed.join(", ")).into());
-            }
-            Ok(ExitCode::SUCCESS)
-        }
         Command::Flash {
             image,
-            options,
             device,
             monitor,
-        } => flash(&root, &image, &options, &device, monitor),
+        } => flash(&root, &image, &device, monitor),
         Command::Monitor {
             device,
             reset,
@@ -264,23 +188,6 @@ fn run() -> Result<ExitCode> {
             compare(&old, &new, aliases, allowed, show)?;
             Ok(ExitCode::SUCCESS)
         }
-        Command::List => {
-            for example in examples::all(&root)? {
-                println!("{:<24} {}", example.qualified(), example.package);
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-    }
-}
-
-impl Command {
-    /// Whether the command asks for image checks (`--check`).
-    fn checks_requested(&self) -> bool {
-        match self {
-            Self::Build { options, .. } | Self::Flash { options, .. } => !options.checks.is_empty(),
-            Self::Compare { .. } => true,
-            Self::Monitor { .. } | Self::Devices { .. } | Self::List => false,
-        }
     }
 }
 
@@ -324,9 +231,9 @@ fn compare(_: &Path, _: &Path, _: Vec<String>, _: Vec<String>, _: Vec<String>) -
 }
 
 /// Run this command again as `oer-fw` built with the `checks` feature: the
-/// image checks (and their analyzers) are only compiled into that build.
+/// image comparison (and its analyzers) is only compiled into that build.
 /// Preserve this operation's explicit context through Cargo so a delegated
-/// flash stays inside its enclosing lease after the feature re-exec.
+/// operation stays inside its enclosing lease after the feature re-exec.
 fn with_checks(root: &Path) -> Result<ExitCode> {
     let mut command =
         oer_process::command(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
@@ -351,30 +258,6 @@ fn with_checks(root: &Path) -> Result<ExitCode> {
     })
 }
 
-/// The image checks `checks` ask for, as the image build's gate.
-#[cfg(feature = "checks")]
-fn gates(checks: &[CheckArg]) -> Option<Box<dyn oer_image::Checks>> {
-    use oer_image_checks::{Check, Gates};
-    let mut selected = Vec::new();
-    for check in checks {
-        match check {
-            CheckArg::Stack => selected.push(Check::Stack),
-            CheckArg::Placement => selected.push(Check::Placement),
-            CheckArg::Interrupts => selected.push(Check::Interrupts),
-            CheckArg::All => selected.extend([Check::Stack, Check::Placement, Check::Interrupts]),
-        }
-    }
-    (!selected.is_empty()).then(|| Box::new(Gates::of(&selected)) as Box<dyn oer_image::Checks>)
-}
-
-/// Without the `checks` feature, `run` re-executes before any build that
-/// asks for a check.
-#[cfg(not(feature = "checks"))]
-fn gates(checks: &[CheckArg]) -> Option<Box<dyn oer_image::Checks>> {
-    assert!(checks.is_empty(), "image checks need the `checks` feature");
-    None
-}
-
 /// This process's command line, for the device lock's holder record.
 fn command_line() -> String {
     let mut words = vec![String::from("cargo fw")];
@@ -382,112 +265,22 @@ fn command_line() -> String {
     words.join(" ")
 }
 
-/// The image spec of `example` with `options`, building into `output`.
-fn spec(
-    root: &Path,
-    example: &Example,
-    options: &BuildOptions,
-    output: PathBuf,
-) -> oer_image::ImageSpec {
-    oer_image::ImageSpec {
-        root: root.to_owned(),
-        chip: example.profile.id.clone(),
-        application: oer_image::Application {
-            workspace: example.workspace.clone(),
-            package: example.package.clone(),
-            binary: example.package.clone(),
-            features: options.features.clone(),
-            default_features: !options.no_default_features,
-        },
-        stack_policy: example.profile.stack_policy(),
-        layout_seed: None,
-        overrides: oer_image::Overrides::default(),
-        builder_inputs: Default::default(),
-        reads: Vec::new(),
-        output,
-        checks: gates(&options.checks),
-    }
-}
-
-/// Build `example` into a new bundle below its directory and keep it: a
-/// later build never replaces the files of an earlier one.
-fn build_example(root: &Path, example: &Example, options: &BuildOptions) -> Result<ImageBundle> {
-    let directory = example.directory(root);
-    std::fs::create_dir_all(&directory)?;
-    let output = tempfile::Builder::new()
-        .prefix("build-")
-        .tempdir_in(&directory)?
-        .keep();
-    let bundle = oer_image::build(&spec(root, example, options, output))?;
-    for record in &bundle.checks {
-        println!(
-            "check {} ({:?}): {}",
-            record.check, record.elf, record.result
-        );
-    }
-    for warning in &bundle.warnings {
-        println!("warning: {warning}");
-    }
-    println!("image bundle: {}", bundle.directory.display());
-    println!("application image: {}", bundle.application().display());
-    Ok(bundle)
-}
-
-/// Refuse build options for an image this command does not build (`what`):
-/// a check or feature it would not apply must not pass silently.
-fn built_elsewhere(options: &BuildOptions, what: &str) -> Result<()> {
-    if !options.checks.is_empty() {
-        return Err(format!(
-            "--check applies to an example this command builds; {what} is flashed as it is"
-        )
-        .into());
-    }
-    if !options.features.is_empty() || options.no_default_features {
-        return Err(format!(
-            "--features and --no-default-features apply to an example; {what} is flashed as it is"
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// Type-check an example's runtime exactly as its image build compiles it.
-fn type_check_example(root: &Path, example: &Example, options: &BuildOptions) -> Result<()> {
-    let spec = spec(
-        root,
-        example,
-        options,
-        example.directory(root).join("check"),
-    );
-    oer_image::type_check(&spec)?;
-    println!(
-        "{}: the runtime type-checks with the image flags",
-        example.qualified()
-    );
-    Ok(())
-}
-
 /// `cargo fw flash`: resolve the image to a bundle, take the board, write
 /// and start it, then monitor when asked.
 fn flash(
     root: &Path,
     image: &str,
-    options: &BuildOptions,
     device: &DeviceOptions,
     monitor_after: bool,
 ) -> Result<ExitCode> {
     let found = oer_devices::device::find(device.device.as_deref())?;
     let path = Path::new(image);
     let bundle = if path.is_dir() {
-        built_elsewhere(options, "an image bundle")?;
         ImageBundle::load(&std::path::absolute(path)?)?
-    } else if let Ok(example) = examples::find(root, image) {
-        build_example(root, &example, options)?
     } else {
         let entries = oer_image::esp_idf::catalog::entries(root)?;
         let entry = oer_image::esp_idf::catalog::entry(&entries, image)
-            .map_err(|_| format!("`{image}` is no example, bundle directory or catalog image"))?;
-        built_elsewhere(options, "an ESP-IDF catalog image")?;
+            .map_err(|_| format!("`{image}` is no bundle directory or catalog image"))?;
         if let Some(reason) = &entry.hold {
             return Err(format!("`{image}` is held and not flashed: {reason}").into());
         }
@@ -588,13 +381,14 @@ mod tests {
     }
 
     #[test]
-    fn a_type_check_refuses_image_checks() {
-        let parse = |arguments: &[&str]| {
-            Cli::try_parse_from(["cargo fw", "build", "station"].iter().chain(arguments))
-        };
-        assert!(parse(&["--type-check"]).is_ok());
-        assert!(parse(&["--check", "stack"]).is_ok());
-        let error = parse(&["--type-check", "--check", "stack"]).err().unwrap();
-        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    fn no_example_command_is_left() {
+        for removed in ["build", "list"] {
+            let error = Cli::try_parse_from(["cargo fw", removed]).err().unwrap();
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
+        }
+        let error = Cli::try_parse_from(["cargo fw", "flash", "bundle", "--check", "stack"])
+            .err()
+            .unwrap();
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 }

@@ -7,11 +7,6 @@
 //! child is another Rust-owned transition, so the ROM hardware-ready spin and
 //! synchronous delays are absent from the complete reachable graph.
 
-#![cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code)
-)]
-
 use crate::{
     analog::pbus::PhyPbusForceTest,
     calibration::estimator::{
@@ -380,10 +375,6 @@ impl PhyRxDcMinimumTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub const fn action(&self) -> PhyRxDcMinimumAction {
         match self.step {
             PhyRxDcMinimumStep::Measure(ref transition) => {
@@ -422,10 +413,6 @@ impl PhyRxDcMinimumTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn advance(
         &mut self,
         completion: PhyRxDcMinimumCompletion,

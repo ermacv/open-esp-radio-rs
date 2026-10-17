@@ -99,11 +99,6 @@ const fn shared_rx_mixer_digital_gain(index: usize) -> u8 {
 /// The two hardware-clock/PBus wrappers around the reference loop are
 /// sequenced by its caller. This function contains the entire per-entry
 /// arithmetic and borrows all calibration inputs from their owning PHY epoch.
-#[cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code),
-    unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-)]
 pub fn phy_generated_rx_gain_memory_entry(
     parameters: &PhyRxGainMemoryParameters,
     bank: PhyRxGainBank,

@@ -26,11 +26,10 @@ port. Nothing on `main` runs the engine on hardware.
 
 ## Packages (path → role)
 
-- Protocol, portable: `crates/protocols/ieee802154` (`oer-ieee802154`): MAC frames, CSMA, CSL, enhanced ACK, security, time sync, the port's owner shape (`owner`, `port`), capabilities, channels, interfaces, power, and the host model (feature `model`). No portable service package.
+- Protocol, portable: `crates/protocols/ieee802154` (`oer-ieee802154`): MAC frames, CSMA, CSL, enhanced ACK, security, time sync, the port's owner shape (`owner`, `port`), capabilities, channels, interfaces, power, and the host model of the owner shape, used by its own tests. No portable service package.
 - Family (Espressif, S31 and C5):
   - engine `crates/hardware/espressif/ieee802154/engine` (`oer-espressif-ieee802154-engine`): the MAC driver ported from public ESP-IDF, `Ieee802154LowLevel`, the host register model under feature `model`, and since #770 the capabilities table (`capabilities.rs`: `RADIO_CAPABILITIES`, `CCA_RESET_DBM`, `capabilities(levels, multipan)`). Its README records the `esp_ieee802154_enable` bring-up and teardown order;
-  - shared MAC values `crates/hardware/ieee802154/pac`;
-  - trace points `crates/hardware/ieee802154/trace`.
+  - shared MAC values `crates/hardware/ieee802154/pac`.
 - ESP32-S31:
   - PAC, HAL and PHY modules inside the chip crates (`hardware/esp32s31/{pac,hal}/src/ieee802154*`, `phy/src/ieee802154_client.rs`);
   - `Ieee802154MacOwners` implements the engine's low level; the HAL lifecycle typestate is `role.rs`, and `policy.rs` stays whole;
@@ -60,7 +59,7 @@ port. Nothing on `main` runs the engine on hardware.
 
 ## Checks
 
-- `cargo test -p <package>` (the engine and `oer-ieee802154` with `--features model`), then `cargo xtask check changed`; the vendor host stand is its own workspace: `cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml`.
+- `cargo test -p <package>` (the register model of the engine is test-only), then `cargo xtask check changed`; the vendor host stand is its own workspace: `cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml`.
 - RV32: `cargo check -p oer-esp32s31-hal -p oer-espressif-ieee802154-engine --target riscv32imafc-unknown-none-elf`.
 - Vendor comparison: the host stand's `compare` and its `ieee802154-host` shard (`vendor-evidence` skill).
 

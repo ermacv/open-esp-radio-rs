@@ -52,8 +52,8 @@ survive the lease and carries no retained board operation.
 
 A manual flash outside the runner is the dev kit's: `cargo fw flash
 --device MAC|PORT IMAGE` writes an image bundle (its directory, from `cargo
-fw build` or `cargo hil image build`), an example (built first) or an
-ESP-IDF catalog image (built first) to an attached board. It takes the
+hil image build`) or an ESP-IDF catalog image (built first) to an attached
+board. It takes the
 board's device lock, which a stand lease of another process holds, so it
 fails at once on a leased board (or waits with `--wait`) and never writes
 under a run; the write is the receipted image write of `oer_devices::image`,
@@ -89,7 +89,7 @@ cross-check, is one operation (`oer-hil-flash`):
    resets work.
 
 ```console
-cargo fw flash --device <MAC|PORT> --monitor target/firmware/<chip>-<example>/build-<id>
+cargo fw flash --device <MAC|PORT> --monitor <bundle-directory>
 ```
 
 `dashboard` serves a page on the loopback interface (`--port` changes the

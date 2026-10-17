@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The dev kit, `cargo fw`: build an example's image, flash it, monitor a board, list the attached boards"
+description = "The dev kit, `cargo fw`: flash an image bundle, monitor a board, list the attached boards, compare images"
 
 [[bin]]
 name = "oer-fw"
@@ -20,21 +20,18 @@ oer-devices = { path = "../device/devices", features = ["image"] }
 oer-durable = { path = "../durable" }
 oer-image = { path = "../image/pipeline" }
 oer-image-bundle = { path = "../image/bundle" }
-oer-image-checks = { path = "../image/checks", optional = true }
 oer-image-compare = { path = "../image/compare", optional = true }
 oer-process = { path = "../process" }
 serde_json = "1.0"
-tempfile = "=3.27.0"
-toml = "1.1"
 
 [features]
-# The binary analyses of `--check` and `compare` (RISC-V analyzers, ELF
-# reader, the pinned vendor ROM). Off by default: a plain `cargo fw` neither builds nor links
-# them; `--check` re-runs `cargo fw` with this feature.
-checks = ["dep:oer-image-checks", "dep:oer-image-compare"]
+# The binary analysis of `compare` (RISC-V analyzers, ELF reader). Off by
+# default: a plain `cargo fw` neither builds nor links it; `compare` re-runs
+# `cargo fw` with this feature.
+checks = ["dep:oer-image-compare"]
 
 [dev-dependencies]
-oer-device-lock = { path = "../device/lock" }
+tempfile = "=3.27.0"
 
 [lints]
 workspace = true

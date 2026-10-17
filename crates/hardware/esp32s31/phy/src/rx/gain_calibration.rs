@@ -7,11 +7,6 @@
 //! commands, ten-microsecond intervals, and DC/IQ readiness are explicit
 //! caller-driven actions.
 
-#![cfg_attr(
-    all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-    allow(unsafe_code)
-)]
-
 mod quality;
 pub use quality::PhyRxGainDcQuality;
 
@@ -362,10 +357,6 @@ impl PhyRxDcCalibrationTransition {
     /// executable host model; production does not dispatch its individual
     /// actions through an async executor.
     #[cfg(target_arch = "riscv32")]
-    #[cfg_attr(
-        feature = "rx-gain-hot-sram",
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
-    )]
     #[inline(never)]
     pub(crate) fn execute_target_direct<D: crate::executor::wait::PhyShortDelay>(
         &mut self,
@@ -520,10 +511,6 @@ impl PhyRxDcCalibrationTransition {
     }
 
     #[cfg(test)]
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub(crate) fn finish_minimum(&mut self) -> Result<(), PhyRxDcCalibrationTransitionError> {
         let Step::Minimum {
             high,
@@ -639,10 +626,6 @@ impl PhyRxDcCalibrationTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub const fn action(&self) -> PhyRxDcCalibrationAction {
         match self.step {
             Step::PrepareControlRestore => PhyRxDcCalibrationAction::PrepareControlRestore,
@@ -682,10 +665,6 @@ impl PhyRxDcCalibrationTransition {
         self.begin_cleanup(Terminal::Failed(failure));
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     fn accept_measurement(&mut self, high: bool, outcome: PhyRxDcMinimumOutcome) {
         let mut policy = PhyRxDcCalibrationPolicyState {
             current: self.current,
@@ -716,10 +695,6 @@ impl PhyRxDcCalibrationTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn advance(
         &mut self,
         completion: PhyRxDcCalibrationCompletion,
@@ -1302,10 +1277,6 @@ impl PhyRxGainDcTransition {
         }
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub const fn action(&self) -> PhyRxGainDcAction {
         match self.step {
             DcStep::ConfigureRegisters | DcStep::WifiConfigureRegisters => {
@@ -1424,10 +1395,6 @@ impl PhyRxGainDcTransition {
         self.cleanup(DcTerminal::Failed(failure));
     }
 
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     fn store_calibration(
         &mut self,
         bank: PhyRxGainDcBank,
@@ -1490,10 +1457,6 @@ impl PhyRxGainDcTransition {
     /// Rejected completions leave both the cursor and accumulated calibration
     /// products unchanged. Nested search cursors advance in place and retain their own rejection
     /// guarantees; coefficient publication follows only a terminal child.
-    #[cfg_attr(
-        all(target_arch = "riscv32", feature = "rx-gain-hot-sram"),
-        unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_state")
-    )]
     pub fn advance(
         &mut self,
         completion: PhyRxGainDcCompletion,

@@ -17,13 +17,6 @@
 
 #![no_std]
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
-// `test-support` compiles the chip engine on the host for dependent crates'
-// tests. Items reached only from ESP32-S31 paths are unused in that build;
-// chip builds and this crate's own tests still report dead code.
-#![cfg_attr(
-    all(feature = "test-support", not(test), not(target_arch = "riscv32")),
-    allow(dead_code)
-)]
 
 #[cfg(test)]
 extern crate std;
@@ -33,19 +26,19 @@ pub mod coex_status;
 pub mod coexistence;
 pub mod connection_policy;
 /// Controller HAL component initialization after clock setup.
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod controller_hal;
 /// Event-driven controller-time latch and scheduler-epoch projection.
 pub mod controller_time;
 pub mod interrupt;
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod low_power;
 pub mod modem_lp_timer_queue;
 /// Controller modem low-power timer task over the published timer owner.
 #[cfg(target_arch = "riscv32")]
 pub mod modem_timer;
 /// Drain-before-retire rule of the modem low-power timer.
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod modem_timer_retirement;
 #[cfg(target_arch = "riscv32")]
 pub mod phy;
@@ -56,7 +49,7 @@ pub mod scheduler;
 #[cfg(target_arch = "riscv32")]
 pub mod shutdown;
 /// Controller-time preparation shared by timed scheduler admissions.
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod timed_preparation;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
@@ -65,7 +58,7 @@ pub mod validation;
 #[cfg(target_arch = "riscv32")]
 pub use ble_phy::AlwaysAwakeTimingReady;
 
-#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+#[cfg(any(target_arch = "riscv32", test))]
 pub use controller_time::{
     ControllerDurationError, ControllerSchedulerEpoch, ControllerTimeSample,
 };

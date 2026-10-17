@@ -43,10 +43,8 @@ const PHY_PACKAGES: &[&str] = &[
     // the port lifecycle contract the protocol's owner shape extends; plain
     // portable types over `oer-radio-port` and `oer-time`, no vendor code.
     "oer-ieee802154",
-    // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive,
-    // and the portable trace events it records.
+    // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive.
     "oer-espressif-ieee802154-engine",
-    "oer-ieee802154-trace",
     // The Espressif coexistence priority table, timer policy and time-slice
     // schedule recovered from esp-coex-lib as reviewed source, over the
     // portable coexistence vocabulary; no vendor archive or radio ABI.

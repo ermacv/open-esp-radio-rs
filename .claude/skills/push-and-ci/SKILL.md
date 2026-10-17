@@ -89,7 +89,6 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 
 - `cargo xtask lock` after a dependency or pin change; `cargo tidy fetch`
   after a pull that changed a lock file.
-- Examples: `cargo fw build <example> --type-check`.
 - Image classes: `cargo hil images check --list`, then
   `cargo hil images check --class <class> --type-check`; without
   `--type-check` the class's image bundle is built with every gate.

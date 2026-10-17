@@ -1264,8 +1264,6 @@ dependencies = [
  "bytemuck",
  "oer-espressif-coex",
  "oer-ieee802154",
- "oer-ieee802154-trace",
- "oer-trace",
 ]
 
 [[package]]
@@ -1383,13 +1381,6 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
-
-[[package]]
-name = "oer-ieee802154-trace"
-version = "0.1.0"
-dependencies = [
- "oer-trace",
-]
 
 [[package]]
 name = "oer-memory"

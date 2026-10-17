@@ -41,8 +41,9 @@ with ESP-HAL.
 
 A protocol composition reaches these singletons through the one owner of the
 shared radio that holds this platform (none exists since #770, tag
-`legacy-radio-2026-10-16`; #771 brings it back); the Wi-Fi ESP-HAL adapter owns only the
-`WIFI` singleton. No adapter grants a second claim of the platform resources.
+`legacy-radio-2026-10-16`; #771 brings it back); the Wi-Fi ESP-HAL adapter
+owns only the `WIFI` singleton. No adapter grants a second claim of the
+platform resources.
 
 The Bluetooth interrupt binding that lived here (sources, routes and the
 three handlers) was removed with the Bluetooth LE orchestration (#770, tag

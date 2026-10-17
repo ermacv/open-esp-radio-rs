@@ -584,8 +584,8 @@ impl<T> SharedRadioLease<'_, T> {
         self.state().coex_participants.count()
     }
 
-    /// Enter client `K` into the coexistence participant set; returns how
-    /// many take part now. The shared radio's owner applies the coexistence policy.
+    /// Enter client `K` into the coexistence participant set; returns how many
+    /// take part now. The shared radio's owner applies the coexistence policy.
     pub fn enter_coex<K: RadioClientKind>(
         &mut self,
         absent: CoexAbsent<K>,

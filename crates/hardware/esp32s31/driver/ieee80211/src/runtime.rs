@@ -206,8 +206,8 @@ impl<W> WifiReleaseFailure<W> {
 pub struct WifiReleased<W> {
     pub partition: WifiPartition,
     pub platform: W,
-    /// Whether Wi-Fi was the last PHY client; the shared radio's owner then closes
-    /// RF.
+    /// Whether Wi-Fi was the last PHY client; the shared radio's owner then
+    /// closes RF.
     pub last_phy_client: bool,
 }
 
@@ -500,12 +500,11 @@ impl<M> WifiRuntimeContext<M> {
         }
     }
 
-    /// Wake Wi-Fi's RF, as the vendor modem wake's `wifi_rf_phy_enable`
-    /// does: re-enter the PHY client set, then enable the Wi-Fi receive
-    /// path. The shared radio's owner must have woken closed RF first, which `ready`
-    /// proves. A returned
-    /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
-    /// tracking before the MAC uses RF.
+    /// Wake Wi-Fi's RF, as the vendor modem wake's `wifi_rf_phy_enable` does:
+    /// re-enter the PHY client set, then enable the Wi-Fi receive path. The
+    /// shared radio's owner must have woken closed RF first, which `ready`
+    /// proves. A returned [`ConcurrentAcquire::TrackingDue`] means the domain
+    /// must run its tracking before the MAC uses RF.
     ///
     /// # Errors
     ///

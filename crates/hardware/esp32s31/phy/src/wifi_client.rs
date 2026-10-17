@@ -210,8 +210,9 @@ pub fn suspend_wifi(
 
 /// Wake Wi-Fi's RF: the vendor modem wake's `wifi_rf_phy_enable`, which is
 /// `esp_phy_enable(PHY_MODEM_WIFI)`. The shared radio's owner must have woken
-/// closed RF first, which `ready` proves. The returned [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue) means the domain
-/// must run its tracking before the MAC uses RF.
+/// closed RF first, which `ready` proves. The returned
+/// [`ConcurrentAcquire::TrackingDue`](crate::concurrent::ConcurrentAcquire::TrackingDue)
+/// means the domain must run its tracking before the MAC uses RF.
 ///
 /// # Errors
 ///

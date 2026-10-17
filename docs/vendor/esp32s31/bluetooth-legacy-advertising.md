@@ -244,12 +244,12 @@ writes four five-bit radio-request priorities at item `+0x24`. With another
 radio on the antenna the open radio applies the vendor's dynamic priority
 control: that body installs lanes `4, 0, 13, 13` for a legacy set from the
 default tables `04 04 04` and `0d 0d`, and
-`r_sym_coexAdv_sLW7oGzvK2Nq64ivPWK2` replaces lane zero for every event
-from the legacy table `04 09 0b 03 02 01 28 00 50 00` at the event's level.
-The kept `coexistence` module of the LE Controller raises every third, second or single event for
-intervals up to 25 ms, up to 50 ms and longer (`r_sym_coexAdv_VG7v...`,
-`r_sym_coexAdv_A5DX...`). Alone on the antenna, every lane requests 15;
-this equal standalone policy is a product choice.
+`r_sym_coexAdv_sLW7oGzvK2Nq64ivPWK2` replaces lane zero for every event from
+the legacy table `04 09 0b 03 02 01 28 00 50 00` at the event's level. The
+kept `coexistence` module of the LE Controller raises every third, second or
+single event for intervals up to 25 ms, up to 50 ms and longer
+(`r_sym_coexAdv_VG7v...`, `r_sym_coexAdv_A5DX...`). Alone on the antenna,
+every lane requests 15; this equal standalone policy is a product choice.
 
 The pinned global RX-link update `r_sym_memMgmt_4xg1uFByb1OqQ8sR82yB` selects
 non-scanning class two in link-state `+0x20` bits 30:28, matching selector two

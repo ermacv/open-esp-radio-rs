@@ -277,8 +277,8 @@ where
         mut clocked,
         platform: wifi_platform,
     } = initialized;
-    // The shared radio's owner prepared the domain; prove it ready under the lease
-    // the join uses.
+    // The shared radio's owner prepared the domain; prove it ready under the
+    // lease the join uses.
     let joined = match phy_ready(lease) {
         Ok(ready) => join_wifi(ready, &clocked, timer)
             .map(|joined| (joined.membership, joined.acquired))

@@ -2,12 +2,13 @@
 
 ## Platform reset and watchdog
 
-`GetBootStatus` returns `BootEvidence` for the boot identified by the envelope.
-`ResetReason` is a platform value shared by all images: software reset, MWDT1
-reset or another cause; querying it does not change radio state. `BootEvidence::platform_panic` is the
-record the platform's panic entry left (`panic::take_previous`, taken once
-per boot): the panic's hart, whether it ran on the interrupt stack and the
-interrupted PC, and the end of its file path, line and column.
+`GetBootStatus` returns `BootEvidence` for the boot identified by the
+envelope. `ResetReason` is a platform value shared by all images: software
+reset, MWDT1 reset or another cause; querying it does not change radio state.
+`BootEvidence::platform_panic` is the record the platform's panic entry left
+(`panic::take_previous`, taken once per boot): the panic's hart, whether it
+ran on the interrupt stack and the interrupted PC, and the end of its file
+path, line and column.
 
 `system::InjectPanic` is served only by the panic-reset image, whose panic
 entry has no HIL report: the image acknowledges with `PanicInjected` and

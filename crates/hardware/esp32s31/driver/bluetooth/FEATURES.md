@@ -3,8 +3,9 @@
 The canonical ESP32-S31 Bluetooth source inventory is
 [`qualification/catalog/esp32s31/bluetooth.toml`](../../../../../qualification/catalog/esp32s31/bluetooth.toml).
 It contains the complete LE and Classic source rows, Host-only scopes,
-external source references, ownership contract and peripheral timing limits. Source status does not imply RF delivery,
-interoperability or qualification readiness.
+external source references, ownership contract and peripheral timing limits.
+Source status does not imply RF delivery, interoperability or qualification
+readiness.
 
 Render from the repository root. The catalog imports its shared-PHY and
 coexistence source facts:

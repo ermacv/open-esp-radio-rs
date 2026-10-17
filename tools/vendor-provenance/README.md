@@ -21,12 +21,12 @@ patches with that crate's RV32 relocation table. A `Function` carries:
 [`oer-symbol-lineage`](../symbol-lineage/README.md) uses it too.
 
 The other modules are the provenance check itself; `cargo verification check
-provenance`, `vendor-provenance` and `vendor-diff` ([xtask](../xtask/README.md))
-only parse arguments and call them:
+provenance`, `cargo verification provenance` and `cargo verification diff`
+([verification](../../verification/README.md)) only parse arguments and call
+them:
 
 - `citation`: the one recogniser and parser of the `SOURCE` grammar
-  (`marker`, `is_marker_line`, `blocks_in`, chip attribution). `cargo tidy
-  check` uses it to keep citations in compiled files;
+  (`marker`, `is_marker_line`, `blocks_in`, chip attribution);
 - `registry`: the chip's registry (`verification/<chip>/facts/provenance.toml`),
   the survey of every citation — production `SOURCE` blocks, the register
   model's descriptions (read through `oer_register_model::descriptions`),

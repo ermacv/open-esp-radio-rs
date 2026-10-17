@@ -13,8 +13,8 @@
 //! under a chip's own directory belongs to that chip and may omit the list;
 //! a block under a chip-neutral path that cites a vendor function must name
 //! its chips. This module is the one recogniser and parser of that grammar:
-//! the provenance check reads blocks with it, and `cargo tidy check` finds
-//! markers in uncompiled files with [`is_marker_line`].
+//! the provenance check reads blocks with it, and [`is_marker_line`] finds
+//! markers in a file's lines.
 use std::path::Path;
 
 /// The marker that opens a recovered-fact comment block.

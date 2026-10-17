@@ -1,5 +1,5 @@
 //! `oer-check-phy-archive RLIB [--source CRATE]...`: the PHY archive
-//! symbol audit of the gate; each `--source` names a crate the source-only
+//! symbol audit; each `--source` names a crate the source-only
 //! code may call into.
 use std::process::ExitCode;
 

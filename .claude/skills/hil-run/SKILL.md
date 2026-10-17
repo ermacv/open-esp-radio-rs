@@ -17,12 +17,11 @@ host: [hardware route](../../../hil/README.md#hardware-route).
    copy of the pinned evidence archive; without it every supported scenario
    reads as `run`); `cargo hil plan <scenario>`
    shows image, repetitions and named checks without hardware.
-2. **Run in the background, through the arbiter.** Every hardware command
-   queues for its boards, fixtures and air; never kill or signal another
-   holder and never look for processes by name.
-   - one run: `cargo hil run <scenario>` with `run_in_background: true`;
+2. **Run through the arbiter.** Every hardware command queues for its
+   boards, fixtures and air; never kill or signal another holder.
+   - one run: `cargo hil run <scenario>`;
    - a job: `id=$(cargo hil run <scenario> --enqueue)` returns at once, then
-     `cargo hil wait "$id"` in the background (exit 0 passed, 1 failed, …);
+     `cargo hil wait "$id"` (exit 0 passed, 1 failed, …);
    - several scenarios: one `cargo hil run a b c`, one lease. In zsh pass
      the names literally or as an array, not as one unquoted `$VAR`.
 3. **Debug quickly.** `--repetitions N` (1–20) for a look. Images build before the run queues, as image

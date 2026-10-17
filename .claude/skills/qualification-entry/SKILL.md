@@ -39,17 +39,16 @@ and [named checks](../../../qualification/README.md#named-checks).
    entries everywhere puts the search command and its output in the PR body
    ([inventories with proof](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828)); the reviewer reruns it.
 
-## Commands (all `run_in_background: true`)
+## Commands
 
 ```console
-cargo xtask check capabilities --changed <file>
 cargo qualification catalog check --catalog qualification/catalog/esp32s31/wifi-phy.toml
+cargo qualification catalog anchors --catalog qualification/catalog/esp32s31/wifi-phy.toml
 cargo qualification validate --manifest qualification/targets/<chip>/<program>.toml
 rm -rf target/hil/evidence-archive   # fetch never writes over a copy
 cargo hil archive fetch --out target/hil/evidence-archive
 cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --archive target/hil/evidence-archive --capability <id>
 cargo qualification check references
-cargo xtask check docs
 ```
 
 HIL evidence comes only from `--archive`, a verified copy of the pinned

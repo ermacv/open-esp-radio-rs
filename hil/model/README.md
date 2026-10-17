@@ -34,6 +34,6 @@ time. The executor's
 [`harness_template` test](../host/executor/tests/harness_template.rs) shows
 the shape on a toy port.
 
-The crate's `clippy.toml` belongs to the `hil-scenario` copy group:
-`cargo tidy check` keeps it identical to the other HIL scenario crates'
-copies and requires one in every HIL scenario package.
+The crate's `clippy.toml` belongs to the `hil-scenario` copy group: it is
+identical to the other HIL scenario crates' copies, and every HIL scenario
+package has one.

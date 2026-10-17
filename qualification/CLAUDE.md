@@ -34,6 +34,6 @@ never decide it. Reference: [README](README.md).
 - `rm -rf target/hil/evidence-archive && cargo hil archive fetch --out target/hil/evidence-archive` (network; `fetch` never writes over a copy), then `cargo qualification status --manifest qualification/targets/<chip>/<program>.toml --archive target/hil/evidence-archive --capability <id>`; without `--archive` no HIL run is read (`INPUT hil-archive=none`) and no HIL obligation is satisfied
 - `cargo qualification check references`: the pin and the cited runs, offline
 - `cargo qualification validate --manifest qualification/targets/<chip>/<program>.toml`
-- `cargo xtask check capabilities` and `cargo xtask check docs` after catalog changes.
+- `cargo qualification catalog check --catalog qualification/catalog/<chip>/*.toml` and `cargo qualification catalog anchors --catalog qualification/catalog/<chip>/*.toml` after catalog changes.
 
 Workflow: the `qualification-entry` skill.

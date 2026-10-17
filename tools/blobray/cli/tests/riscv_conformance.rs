@@ -13,7 +13,6 @@
 //! riscv-arch-test checkout, `BLOBRAY_RISCV_CC` to a clang with the riscv32
 //! target and lld and `BLOBRAY_SAIL` to the pinned `sail_riscv_sim`, then run
 //! `cargo test -p blobray-cli --test riscv_conformance -- --ignored`.
-//! `cargo xtask check isa-conformance` fetches the pinned inputs and runs it.
 use blobray_application as app;
 use blobray_domain::*;
 use object::{Object, ObjectSymbol};

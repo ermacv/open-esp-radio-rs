@@ -15,7 +15,7 @@ pipe closes with the owner it terminates the groups still registered (SIGTERM,
 then SIGKILL after a second). No owned group runs unguarded: a spawn fails,
 stopping its child, when the guardian did not start, no longer reads, or
 already tracks `owned::MAX_LIVE_CHILDREN` (256) live groups. `run_with_timeout` bounds a command's whole
-lifetime, as the push gate does for test runs.
+lifetime.
 
 `CommandExt` provides bounded status/output probes and owned background children.
 Captured stdout and stderr are drained concurrently. Background captures should

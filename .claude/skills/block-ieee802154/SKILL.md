@@ -60,10 +60,10 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 
 ## Checks
 
-- `cargo test -p <package>` (the register model of the engine is test-only), then `cargo xtask check changed`; the vendor host stand is its own workspace: `cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml`.
+- `cargo test -p <package>` (the register model of the engine is test-only); the vendor host stand is its own workspace: `cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml`.
 - RV32: `cargo check -p oer-esp32s31-hal -p oer-espressif-ieee802154-engine --target riscv32imafc-unknown-none-elf`.
 - Vendor comparison: the host stand's `compare` and its `ieee802154-host` shard (`vendor-evidence` skill).
 
-Skills: `protocol-change`, `driver-or-hardware-change`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/ieee802154.toml`; no 802.15.4 program exists), `push-and-ci`.
+Skills: `protocol-change`, `driver-or-hardware-change`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/ieee802154.toml`; no 802.15.4 program exists).
 
 Package detail: the READMEs of the [engine](../../../crates/hardware/espressif/ieee802154/engine/README.md), the [vendor host stand](../../../verification/esp32s31/host/ieee802154/README.md) and the [capability page](../../../crates/hardware/esp32s31/driver/ieee802154/FEATURES.md); the protocol documents itself in its crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/ieee802154-*.md`.

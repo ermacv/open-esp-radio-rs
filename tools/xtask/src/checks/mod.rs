@@ -1,18 +1,7 @@
-//! Repository policies, separate from process and Cargo graph mechanics.
+//! The compile-fail and feature-set tests, and the lock files.
 
-pub mod architecture;
-pub mod changed;
-pub mod docs;
 pub mod feature_sets;
-pub mod isa_conformance;
 pub mod metadata;
-pub mod network;
-pub mod phy;
-pub mod shared;
-pub mod standalone;
 pub mod ui;
 
 pub(crate) mod common;
-
-pub use metadata::run as metadata;
-pub use network::run as network;

@@ -2,8 +2,7 @@
 //! Q7; owner decision
 //! [6225000924](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6225000924)).
 //!
-//! The gate and CI read no runs and have no access to the private archive.
-//! This check needs neither: the pin repeats its version's manifest, so its
+//! This check reads no runs and needs no access to the private archive: the pin repeats its version's manifest, so its
 //! digest and every cited run are checked against the pin alone: every
 //! cited run is in the pinned version with its digest (rule 2), and the
 //! version holds no run nothing cites (rule 1). It also loads every program

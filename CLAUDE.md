@@ -15,7 +15,6 @@ Commands written with `<chip>` take either chip where that input exists.
 
 - **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, add a fallback, leave required work unfinished, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. Any other choice the agent makes itself and records in its PR as its own decision, never as an owner decision. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
-- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo hil run`, `cargo hil wait`) run asynchronously (`run_in_background: true`); act on completion and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. Claude Code's pre-tool hook enforces this.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
@@ -33,17 +32,17 @@ Commands written with `<chip>` take either chip where that input exists.
 `AGENTS.md` beside each `CLAUDE.md` and `.agents/skills` are relative
 symlinks to the canonical `CLAUDE.md` and `.claude/skills/`: edit only the
 canonical files, and keep an `AGENTS.md` link beside any new scoped
-`CLAUDE.md` (`cargo tidy check` holds the links and skill frontmatter).
+`CLAUDE.md`.
 HIL source snapshots exclude `AGENTS.md` and `.agents/` from their inputs
 ([source capture](hil/host/README.md#build-and-run)). `.claude/settings.json`
-registers the permissions and the hooks in `.claude/hooks/`.
+registers the permissions and the generated-file guard in `.claude/hooks/`.
 
-## Gate, push, commit
+## Build, push, commit
 
-- Iterate with `cargo test -p <package> <test>`; gate uncommitted work with `cargo xtask check changed`, under a minute warm (`--full` adds CI's full tier). One check registry decides what the gate, push and every CI job run (`cargo xtask check tier --list`; a CI job is `cargo xtask check tier full --job <job>`, on a branch with `--checks` leaving out the audited checks its change does not reach). Output is a summary; logs are in `target/xtask/logs/`.
-- Work on a branch in its own worktree. `main` changes only through pull requests: `cargo xtask push` refuses a branch behind the freshly fetched `origin/main` (rebase it), gates exactly `HEAD`, runs the local Claude review (blocking on 🔴 or 🟡; 🔵 wording findings do not block), pushes the branch, opens its PR, files the wording findings as `review: …` issues and leaves the PR a draft: it never enables auto-merge, and a person marks it ready and merges it. CI on the PR runs every full-tier check but chip-target Clippy (`architecture-clippy`), the API docs and the vendor evidence index (`vendor-evidence`) its change does not reach (every check when it touches the workflows, the toolchain, the root `Cargo.toml` or `Cargo.lock`, or host tooling under `tools/` other than Blobray), and `main`'s run after the merge checks everything; do not wait for it. A red `main` comes before other work, and so do the open Claude review findings (`review: …` issues) of your branch; another branch's findings are only reported, never pushed to. Skill: `push-and-ci`; reference: [the push gate](tools/xtask/README.md#the-push-gate).
-- After a pull that changed a lock file: `cargo tidy fetch` (Cargo is offline). If tidy's own registry dependencies are missing, bootstrap with `cargo --config net.offline=false tidy fetch`; its host-only workspace does not require firmware Git sources to start, including after a moved Git pin. After a dependency change: `cargo xtask lock`. A second checkout: `cargo xtask worktree add` (its own warm host `target/`). Host workspaces keep private target directories; firmware images and vendor probes use the one host-wide compile cache owned by `oer-toolchain`, with its build lock held until artifacts are copied out.
-- Commits use Conventional subjects (`feat(blobray): …`, `fix(esp32s31): …`), scoped and imperative. A production change that Blobray or verification work needs lands in its own product-scoped commit. A PR names the ownership boundary, the checks run, any qualification/HIL evidence and every generated SVD/PAC change.
+- Build and test with Cargo: `cargo test -p <package> <test>`. Repository commands a person runs by hand: `cargo xtask check ui` (compile-fail contract tests), `cargo xtask check feature-sets` (each package's declared feature sets), `cargo xtask doc` (API documentation and doctests), `cargo xtask lock` (every workspace's lock after a dependency or pin change; `--check` verifies offline) and `cargo xtask worktree add` (a second checkout with its own warm host `target/`).
+- After a pull that changed a lock file: `cargo tidy fetch` (Cargo is offline). If tidy's own registry dependencies are missing, bootstrap with `cargo --config net.offline=false tidy fetch`. `cargo tidy workspaces` and `cargo tidy chips` print the repository model.
+- Work on a branch in its own worktree. `main` changes only through pull requests: `cargo xtask push` pushes the branch with `git push` and opens its pull request as a draft, with no checks and no review; a person marks it ready and merges it.
+- Commits use Conventional subjects (`feat(blobray): …`, `fix(esp32s31): …`), scoped and imperative. A production change that Blobray or verification work needs lands in its own product-scoped commit. A PR names the ownership boundary, the tests run, any qualification/HIL evidence and every generated SVD/PAC change.
 
 ## Map
 
@@ -56,14 +55,14 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `hil/` | HIL protocol, runner, targets, scenarios and evidence: [hil/CLAUDE.md](hil/CLAUDE.md) |
 | `verification/` | `cargo verification` (own workspace): vendor pins, recovered facts and comparisons: [verification/CLAUDE.md](verification/CLAUDE.md) |
 | `qualification/` | Capability catalogs, programs and the evaluator: [qualification/CLAUDE.md](qualification/CLAUDE.md) |
-| `tools/` | Gate (xtask, tidy), dev kit (`cargo fw`: flash an image bundle or an ESP-IDF catalog image such as a `hil/peers` reference, monitor, devices, compare), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
+| `tools/` | Repository commands (xtask, tidy), dev kit (`cargo fw`: flash an image bundle or an ESP-IDF catalog image such as a `hil/peers` reference, monitor, devices, compare), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
 | `stand/` | `cargo stand` and the shared stand's packages: [stand guide](hil/host/stand.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |
 | `docs/` | Cross-owner contracts: [architecture](docs/architecture.md), [documentation](docs/documentation.md), [verification and qualification](docs/verification-and-qualification.md) |
 
 Task workflows live in `.claude/skills/`: `protocol-change`,
 `driver-or-hardware-change`, `new-package`, `qualification-entry`,
-`vendor-evidence`, `hil-run` and `push-and-ci`.
+`vendor-evidence` and `hil-run`.
 
 One task is one session and one PR. A block guide skill (`block-wifi`,
 `block-bluetooth`, `block-ieee802154`) maps

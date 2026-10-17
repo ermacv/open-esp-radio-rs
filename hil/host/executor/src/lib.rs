@@ -113,7 +113,7 @@
 //! ```
 //!
 //! `StandSession::for_tests` exists only under the `test-support`
-//! feature, which `cargo tidy check` allows only in dev-dependencies.
+//! feature, which only dev-dependencies enable.
 //!
 //! The [`Recorder`] keeps what a run measured, a name being a count or a
 //! measurement, never both. [`plan`] refuses what the stand lacks, checks a

@@ -108,7 +108,7 @@ pub fn command(ctx: &Checkout, subcommand: &str, group: &Group) -> std::process:
 pub fn run(ctx: &Checkout) -> Result<()> {
     let model = common::model(ctx)?;
     let mut manifests = vec![ctx.root.join("Cargo.toml")];
-    for package in common::production_packages(&ctx.root, &model)? {
+    for package in common::production_packages(&model)? {
         let workspace = model
             .workspace_of(&package.package)
             .ok_or_else(|| format!("{} belongs to no workspace", package.package.manifest))?;

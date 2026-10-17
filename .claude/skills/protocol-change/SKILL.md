@@ -45,13 +45,12 @@ Find the owning package in the
    accessor, nothing existing changed) is the block's own; its PR names the
    shared crate it extends. A need of one block stays in that block.
 
-## Commands (all `run_in_background: true`)
+## Commands
 
 ```console
 cargo test -p <package>
-cargo xtask check changed
-cargo xtask check architecture   # when dependencies, features or layers changed
 cargo xtask doc                  # when public API docs changed
 ```
 
-Then commit with a scoped subject and push with the `push-and-ci` skill.
+Then commit with a scoped subject and run `cargo xtask push` (git push and a
+draft PR).

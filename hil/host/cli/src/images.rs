@@ -1,5 +1,5 @@
-//! `cargo hil images`: the HIL image classes checked as the gate and CI
-//! need them, and compared between revisions.
+//! `cargo hil images`: the HIL image classes checked by hand, and compared
+//! between revisions.
 //!
 //! - `check`: build or type-check image classes with their link-time audits
 //!   ([`check`]), every class, the named ones or those a change reaches;

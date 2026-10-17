@@ -58,7 +58,7 @@ The ownership map and bundle contract are in the
 [execution and evidence architecture](architecture.md).
 
 `cargo hil` is the binary of [`oer-hil-cli`](cli/README.md), apart from
-xtask, so a change to the repository checks never rebuilds it. It handles the
+xtask. It handles the
 stand's commands itself and forwards every other command to the runner: it
 builds the observer using Cargo's actual artifact
 messages, saves its executable receipt, and atomically publishes

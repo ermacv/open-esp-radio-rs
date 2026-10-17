@@ -19,14 +19,12 @@ version); any other error is the environment's. The `cargo hil archive`
 commands map them to exit status 1 and 3.
 
 `cargo qualification check references` refuses a pinned version that holds
-a run no record cites (rule 1), so `main` cannot carry such a pin: the pin is
-a repository file, and it reaches `main` only through a pull request whose
-gate runs that check. The first `cargo hil archive publish` therefore lands
-in the same pull request as the first record that cites a run, with its
-citation field, the field's reader in `check references` and its test.
+a run no record cites (rule 1). The first `cargo hil archive publish`
+therefore lands in the same pull request as the first record that cites a
+run, with its citation field, the field's reader in `check references` and
+its test.
 
-The archive repository is private; CI has no access to it. The gate checks
-the pin and rule 2 offline (`cargo qualification check references`), and
-readiness against evidence is evaluated where the archive is reachable
+The archive repository is private. `cargo qualification check references`
+checks the pin and rule 2 offline, and readiness against evidence is evaluated where the archive is reachable
 (`cargo qualification evaluate --archive DIR`), owner decision
 [6225000924](https://github.com/ermacv/open-esp-radio-rs/issues/761#issuecomment-6225000924).

@@ -36,4 +36,4 @@ Host packages declare typed `host-app` ownership and `host-boundary`
 (`application`, `library`, `format`) alongside their host layer. The path
 dependency policy checks application boundaries independently of layers;
 [`architecture`](../../docs/architecture.md#host-applications) defines the
-shared consumers. Tidy requires both keys on every host-layer package.
+shared consumers. Every host-layer package declares both keys.

@@ -21,9 +21,7 @@ Known silicon problems: [hardware errata](../../../docs/hardware-errata.md).
    `cargo registers generate` and commit the regenerated outputs with the
    change. Never add a local mask, shift or raw address.
 3. **Unsafe.** Keep it narrow; every `unsafe` block or impl gets a
-   `// SAFETY:` comment directly above it, below any `#[allow]`. A new
-   unsafe-permitting package or a new direct PAC dependency needs the
-   reviewed lists in `cargo xtask check architecture`.
+   `// SAFETY:` comment directly above it, below any `#[allow]`.
 4. **Ownership.** Prefer typed acquisition, handoff and release over raw
    addresses or register images; document error, cancellation and
    quarantine paths in rustdoc.
@@ -39,16 +37,14 @@ Known silicon problems: [hardware errata](../../../docs/hardware-errata.md).
    --format human`, `call-arguments`, `callers`, `mmio-diff`) go to Blobray,
    not `objdump`: [choose a task](../../../tools/blobray/README.md#choose-a-task).
 
-## Commands (all `run_in_background: true`)
+## Commands
 
 ```console
 cargo test -p <package>
 cargo registers validate --manifest registers/<chip>/publication/registers.toml
 cargo registers generate --manifest registers/<chip>/publication/registers.toml
-cargo xtask check architecture
 cargo hil images check --class <class> --type-check   # a class compiling the changed code
 cargo verification check provenance --chip <chip>   # after SOURCE citations change
-cargo xtask check changed
 ```
 
 `<chip>` is `esp32s31` or `esp32c5`. ESP32-C5 has a PAC, HAL and SoC

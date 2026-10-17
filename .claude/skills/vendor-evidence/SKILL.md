@@ -18,8 +18,8 @@ Scenario authors also read the
    `cargo verification fetch <chip>`; never commit the artifacts, dumps or
    `_oracles/`. Other hashes record where a fact was observed; they are not pins.
 2. **Cite.** A recovered fact names its vendor function in a
-   `SOURCE(<chip>):` block (one recogniser, `oer_vendor_provenance::citation`,
-   which `cargo tidy check` uses too) (a chip-neutral path names its chips). The cited
+   `SOURCE(<chip>):` block (one recogniser, `oer_vendor_provenance::citation`)
+   (a chip-neutral path names its chips). The cited
    function is registered with its reviewed fingerprint in
    `verification/<chip>/facts/provenance.toml`; grep that file by explicit
    path, never read it whole. A function several pinned artifacts define
@@ -52,14 +52,15 @@ Scenario authors also read the
    and the host stands (`verification/<chip>/host/<name>`, shard
    `<name>-host`, written by the stand's own `shard` command). A shard never
    records a file of a report package.
-   On a branch, CI's `vendor-evidence` compares the index with `main`'s:
-   a claimed vendor root that is gone, or whose comparisons reach fewer
-   blocks or branch directions, fails it unless
+   On a branch, `cargo verification evidence --chip <chip> --compare <dir>`
+   compares the index with one computed at the merge base: a claimed vendor
+   root that is gone, or whose comparisons reach fewer blocks or branch
+   directions, fails it unless
    `verification/<chip>/decisions/accepted-losses.toml` accepts it with a
    reason (`[[retired]]`, or `[[narrowed]]` with the reach kept). A
    `[[narrowed]]` entry the comparisons reach beyond again is an error too:
    a change that widens such a root removes or updates its entry
-   ([comparison with main](../../../verification/README.md)).
+   ([comparison with the base](../../../verification/README.md)).
 8. **Hardware cross-checks** have no HIL scenario now: the
    `phy-vendor-calibration*` scenarios were deleted with the images they ran
    on (#762, tag `legacy-wifi-2026-10-16`) and return with the HIL
@@ -69,7 +70,7 @@ Scenario authors also read the
 9. **Commits.** A production change the comparison needs lands in its own
    product-scoped commit, never inside a `blobray` or verification commit.
 
-## Commands (all `run_in_background: true`)
+## Commands
 
 ```console
 cargo verification fetch <chip>

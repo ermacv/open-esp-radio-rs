@@ -161,10 +161,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-markers"
-version = "0.1.0"
-
-[[package]]
 name = "oer-process"
 version = "0.1.0"
 dependencies = [
@@ -188,13 +184,11 @@ name = "oer-tidy"
 version = "0.1.0"
 dependencies = [
  "oer-command-tree",
- "oer-markers",
  "oer-process",
  "oer-repo",
  "oer-toolchain",
  "serde_json",
  "tempfile",
- "toml",
 ]
 
 [[package]]

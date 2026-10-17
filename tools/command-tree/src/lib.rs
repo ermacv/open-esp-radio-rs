@@ -1,6 +1,5 @@
 //! The machine-readable command tree of a command line, which every
-//! repository tool prints for `__command-tree`, so that `cargo xtask check
-//! docs` can check that documentation shows only commands and flags that
+//! repository tool prints for `__command-tree`: the commands and flags that
 //! exist. With the `clap` feature, [`command_tree`] walks a clap parser.
 
 use serde::{Deserialize, Serialize};

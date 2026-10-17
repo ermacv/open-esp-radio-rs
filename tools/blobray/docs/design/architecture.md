@@ -83,9 +83,7 @@ the stack analyzer shares them. Application depends on the ISA-neutral model,
 the function analysis and the static image view; RV32 facts such as relocation
 types and register numbers stay in that layer. The command line selects the
 concrete decoder from `oer-riscv-lift`. The allowed
-dependencies are `oer_repo::policy::COMPONENTS`, which `cargo tidy check`
-enforces on the manifests: an edge it does not allow, or a Blobray crate without
-a row, fails it, and so does this table when it states anything else. Verification can
+dependencies are `oer_repo::policy::COMPONENTS`. Verification can
 request execution through an injected executor and compares typed
 observations; it cannot select a different input behind the caller's back.
 

@@ -572,18 +572,16 @@ reuse key are unaffected.
 ### ISA conformance
 
 ```console
-cargo xtask check isa-conformance [--cc CLANG]
+cargo test -p blobray-cli --test riscv_conformance -- --ignored
 ```
 
 The `riscv_conformance` test checks the RISC-V executor against the official
 architectural tests, with the Sail RISC-V formal model as the reference. Its
 inputs are pinned in `cli/tests/riscv_conformance/inputs.toml`: the
 riscv-arch-test commit with the suites it runs and the SHA-256 of the Sail
-release archive. The xtask check fetches both into `target/isa-conformance/`,
-verifies them and runs the ignored test with a clang that has the riscv32
-target and lld (`clang` by default). The test can also run directly with
-`BLOBRAY_RISCV_ARCH_TEST`, `BLOBRAY_RISCV_CC` and `BLOBRAY_SAIL` set:
-`cargo test -p blobray-cli --test riscv_conformance -- --ignored`.
+release archive. The ignored test runs with both inputs and a clang that has
+the riscv32 target and lld, given by `BLOBRAY_RISCV_ARCH_TEST`, `BLOBRAY_SAIL`
+and `BLOBRAY_RISCV_CC`.
 
 Each test of the RV32 I, M, A, B (Zba, Zbb, Zbs), C (with Zcb) and Zifencei
 suites is assembled once against the target model in

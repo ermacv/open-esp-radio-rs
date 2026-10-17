@@ -90,4 +90,4 @@ checked tally has no error path after mutation. An association without an
 A-MPDU controller returns `AmpduUnavailable` directly before changing its
 rate or ACK-SNR state. There is no separate refusal counter or pending error
 slot for a caller to poll.
-The crate uses the canonical strict lint block checked by tidy.
+The crate uses the canonical strict lint block.

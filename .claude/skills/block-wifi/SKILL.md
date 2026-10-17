@@ -332,8 +332,10 @@ Also check the actual S31 target before each push:
 `cargo check -p oer-esp32s31-ieee80211-mac -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf`.
 Host `--all-targets` covers Cargo target kinds, not the RV32 architecture or
 its conditional imports and allocation paths.
-Run `cargo xtask check tier full --job architecture --checks chip-doctest`
-as well: chip API examples need their `no_std` harness, and must not inherit
+Run the chip-target doctests as well
+(`cargo test --doc -p oer-esp32s31-ieee80211 --target riscv32imafc-unknown-none-elf`,
+and the same for `oer-esp32s31-ieee80211-mac` and `oer-esp32s31-ieee80211-form`):
+chip API examples need their `no_std` harness, and must not inherit
 the allocating MAC model from a host-only dev-dependency. The core enables
 that dependency for host unit tests; explicit RV32 model builds still use
 the `test-support` feature.
@@ -354,11 +356,11 @@ RX storage constructors have the same static-storage signature on host and
 chip. Tests leak their allocation deliberately, so forgetting a ring cannot
 turn a hardware-capable signature into a temporary-memory DMA binding.
 
-- `cargo test -p <package>`, then `cargo xtask check changed`.
-- No HIL image compiles the Wi-Fi driver; `cargo xtask check network` for network-owner or manifest changes.
+- `cargo test -p <package>`.
+- No HIL image compiles the Wi-Fi driver.
 - No Wi-Fi HIL scenario exists; new proofs come from the HIL architecture of #761.
 
-Skills: `protocol-change`, `driver-or-hardware-change`, `hil-run`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/wifi-phy.toml`), `push-and-ci`.
+Skills: `protocol-change`, `driver-or-hardware-change`, `hil-run`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/wifi-phy.toml`).
 
 Package detail: the READMEs of [lower-mac](../../../crates/protocols/ieee80211/lower-mac/README.md), [upper-mac](../../../crates/protocols/ieee80211/upper-mac/README.md), [sta](../../../crates/protocols/ieee80211/sta/README.md) and [arbiter](../../../crates/protocols/ieee80211/arbiter/README.md).
 

@@ -1,5 +1,6 @@
 //! An in-memory IEEE 802.15.4 backend on the owner shape ([`crate::owner`]),
-//! for host tests of the shape and of the code that drives it.
+//! for this crate's own tests of the shape (it compiles only under
+//! `cfg(test)`).
 //!
 //! [`OwnedModel::new`] returns the backend, which a test hands to
 //! [`run_port`](oer_radio_port::run_port), and a [`ModelHandle`] that plays
@@ -10,30 +11,7 @@
 //! interface its seat in the pool's line.
 //!
 //! Its tokens have no value outside it: no caller mints a configured
-//! interface or a pending entry.
-//!
-//! ```compile_fail,E0451
-//! # use oer_ieee802154::model::ModelConfigured;
-//! fn forge<'id>() -> ModelConfigured<'id, 0> {
-//!     ModelConfigured { slot: todo!() }
-//! }
-//! ```
-//!
-//! ```compile_fail,E0451
-//! # use oer_ieee802154::model::ModelShortEntry;
-//! fn forge<'id>() -> ModelShortEntry<'id, 0> {
-//!     ModelShortEntry { slot: todo!() }
-//! }
-//! ```
-//!
-//! Their compiling twin reads the interface of a configured token:
-//!
-//! ```
-//! # use oer_ieee802154::{Interface, model::ModelConfigured, owner::ConfiguredInterface};
-//! fn index(configured: &ModelConfigured<'_, 1>) -> Interface {
-//!     configured.interface()
-//! }
-//! ```
+//! interface or a pending entry (their fields are private).
 
 use alloc::{collections::VecDeque, rc::Rc, vec::Vec};
 use core::{

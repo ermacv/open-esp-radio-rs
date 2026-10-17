@@ -28,7 +28,7 @@ port. Nothing on `main` runs the engine on hardware.
 
 - Protocol, portable: `crates/protocols/ieee802154` (`oer-ieee802154`): MAC frames, CSMA, CSL, enhanced ACK, security, time sync, the port's owner shape (`owner`, `port`), capabilities, channels, interfaces, power, and the host model of the owner shape, used by its own tests. No portable service package.
 - Family (Espressif, S31 and C5):
-  - engine `crates/hardware/espressif/ieee802154/engine` (`oer-espressif-ieee802154-engine`): the MAC driver ported from public ESP-IDF, `Ieee802154LowLevel`, the host register model under feature `model`, and since #770 the capabilities table (`capabilities.rs`: `RADIO_CAPABILITIES`, `CCA_RESET_DBM`, `capabilities(levels, multipan)`). Its README records the `esp_ieee802154_enable` bring-up and teardown order;
+  - engine `crates/hardware/espressif/ieee802154/engine` (`oer-espressif-ieee802154-engine`): the MAC driver ported from public ESP-IDF, `Ieee802154LowLevel`, a host register model for its own tests (`ll::model`, `cfg(test)`), and since #770 the capabilities table (`capabilities.rs`: `RADIO_CAPABILITIES`, `CCA_RESET_DBM`, `capabilities(levels, multipan)`). Its README records the `esp_ieee802154_enable` bring-up and teardown order;
   - shared MAC values `crates/hardware/ieee802154/pac`.
 - ESP32-S31:
   - PAC, HAL and PHY modules inside the chip crates (`hardware/esp32s31/{pac,hal}/src/ieee802154*`, `phy/src/ieee802154_client.rs`);

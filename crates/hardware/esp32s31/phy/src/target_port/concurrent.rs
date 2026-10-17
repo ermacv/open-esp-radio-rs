@@ -133,10 +133,6 @@ pub enum ConcurrentPhyTrackingError {
     reason = "fail-stop error retains the allocation-free PHY transition"
 )]
 // CAPABILITY: phy-protocol-consumer-cold-registration-calibration-entry-wifi, phy-protocol-consumer-cold-registration-calibration-entry-bluetooth, phy-protocol-consumer-cold-registration-calibration-entry-ieee802154, cold-registration
-#[allow(
-    clippy::result_large_err,
-    reason = "fail-stop error retains the allocation-free PHY transition"
-)]
 pub async fn register_concurrent_phy<P, D, O>(
     timer: &impl oer_time::Timer,
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,

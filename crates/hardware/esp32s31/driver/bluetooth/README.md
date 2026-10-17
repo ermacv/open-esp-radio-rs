@@ -36,7 +36,7 @@ inventory.
 | `coex_status` | The vendor's Bluetooth LE coexistence schedule status bits (`coexHook`) and the change between two activities |
 | `connection_policy` | Connection-event allowances and span (`ble_28.o`, `ble_3.o`) and the vendor Direct Test Mode notes |
 
-Role crates reach hardware only through these typed primitives. The powered
+A caller reaches hardware only through these typed primitives. The powered
 task endpoint publishes an address only after it resolves to a submitted item
 of the caller's scheduler item space, whose pools bind `'static` storage. It
 retains every list-zero publication from the action that creates it to the
@@ -45,7 +45,10 @@ register. Each wait observation joins a fresh task-side read with a fresh
 scheduler-state read from the stable interrupt owner; the scheduler wake only
 tells the worker when to observe again. Operations
 that discharge an `unsafe` obligation, such as publishing an interrupt owner
-or preparing Controller output, are safe functions of this crate.
+or preparing Controller output, are safe functions of this crate. The
+exception is `ControllerPoweredTaskRuntime::publish_scan_start`, an `unsafe
+fn`: its caller must have reset the scanner graph and published the receive
+chains, which the removed radio role did.
 
 The separate [`memory`](memory/) crate retains controller-SRAM codecs.
 

@@ -53,8 +53,9 @@ and restarts them itself (`restart`) at its beacons. Each `CoexPhaseStep`
 tells the runtime owner how long to arm the phase timer and whom to notify.
 `CoexScheduleExecutor` turns each step into a phase-timer command with a
 generation; an expiry of an older generation lost a race with a later phase
-change and steps nothing. The radio runtime runs the timer and signals each
-notified radio. A radio publishes its status through the schedule's
+change and steps nothing. The former radio runtime (tag
+`legacy-radio-2026-10-16`) ran the timer and signalled each notified radio;
+#771 brings a runner back. A radio publishes its status through the schedule's
 `set_status_bits` and `clear_status_bits`; in the former runtime Wi-Fi
 reacted to its phases, while Bluetooth LE did not wait for its own.
 

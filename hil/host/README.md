@@ -282,7 +282,7 @@ replace this identity. The qualification evaluator uses
 observer inputs; it does not require equality of the entire runner binary.
 Its schema-4 registry identifies a workload as `<family>/<kind>` (for example
 `system/boot-smoke`), classifies its timing sensitivity, and scopes its inputs by
-the `common` group plus the scenario family's group (`bluetooth` or `system`),
+the `common` group plus the scenario family's group (`system`),
 whose direct dependencies are the runner family
 packages. A workload's source inputs are the runner package, every path package
 in that projected dependency closure and the listed non-Cargo `data` files;

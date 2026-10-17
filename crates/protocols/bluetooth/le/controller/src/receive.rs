@@ -93,3 +93,6 @@ fn decode_inner(
     }
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests;

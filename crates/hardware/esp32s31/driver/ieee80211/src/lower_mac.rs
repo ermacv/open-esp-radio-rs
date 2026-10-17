@@ -109,14 +109,13 @@
 //! `MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS` slots. Coexistence maps `CoexPriority::Normal` onto the static
 //! per-access-category priority of
 //! [`LegacyTxQueue::vendor_data_packet_priority`] and
-//! `CoexPriority::Elevated` onto the shared radio owner's connection-frame
-//! priorities. An individually addressed frame without acknowledgement is
-//! published at legacy rates only, the one program with a response field;
-//! hardware has not confirmed its on-air behaviour. A published attempt
-//! cannot be withdrawn: the S31 abort path needs the queue's hardware
-//! timeout edge. A-MPDU transmission returns in step 2 (#563); access-point
-//! TBTT schedules are not implemented, as the qualification catalog
-//! records.
+//! `CoexPriority::Elevated` onto the connection-frame priorities. An
+//! individually addressed frame without acknowledgement is published at legacy
+//! rates only, the one program with a response field; hardware has not
+//! confirmed its on-air behaviour. A published attempt cannot be withdrawn: the
+//! S31 abort path needs the queue's hardware timeout edge. A-MPDU transmission
+//! returns in step 2 (#563); access-point TBTT schedules are not implemented,
+//! as the qualification catalog records.
 
 use core::pin::Pin;
 use oer_radio_port::{PoolPath, Root};
@@ -628,7 +627,7 @@ pub struct RxBlockAckValues {
 /// The beacon receive priority ([`LowerMacCore::set_rx_beacon_priority`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxBeaconPriority {
-    /// The shared radio owner's beacon-window priority.
+    /// The beacon-window priority the shared radio's owner sets.
     BeaconWindow,
     /// Priority zero.
     Zero,
@@ -833,8 +832,8 @@ pub struct LowerMacCore<
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'core, 'slot, BUFFER_SIZE, Path>>; LOWER_MAC_TX_QUEUES],
-    /// The shared radio owner's coexistence priorities: the beacon window's and
-    /// a connection frame's.
+    /// The coexistence priorities the shared radio's owner sets: the beacon
+    /// window's and a connection frame's.
     coex: &'slot dyn RadioCoexPriorities,
 }
 
@@ -1175,8 +1174,7 @@ where
     ) -> Admission {
         let queue = common.queue;
         let (scheduler_priority, packet_priority, priority_count) = match coex {
-            // A connection frame under the shared radio owner's reconnect
-            // policy.
+            // A connection frame under the reconnect policy.
             CoexPriority::Elevated => {
                 let connection = self.coex.connection_frame_priorities();
                 (

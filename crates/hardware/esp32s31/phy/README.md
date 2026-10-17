@@ -256,7 +256,7 @@ the active clients, and only matching child completion commits branch results.
 The source interval is not a measured maximum thermally safe deferral.
 
 The vendor periodic tracking is the only runtime maintenance path: the
-arbiter's owner runs one `track_concurrent_phy` tick every tracking period
+shared radio's owner runs one `track_concurrent_phy` tick every tracking period
 under the arbiter lease, and due work starts at once (no owner runs it since
 #770, tag `legacy-radio-2026-10-16`; #771 brings it back). There is no
 protocol-selected maintenance of individual operations. Joint

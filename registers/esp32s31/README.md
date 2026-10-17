@@ -102,6 +102,8 @@ published here and have one writer.
 `upstream/platform-radio-deps.svd` describes official-PAC registers reached by
 vendor radio code. It is pinned to the workspace's `esp-pacs` revision and is
 not an input to the radio PAC generator. It creates no runtime peripheral owner.
+Its `licenseText` is the Apache-2.0 notice of the Espressif SVD it mirrors,
+with the modification notice (see [`NOTICE`](../../NOTICE)).
 The reviewed common-PHY `TICK_CONF` carveout is in the radio model; adjacent
 platform-owned `MODEM_LPCON` registers remain in the upstream analysis catalog.
 See the [PAC provenance map](../../crates/hardware/esp32s31/pac/README.md).

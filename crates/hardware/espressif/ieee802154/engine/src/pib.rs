@@ -1,6 +1,11 @@
 //! Port of the public ESP-IDF IEEE 802.15.4 PAN information base
 //! (`esp_ieee802154_pib.c`).
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_pib.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! The PIB holds the radio configuration the driver publishes lazily: every
 //! setter that changes a value marks the PIB pending, and
 //! [`Ieee802154Pib::update`] writes the complete set in the vendor order

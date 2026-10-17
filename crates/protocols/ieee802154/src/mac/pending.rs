@@ -1,5 +1,11 @@
 //! Frame-pending table and ACK pending-bit decision ported from the public
 //! ESP-IDF IEEE 802.15.4 driver (`components/ieee802154/driver/esp_ieee802154_ack.c`).
+//!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_ack.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 
 use super::header::{FrameAddress, FrameVersion, PhrFrame};
 

@@ -1,6 +1,12 @@
 //! Hardware-side helpers of the public ESP-IDF IEEE 802.15.4 driver, ported
 //! over a backend whose methods are the driver's `ieee802154_ll_*` accessors.
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_util.c`,
+//! `esp_ieee802154_timer.c` and `esp_ieee802154_dev.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! The pinned driver (`components/ieee802154/driver`) mixes hardware steps
 //! with its callbacks and state. This module owns only the hardware steps:
 //! the modem ETM channel helpers of `esp_ieee802154_util.c`, the timer

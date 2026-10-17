@@ -1,6 +1,11 @@
 //! MAC header inspection ported from the public ESP-IDF IEEE 802.15.4 driver
 //! (`components/ieee802154/driver/esp_ieee802154_frame.c`).
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_frame.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! [`PhrFrame`](crate::PhrFrame) is the PHY-level image `[PHR, PSDU...]`: byte zero is the PSDU
 //! length and the MAC header starts at byte one. Offsets below keep that
 //! origin so each computation reads like the vendor source. For a malformed

@@ -27,7 +27,10 @@ documented behavior.
 The [documentation index](docs/README.md) lists the contracts that cross code
 owners; `cargo xtask doc` builds the API documentation.
 
-The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
+The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE),
+except the crates holding the ESP-IDF port, which are Apache-2.0 only.
+[`NOTICE`](NOTICE) lists the third-party material and its licenses; the
+[facade](crates/oer/README.md#license) states its effective license.
 
 ## Start here
 

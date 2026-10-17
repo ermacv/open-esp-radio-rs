@@ -39,3 +39,12 @@ Internal libraries depend on their specific contracts and on `oer-radio-port`
 for the radio port lifecycle, using the corresponding `oer-*` Cargo package names. They must
 never depend on this facade. Association types are shared with the underlying
 IEEE 802.11 encoder; the facade introduces no duplicate enums.
+
+## License
+
+The facade's own source is `MIT OR Apache-2.0`. The crates holding the ESP-IDF
+port are `Apache-2.0` only (see [`NOTICE`](../../NOTICE)): `oer-ieee80211-ap`,
+`oer-ieee802154`, `oer-espressif-ieee802154-engine` and `oer-radio-clock`, the
+last two through `oer-esp32s31-hal`. A build with `wifi` (the default),
+`ieee802154`, `esp32s31` or any backend feature is therefore effectively
+`Apache-2.0`; only `bluetooth` alone keeps the dual license.

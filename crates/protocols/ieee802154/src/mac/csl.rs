@@ -4,6 +4,12 @@
 //! and phase it writes into every CSL IE it sends (`esp_openthread_radio.c`
 //! at ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`,
 //! `mac_frame.cpp` of OpenThread).
+//!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/openthread/src/port/esp_openthread_radio.c` (Copyright
+//! Espressif Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 
 use crate::mac::header::PhrFrame;
 

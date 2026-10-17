@@ -1,5 +1,10 @@
 //! Software-coexistence priorities of the IEEE 802.15.4 MAC.
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver/esp_ieee802154_util.c` (Copyright Espressif
+//! Systems (Shanghai) Co Ltd, Apache-2.0) and modified by Vladislav
+//! Ermachenkov; see `NOTICE`.
+//!
 //! In a build with software coexistence the pinned driver publishes the MAC's
 //! two PTI fields through libcoexist: `ieee802154_mac_init` sets the ACK PTI
 //! to the middle level and the TX/RX PTI to the idle scene, and each

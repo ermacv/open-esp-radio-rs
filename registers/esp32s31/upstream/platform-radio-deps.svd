@@ -13,7 +13,24 @@
     SVD and do not create a second runtime owner; production code uses the
     generated esp32s31 PAC through the esp-hal integration layer.
   </description>
-  <licenseText>MIT OR Apache-2.0</licenseText>
+  <licenseText>
+    Copyright 2026 Espressif Systems (Shanghai) PTE LTD
+
+    Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+    Modified by Vladislav Ermachenkov: a subset of the pinned esp-pacs
+    esp32s31 SVD with review annotations.
+</licenseText>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
   <peripherals>

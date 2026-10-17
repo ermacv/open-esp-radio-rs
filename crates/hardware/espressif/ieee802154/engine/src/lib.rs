@@ -1,5 +1,9 @@
 //! Chip-neutral IEEE 802.15.4 MAC driver engine.
 //!
+//! Ported from ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+//! `components/ieee802154/driver` (Copyright Espressif Systems (Shanghai) Co
+//! Ltd, Apache-2.0) and modified by Vladislav Ermachenkov; see `NOTICE`.
+//!
 //! [`engine`] ports the public ESP-IDF driver's state machine
 //! (`esp_ieee802154_dev.c`) and public API layer over the
 //! [`ll::Ieee802154LowLevel`] interface, which each chip's HAL implements over

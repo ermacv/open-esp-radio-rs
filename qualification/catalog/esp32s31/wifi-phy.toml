@@ -142,7 +142,7 @@ security = ["independent-of-link-security"]
 composition = "cold-station-registration"
 level = "lower-primitive"
 activation-boundary = "One cold register_chipv7_phy composition through the typed target port"
-limitations = "The typed PHY target-port registration (`target_port/concurrent.rs`) remains; the Wi-Fi composition that ran it at station start went in #762 (tag `legacy-wifi-2026-10-16`), and S31-2 (#760) brings it back. The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "The typed registration (`register_concurrent_phy`, `target_port/concurrent.rs`) remains; the radio runtime that ran it went in #770 (tag `legacy-radio-2026-10-16`) and #771 brings it back; the Wi-Fi station start that requested it went in #762 (tag `legacy-wifi-2026-10-16`), S31-2 (#760). The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
 
 [[capabilities]]
 id = "runtime-phy-calibration"
@@ -256,7 +256,7 @@ security = ["independent-of-link-security"]
 composition = "radio-cold-start"
 level = "lower-primitive"
 activation-boundary = "Clock reset and power-up handoff of the unique radio owner; station sleep and wake are outside the supported profile"
-limitations = "The HAL clock reset and power-up handoff (`root.rs`, `power.rs`) remain; the Wi-Fi composition that ran them (`start_esp32s31_radio`, `power_up_esp32s31_wifi`) went in #762 (tag `legacy-wifi-2026-10-16`), and S31-2 (#760) brings it back. The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
+limitations = "The HAL root and power-up (`root.rs`, `power.rs`) and the Wi-Fi driver's `power_up_esp32s31_wifi`/`start_esp32s31_radio` remain; the radio system that took the root went in #770 (tag `legacy-radio-2026-10-16`), #771 brings it back; the Wi-Fi composition that called the driver start went in #762 (tag `legacy-wifi-2026-10-16`), S31-2 (#760). The declared source boundary is exact; vendor and HIL readiness remain controlled by the capability axes and explicit gaps"
 
 [[sections]]
 id = "phy-overview"

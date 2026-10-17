@@ -1,8 +1,8 @@
 # HIL radio families
 
 Each directory is one radio family's crate, `oer-hil-family-<family>`. A
-family owns one scenario table (`[system]` in a scenario document) and everything that
-interprets it; the runner core names no family type.
+family owns one scenario table (`[system]` in a scenario document) and
+everything that interprets it; the runner core names no family type.
 
 | Crate | Owns |
 | --- | --- |

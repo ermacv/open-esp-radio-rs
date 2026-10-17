@@ -14,15 +14,16 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 ## State
 
 `main` holds the block's recovered knowledge and pure algorithms only. The
-orchestration was deleted by #770: the radio role and its legacy state
-machine (`RadioStateMachine`, `RadioCommand`, `RadioEvent`), the runtime and
-its backend, the ESP32-S31 composition, the esp-hal interrupt route, the HAL
+orchestration was deleted by #770: the radio role and its legacy state machine
+(`RadioStateMachine`, `RadioCommand`, `RadioEvent`), the runtime and its
+backend, the ESP32-S31 composition, the esp-hal interrupt route, the HAL
 polled ED/CCA and validation probes, the OpenThread adapter and the Thread
-example. The tag `legacy-radio-2026-10-16` keeps them (and `legacy-wifi-2026-10-16` keeps
-`main` before #756). The redesign is #563 decision 8: the engine runs in the P3
-context with no mutex, body and engine are linked lock-free (a mailbox, a
-configuration snapshot and SPSC events), and CSMA and retries move above the
-port. Nothing on `main` runs the engine on hardware.
+example. The tag `legacy-radio-2026-10-16` keeps them (and
+`legacy-wifi-2026-10-16` keeps `main` before #756). The redesign is #563
+decision 8: the engine runs in the P3 context with no mutex, body and engine
+are linked lock-free (a mailbox, a configuration snapshot and SPSC events),
+and CSMA and retries move above the port. Nothing on `main` runs the engine on
+hardware.
 
 ## Packages (path → role)
 

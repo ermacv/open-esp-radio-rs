@@ -132,6 +132,16 @@ class Record(unittest.TestCase):
         self.assertIn("<!-- claude-review-branch: fix/a -->", created["body"])
         self.assertEqual(lines, ["- 🔵 **unclear name**: recorded as #500"])
 
+    def test_a_defect_blocks_readiness_and_wording_rides_along(self):
+        api = FakeGitHub()
+        self.record(api, finding(severity="nit", title="lost error"))
+        self.assertIn("blocks the pull request's readiness", api.created[0]["body"])
+        self.assertNotIn("does not block merging", api.created[0]["body"])
+        api = FakeGitHub()
+        self.record(api, finding(severity="wording", title="unclear name"))
+        self.assertIn("does not block readiness", api.created[0]["body"])
+        self.assertIn("blocks the pull request's readiness", findings.SEVERITY)
+
     def test_text_that_misstates_behavior_is_never_wording(self):
         self.assertIn("text that misstates behavior is never wording", findings.SEVERITY)
         self.assertIn("text that misstates behavior included", findings.SEVERITY)

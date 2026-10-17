@@ -82,7 +82,10 @@ round closes them all instead of one per review.
 When the PR already has a Claude review, read it (`review-inputs/pr.json`
 in the workflow).
 Focus on commits since the reviewed head and on whether earlier findings are
-fixed. A still-open finding of any severity is reported again with `issue`
+fixed. A later push to a reviewed PR is a diff pass: the prompt names
+`review-inputs/round.patch`, the change since the last reviewed head. A
+local fix round gets the diff since the previous pushed head in
+`review-round.diff` the same way. A still-open finding of any severity is reported again with `issue`
 set to the issue that records it, so it is not filed twice; a fixed one is
 named as fixed in the summary. The local review is handed its previous
 findings in the prompt instead and reports every still-open one again.

@@ -35,7 +35,8 @@ enum Task {
     },
     /// Review this branch's committed diff against origin/main with a
     /// separate headless Claude Code run, by REVIEW.md, as CI's review does;
-    /// fails on an important or nit finding.
+    /// fails on an important or nit finding. A first push gets the full
+    /// review, a fix round the diff since the previous pushed head.
     Review,
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.

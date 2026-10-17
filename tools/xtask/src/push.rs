@@ -204,16 +204,30 @@ fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
-/// The local review's verdict on a push that `review` reviews, or `None`
-/// for one pushed with `--skip-review`; a blocking finding refuses it.
+/// The local review of a push.
+#[derive(Debug)]
+enum Reviewed {
+    /// `--skip-review`.
+    Skipped,
+    /// No blocking finding.
+    Passed(review::Verdict),
+    /// The round's last pass ([`review::PASSES`]) still blocks: the
+    /// push proceeds and files its blocking findings.
+    Capped(review::Verdict),
+}
+
+/// The local review's verdict on a push that `review` reviews; a blocking
+/// finding refuses it unless `capped` says the round used its last pass or
+/// the verdict let a push through past the cap already.
 fn reviewed(
     skip_review: Option<&str>,
     review: impl FnOnce() -> Result<(review::Verdict, PathBuf)>,
-) -> Result<Option<review::Verdict>> {
+    capped: impl FnOnce(&review::Verdict) -> bool,
+) -> Result<Reviewed> {
     if skip_review.is_some() {
-        return Ok(None);
+        return Ok(Reviewed::Skipped);
     }
-    let (verdict, path) = review().map_err(|error| {
+    let (mut verdict, path) = review().map_err(|error| {
         format!(
             "push: the local review did not complete; nothing pushed: {error}\n\
              Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
@@ -222,6 +236,15 @@ fn reviewed(
     })?;
     print!("{}", review::render(&verdict));
     let blocking = verdict.blocking();
+    if blocking > 0 && capped(&verdict) {
+        println!(
+            "push: {}; the push proceeds and files them as issues",
+            cap_reason(&verdict)
+        );
+        // A retried or rebase-only push reusing it proceeds too.
+        review::mark_capped(&path, &mut verdict)?;
+        return Ok(Reviewed::Capped(verdict));
+    }
     if blocking > 0 {
         return Err(format!(
             "push: the local review found {blocking} blocking finding(s); nothing pushed. \
@@ -231,7 +254,34 @@ fn reviewed(
         )
         .into());
     }
-    Ok(Some(verdict))
+    Ok(Reviewed::Passed(verdict))
+}
+
+/// The skip reason a capped push records.
+fn cap_reason(verdict: &review::Verdict) -> String {
+    let titles: Vec<&str> = verdict
+        .report
+        .findings
+        .iter()
+        .filter(|finding| finding.blocking())
+        .map(|finding| finding.title.as_str())
+        .collect();
+    format!("review pass cap reached; findings: {}", titles.join("; "))
+}
+
+/// The marks around the pass cap's note in a pull request's body.
+const CAP_BEGIN: &str = "<!-- oer-review-cap -->";
+const CAP_END: &str = "<!-- /oer-review-cap -->";
+
+/// `body` with the pass cap's note `note` in place of an earlier one.
+fn with_cap_note(body: &str, note: &str) -> String {
+    let kept = match (body.find(CAP_BEGIN), body.find(CAP_END)) {
+        (Some(start), Some(stop)) if start < stop => {
+            format!("{}{}", &body[..start], &body[stop + CAP_END.len()..])
+        }
+        _ => body.to_owned(),
+    };
+    format!("{}\n\n{CAP_BEGIN}\n{note}\n{CAP_END}\n", kept.trim_end())
 }
 
 /// The `gh` arguments that open `branch`'s pull request: always a draft,
@@ -282,7 +332,12 @@ pub fn run(ctx: &Checkout, skip_review: Option<&str>) -> Result<()> {
         );
         registry::run_change(ctx, &change)
             .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
-        reviewed(skip_review, || review::verdict(ctx, &branch, base, head))
+        let pushed = review::pushed_head(ctx, &branch)?;
+        reviewed(
+            skip_review,
+            || review::verdict(ctx, &branch, base, head),
+            |verdict| verdict.capped || review::capped(ctx, &branch, pushed.as_deref(), base),
+        )
     })?;
     let Some(Checked {
         head,
@@ -342,26 +397,74 @@ pub fn run(ctx: &Checkout, skip_review: Option<&str>) -> Result<()> {
         None => gh(ctx, &create_pull_request(&branch))
             .map_err(|error| format!("push: gh pr create failed: {error}"))?,
     };
-    if let Some(verdict) = &reviewed {
-        // The pull request's number ends its URL.
-        let number = url.rsplit('/').next().unwrap_or_default();
-        let filed =
-            review::file_wording(ctx, verdict, number, &branch, &head).map_err(|error| {
+    // The pull request's number ends its URL.
+    let number = url.rsplit('/').next().unwrap_or_default();
+    let (verdict, capped) = match &reviewed {
+        Reviewed::Skipped => (None, false),
+        Reviewed::Passed(verdict) => (Some(verdict), false),
+        Reviewed::Capped(verdict) => (Some(verdict), true),
+    };
+    if let Some(verdict) = verdict {
+        let mut report = verdict.wording().unwrap_or_else(|| review::Report {
+            summary: verdict.report.summary.clone(),
+            findings: Vec::new(),
+        });
+        if capped {
+            report.findings.extend(verdict.blocking_report().findings);
+        }
+        let filed = review::file_findings(ctx, verdict, Some(report), number, &branch, &head)
+            .map_err(|error| {
                 format!(
-                    "push: filing the review's wording findings failed; {branch} is pushed, \
-                 push again: {error}"
+                    "push: filing the review's findings failed; {branch} is pushed, push again: \
+                     {error}"
                 )
             })?;
         for line in filed {
-            println!("push: wording finding {}", line.trim_start_matches("- "));
+            println!("push: filed finding {}", line.trim_start_matches("- "));
         }
     }
-    if let Some(reason) = skip_review {
-        let body = format!("The local Claude review was skipped for this push: {reason}");
+    let cap = match &reviewed {
+        Reviewed::Capped(verdict) => Some(cap_reason(verdict)),
+        _ => None,
+    };
+    if let Some(reason) = &cap {
+        let body = gh(
+            ctx,
+            &["pr", "view", &branch, "--json", "body", "--jq", ".body"],
+        )?;
+        let note = format!(
+            "**Local review pass cap reached** at `{}`: the round's second pass still \
+             blocked, so the push proceeded past it, as `--skip-review` would. {reason}; they \
+             are filed as `review: …` issues of this branch.",
+            &head[..12]
+        );
+        gh(
+            ctx,
+            &[
+                "pr",
+                "edit",
+                &branch,
+                "--body",
+                &with_cap_note(&body, &note),
+            ],
+        )
+        .map_err(|error| format!("push: recording the pass cap on {url} failed: {error}"))?;
+    }
+    let unreviewed = match (skip_review, &cap) {
+        (Some(reason), _) => Some(format!(
+            "The local Claude review was skipped for this push: {reason}"
+        )),
+        (None, Some(reason)) => Some(format!(
+            "The local Claude review blocked this push in its round's last pass, and the push \
+             went through past it: {reason}"
+        )),
+        (None, None) => None,
+    };
+    if let Some(body) = unreviewed {
         gh(ctx, &["pr", "comment", &branch, "--body", &body]).map_err(|error| {
-            format!("push: recording the skipped review on {url} failed: {error}")
+            format!("push: recording the review's outcome on {url} failed: {error}")
         })?;
-        println!("push: local review skipped; the reason is recorded on {url}");
+        println!("push: the review's outcome is recorded on {url}");
     }
     if opened {
         println!("push: opened draft pull request {url}; a person marks it ready and merges it");
@@ -416,6 +519,11 @@ mod tests {
                 }],
             },
             cost_usd: 0.0,
+            mode: review::round::Mode::Full,
+            reason: String::new(),
+            seconds: 0.0,
+            pushed: None,
+            capped: false,
         }
     }
 
@@ -425,10 +533,14 @@ mod tests {
     #[test]
     fn every_push_is_reviewed_and_a_blocking_finding_refuses_it() {
         let mut ran = false;
-        let error = reviewed(None, || {
-            ran = true;
-            Ok((verdict("nit"), PathBuf::from("report.json")))
-        })
+        let error = reviewed(
+            None,
+            || {
+                ran = true;
+                Ok((verdict("nit"), PathBuf::from("report.json")))
+            },
+            |_| false,
+        )
         .unwrap_err()
         .to_string();
         assert!(ran);
@@ -436,13 +548,58 @@ mod tests {
             error.contains("1 blocking finding(s); nothing pushed"),
             "{error}"
         );
-        let passed = reviewed(None, || Ok((verdict("wording"), PathBuf::new()))).unwrap();
-        assert_eq!(passed.map(|verdict| verdict.blocking()), Some(0));
-        let skipped = reviewed(Some("Claude Code is down"), || {
-            unreachable!("--skip-review runs no review")
-        })
+        let passed =
+            reviewed(None, || Ok((verdict("wording"), PathBuf::new())), |_| false).unwrap();
+        assert!(matches!(passed, Reviewed::Passed(verdict) if verdict.blocking() == 0));
+        let skipped = reviewed(
+            Some("Claude Code is down"),
+            || unreachable!("--skip-review runs no review"),
+            |_| unreachable!("--skip-review counts no pass"),
+        )
         .unwrap();
-        assert!(skipped.is_none());
+        assert!(matches!(skipped, Reviewed::Skipped));
+    }
+
+    /// The round's last pass still blocking lets the push through with the
+    /// cap's reason, which names the findings it files.
+    #[test]
+    fn a_capped_round_pushes_with_its_reason() {
+        let stored = tempfile::NamedTempFile::new().unwrap();
+        let path = stored.path().to_owned();
+        let capped = reviewed(None, || Ok((verdict("nit"), path.clone())), |_| true).unwrap();
+        // The verdict it went through with is marked, for a retried push.
+        let marked: review::Verdict =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(marked.capped);
+        let Reviewed::Capped(verdict) = capped else {
+            panic!("{capped:?}");
+        };
+        assert_eq!(
+            cap_reason(&verdict),
+            "review pass cap reached; findings: A finding"
+        );
+        assert_eq!(verdict.blocking_report().findings.len(), 1);
+        // A passing review is never capped.
+        assert!(matches!(
+            reviewed(
+                None,
+                || Ok((verdict_of("wording"), PathBuf::new())),
+                |_| true
+            )
+            .unwrap(),
+            Reviewed::Passed(_)
+        ));
+        // The note replaces an earlier one in the pull request's body.
+        let once = with_cap_note("Body.", "first");
+        let twice = with_cap_note(&once, "second");
+        assert!(
+            twice.starts_with("Body.") && twice.contains("second") && !twice.contains("first"),
+            "{twice}"
+        );
+    }
+
+    fn verdict_of(severity: &str) -> review::Verdict {
+        verdict(severity)
     }
 
     /// A push opens its pull request as a draft and asks for no

@@ -139,15 +139,22 @@ def denied(denial):
     return f"{denial.get('tool_name', 'tool')}: {tool_input.get('command', json.dumps(tool_input))}"
 
 
-def tool_policy():
+def tool_policy(inputs=Path(INPUTS)):
     """The prompt's statement of the prepared inputs and the Bash commands
     that run, so a command the policy denies is not the first attempt."""
     commands = ", ".join(f"`{tool[5:-1]}`" for tool in ALLOWED_TOOLS if tool.startswith("Bash("))
+    round = ""
+    if (inputs / "round.patch").is_file():
+        head = (inputs / "round.head").read_text().strip()
+        round = (f" This is a diff pass: this workflow reviewed the PR at {head}, and round.patch "
+                 "is the change since then (after a rebase, that head's change replayed onto "
+                 "main). Review round.patch, with diff.patch as the context it lands in, and "
+                 "whether the findings filed so far are fixed.")
     return (f"The workflow prepared the review inputs in {INPUTS}/: diff.patch (the diff against "
             "the merge base), diff.stat, pr.json (the PR with its comments, reviews and closing "
-            "issues) and issue-N.json for each issue it closes. Read them with Read. Bash runs "
-            f"only {commands}, written exactly so (relative `pr`, no `cd`, pipes or redirections); "
-            "any other call is denied and fails the review.")
+            "issues) and issue-N.json for each issue it closes. Read them with Read." + round +
+            f" Bash runs only {commands}, written exactly so (relative `pr`, no `cd`, pipes or "
+            "redirections); any other call is denied and fails the review.")
 
 
 async def review(prompt, guidance, model, token_file):

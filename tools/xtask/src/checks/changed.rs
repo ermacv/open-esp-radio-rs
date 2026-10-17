@@ -18,8 +18,10 @@ pub fn run(ctx: &Checkout, base: &str, full: bool) -> Result<()> {
     let tier = if full { Tier::Full } else { Tier::Fast };
     let change = gate::Change::of(ctx, files.into_iter().collect(), &merge_base, None, tier)?;
     println!(
-        "check changed: {} files against {base}; {} package(s) changed, {} with dependents",
+        "check changed: {} files against {base}; {} package(s) changed, {} selected, {} with \
+         dependents",
         change.files.len(),
+        change.selection.changed.len(),
         change.selection.packages.len(),
         change.affected.len()
     );

@@ -38,8 +38,8 @@ The gate every change passes before it reaches `main`; see [the push gate](#the-
 | `cargo xtask check tier --list` | Print the registry: each check's id, tier, CI job and what it checks; a check marked whole-tier-only never runs for a change |
 | `cargo xtask ci-status` | Print each workflow whose newest finished run on `main` failed, naming its failed jobs, or that `main` is green, then the open Claude review findings (`review: …` issues of the workflow or the repository owner): those of the checkout's branch one by one, and a count of the rest, which are ordinary issues; then every open pull request whose `claude-runtime-review` ended in error, to review again with `@claude review`; the session start hook runs it |
 | `cargo xtask hooks [--check]` | Write `.claude/hooks/heavy-commands.json`, the commands the Claude Code pre-tool hook keeps out of the foreground, from `oer_xtask::hooks`; `--check` only fails when it is stale (a test checks it too) |
-| `cargo xtask review` | Review the current branch's committed diff against its merge base with `origin/main` in a separate headless Claude Code run (`claude -p`) inside a detached checkout of the reviewed commit, with read-only tools and no repository settings, following the root `CLAUDE.md` and `REVIEW.md` with the CI review's report schema; fails when Claude Code denied any tool call, and on a 🔴 important or 🟡 nit finding (a nit includes text that misstates behavior), and prints 🔵 wording findings (only the phrasing, naming or clarity of correct text), which do not block and which `push` files as issues, and 🟣 pre-existing ones. The verdict is kept under `target/xtask/review/` by the diff's patch id (`git patch-id --verbatim`: line numbers ignored, whitespace not), so a rebase that leaves the diff unchanged reuses it; a re-review of the branch is handed the previous verdict's findings to check. `OER_REVIEW_MODEL` overrides the model |
-| `cargo xtask push [--skip-review REASON]` | Push the current branch after the registry's fast checks and the local review (`cargo xtask review`, reused for an unchanged diff) passed on exactly `HEAD`: refuses `main`, a detached `HEAD`, uncommitted changes to tracked files and untracked `.rs`, `Cargo.toml` or `Cargo.lock` files; before the gate and again right before `git push` it fetches `main` from `origin` and refuses a branch that lacks any commit of `origin/main`, naming those commits and `git rebase origin/main`, and refuses a failed fetch, so no pull request is opened or updated against a stale `main`; it gates the files `HEAD` changed against `origin/main`, refuses a blocking review finding, pushes the branch, opens its pull request as a draft when it has none and files the review's wording findings as `review: …` issues of the branch through `.github/scripts/review_findings.py` as the CI review files its findings (a failed filing fails the push). It never enables auto-merge: a person marks the pull request ready and merges it once the required `ci-ok` check passes. `--skip-review REASON` is the only way to push without the local review, when Claude Code cannot run, and comments the reason on the pull request; the CI review blocks nothing. A branch rebased since its last push replaces its remote copy with `--force-with-lease` bound to the copy the push saw, so commits pushed there meanwhile refuse it. It never waits for CI and never rebases |
+| `cargo xtask review` | Review the current branch's committed diff against its merge base with `origin/main` in a separate headless Claude Code run (`claude -p`) inside a detached checkout of the reviewed commit, with read-only tools and no repository settings, following the root `CLAUDE.md` and `REVIEW.md` with the CI review's report schema; fails when Claude Code denied any tool call, and on a 🔴 important or 🟡 nit finding (a nit includes text that misstates behavior), and prints 🔵 wording findings (only the phrasing, naming or clarity of correct text), which do not block and which `push` files as issues, and 🟣 pre-existing ones. The verdict is kept under `target/xtask/review/` by the diff's patch id (`git patch-id --verbatim`: line numbers ignored, whitespace not), so a rebase that leaves the diff unchanged reuses it. A first push gets the full review; a fix round (a push after an earlier one) reviews the diff since the previous pushed head (that head's change replayed onto the merge base after a rebase) with the previous verdict's findings and every owner decision the pull request implements, and is full again when the round touches `unsafe`, concurrency, a public API's shape or a shared crate of the derived list; the verdict records the mode, its reason, the pushed head it ran under and how long it took. `OER_REVIEW_MODEL` overrides the model |
+| `cargo xtask push [--skip-review REASON]` | Push the current branch after the registry's fast checks and the local review (`cargo xtask review`, reused for an unchanged diff) passed on exactly `HEAD`: refuses `main`, a detached `HEAD`, uncommitted changes to tracked files and untracked `.rs`, `Cargo.toml` or `Cargo.lock` files; before the gate and again right before `git push` it fetches `main` from `origin` and refuses a branch that lacks any commit of `origin/main`, naming those commits and `git rebase origin/main`, and refuses a failed fetch, so no pull request is opened or updated against a stale `main`; it gates the files `HEAD` changed against `origin/main`, refuses a blocking review finding, pushes the branch, opens its pull request as a draft when it has none, files the review's wording findings as `review: …` issues of the branch through `.github/scripts/review_findings.py` as the CI review files its findings (a failed filing fails the push). A round takes at most two local review passes: when the second still blocks, the push proceeds as with `--skip-review` and the reason `review pass cap reached; findings: …`, files the blocking findings as `review: …` issues and notes the cap in the pull request's body. It never enables auto-merge: a person marks the pull request ready and merges it once the required `ci-ok` check passes. `--skip-review REASON` is the only way to push without the local review, when Claude Code cannot run, and comments the reason on the pull request; the CI review blocks nothing. A branch rebased since its last push replaces its remote copy with `--force-with-lease` bound to the copy the push saw, so commits pushed there meanwhile refuse it. It never waits for CI and never rebases |
 
 ## Locks, caches and worktrees
 
@@ -254,12 +254,15 @@ that produces proofs and required checks; run/attempt/commit binding
 assumes these producers are trusted. Keep `observe` or `full` if this
 producer scope is unsuitable.
 
-The `ci-tools` Cargo cache shared by preparation and final gates is keyed
-by runner OS, the Rust toolchain file and root lock file. It keeps one key
-across source-only commits; its OS prefix can restore an older cache on
-a miss, and Cargo checks which outputs need rebuilding. Cache contents
-never establish successful coverage. Blobray builds through its existing
-owner when image checks execute.
+Each job of `ci.yml` and `docs.yml` caches its Cargo downloads and build
+through [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) with
+its own keys, saving only on `main` (`save-if`), so a branch restores
+`main`'s build and never evicts it within the repository's cache limit.
+The jobs that build the repository's own crates (`host`, `host-lint`,
+`architecture`, `architecture-clippy` and `docs`) cache those too
+(`cache-workspace-crates`). Cargo checks which outputs need rebuilding;
+cache contents never establish successful coverage. Blobray builds through its existing owner when image checks
+execute.
 
 Inspect input keys locally from a clean checkout, without executing
 checks or accessing GitHub. Keep generated files outside the checkout:
@@ -316,7 +319,12 @@ workspace whose own manifest or lock changed, `capabilities` when Rust or
 catalogs did, `clippy -D warnings` of the selected host packages and every
 package depending on them, so a changed interface fails where it is used,
 and `test` with the declared `feature-sets` (limited to 20 minutes) of the
-selected host packages. Host packages are every package of the root
+changed host packages only: those a changed file belongs to or that declare
+it an input, and those whose resolved dependencies a `Cargo.lock` or
+`[workspace.dependencies]` change changed. The toolchain, workspace lints or
+profiles reach every member, which Clippy compiles, and every dependent is
+compiled by Clippy; their tests are the pull request's CI (`--full` runs
+them locally). Host packages are every package of the root
 workspace and host or portable packages of the others. When the change
 reaches a package that builds only for a chip, or a chip or family package
 whose chip-target `cfg` code the host skips, `images-type-check`
@@ -335,8 +343,9 @@ through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overvie
 Actions, is covered by the
 [monthly API credits of Max and Team plans](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers);
 an uncovered request fails with `Credit balance too low`. It reviews each
-open, ready, same-repository pull request into `main` once, when the PR opens
-or is marked ready, in parallel with CI, and again when a collaborator
+open, ready, same-repository pull request into `main` in full when the PR opens
+or is marked ready, in parallel with CI, over the diff since its last review
+on each later push, and in full again when a collaborator
 comments `@claude review` on it. Draft PRs are not reviewed, and every push
 opens a draft, so the review runs when a person marks the PR ready. Every push is
 reviewed before it leaves the checkout by the local review
@@ -373,8 +382,11 @@ open, a `@claude review` comment reviews it again; once merged, whoever takes
 the issue reviews its diff against the current `main`. Findings are filed
 before the PR review is posted, so a failed post loses none. A finding whose issue was closed as fixed
 came back and is filed anew; one closed as not planned stays dismissed. It
-is not a required check: a PR can be merged once
-`ci-ok` passes, and the findings stay open as issues. `cargo xtask
+is not a required check: GitHub lets a PR merge once `ci-ok` passes, and the
+findings stay open as issues. Readiness is stricter ([review and
+readiness](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828)): an open 🔴 important or 🟡 nit finding of either review
+blocks it, while a 🔵 wording one rides along or stays filed, and a 🟣
+pre-existing one belongs to no pull request. `cargo xtask
 ci-status`, `check changed`, `push` and the session start hook list the open
 findings of the checkout's branch one by one and count the others; the
 session on that branch fixes them next, in a follow-up PR once the reviewed
@@ -382,6 +394,10 @@ one merged. Otherwise they are ordinary issues, triaged by their priority
 like any other. A failed review's run log names the result subtype, API status
 and error message. A newer review of the same PR cancels a running one.
 Re-reviews read the previous Claude review and focus on the new commits.
+A later push to a reviewed PR runs a diff pass: the workflow puts the
+change since its last posted review in `review-inputs/round.patch` (after a
+rebase, that head's change replayed onto `main`), and the pass is full
+when that head is gone or does not replay cleanly.
 
 The workflow authenticates through GitHub Actions OIDC and
 [Anthropic Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions),

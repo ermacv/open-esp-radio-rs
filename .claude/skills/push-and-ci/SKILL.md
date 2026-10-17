@@ -21,7 +21,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    of the registry the change selects: tidy, fmt of the selected packages,
    `lock --check` and capability checks when relevant, Clippy of the changed
    packages and their reverse dependents, the tests of the changed packages
-   and, for chip code, image type-checks. `--full` adds the full-tier checks
+   only (those a changed file belongs to, and those whose resolved
+   dependencies a lock or `[workspace.dependencies]` change changed; the
+   toolchain, lints or profiles alone test none) and, for chip code, image
+   type-checks. `--full` adds the full-tier checks
    CI runs for the change: tests of the dependents, `check docs`, API docs,
    architecture, PHY, network, register, qualification and
    provenance checks. Use it only when that set is the point.
@@ -39,14 +42,19 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    `git rebase origin/main` and push again; a failed fetch refuses too). It
    gates exactly `HEAD`, runs the local Claude review of the branch's diff in a separate
    Claude Code process (`cargo xtask review`, minutes; an unchanged diff
-   reuses its verdict) and refuses a 🔴 or 🟡 finding, pushes the branch, opens the pull request titled by its first
+   reuses its verdict; a fix round reviews the diff since the previous
+   pushed head with the previous findings, unless it touches `unsafe`,
+   concurrency, a public API or a shared crate) and refuses a 🔴
+   or 🟡 finding, pushes the branch, opens the pull request titled by its first
    commit (`gh pr create --fill-first`), files the review's 🔵 wording
    findings as `review: …` issues of the branch. The pull request opens as
    a draft and the push never enables auto-merge: a person marks it ready
    and merges it once the required `ci-ok` check passes. Do not wait for CI.
    `--skip-review "<reason>"` is the
    only way to skip the review, only when Claude Code cannot run; the reason
-   is commented on the pull request. Rebase onto
+   is commented on the pull request. A round takes at most two review
+   passes: when the second still blocks, the push proceeds, files those
+   findings as `review: …` issues and notes the cap in the PR body. Rebase onto
    `origin/main` when the push refuses a branch behind it, or to resolve a
    conflict, then push again: `push` rewrites only its own branch, with
    `--force-with-lease`; every rebase reruns all of CI.

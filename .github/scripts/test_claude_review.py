@@ -123,6 +123,17 @@ class Policy(unittest.TestCase):
                 self.assertIn(f"`{tool[5:-1]}`", policy)
         self.assertIn(f"{review.INPUTS}/", policy)
 
+    def test_a_later_push_is_a_diff_pass_over_the_change_since_the_last_review(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = Path(directory)
+            self.assertNotIn("diff pass", review.tool_policy(inputs))
+            (inputs / "round.patch").write_text("diff --git a/a b/a\n")
+            (inputs / "round.head").write_text("0123abcd\n")
+            policy = review.tool_policy(inputs)
+            self.assertIn("This is a diff pass", policy)
+            self.assertIn("reviewed the PR at 0123abcd", policy)
+            self.assertIn("round.patch", policy)
+
     def test_schema_requires_every_finding_field(self):
         finding = review.SCHEMA["properties"]["findings"]["items"]
         self.assertEqual(set(finding["required"]), set(finding["properties"]))

@@ -116,6 +116,49 @@ fn the_fast_gate_tests_only_what_changed() {
     );
 }
 
+/// A `[workspace.dependencies]` entry that differs, is added or is removed
+/// changes the resolved dependencies of every member that inherits it; the
+/// manifest's other tables change none.
+#[test]
+fn a_changed_workspace_dependency_names_its_key() {
+    let old = "[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\nlog = \"0.4\"\n[workspace.lints.rust]\nunsafe_code = \"deny\"\n";
+    let new = "[workspace]\nmembers = []\n[workspace.dependencies]\nserde = { version = \"1\", features = [\"derive\"] }\nlog = \"0.4\"\ntoml = \"1\"\n[workspace.lints.rust]\nunsafe_code = \"forbid\"\n";
+    assert_eq!(
+        changed_workspace_dependencies(old, new),
+        BTreeSet::from(["serde".to_owned(), "toml".to_owned()])
+    );
+    let lints_only = old.replace("deny", "forbid");
+    assert!(changed_workspace_dependencies(old, &lints_only).is_empty());
+}
+
+/// A change to a workspace's shared manifest or the toolchain reaches every
+/// package, which Clippy checks, but changes none: the fast tier tests
+/// nothing for it, and the pull request's CI tests them all.
+#[test]
+fn a_shared_configuration_change_tests_no_package_on_the_fast_tier() {
+    for file in ["Cargo.toml", "rust-toolchain.toml"] {
+        let selection = run(&[file]);
+        assert!(!selection.packages.is_empty(), "{file}");
+        assert!(selection.changed.is_empty(), "{file}");
+        let affected: BTreeSet<Key> = selection.packages.clone();
+        assert!(
+            tested(Tier::Fast, &selection, &affected).is_empty(),
+            "{file}"
+        );
+        assert_eq!(
+            tested(Tier::Full, &selection, &affected).len(),
+            affected.len()
+        );
+    }
+    // A changed source beside it is still tested.
+    let selection = run(&["Cargo.toml", "crates/hal/nested/src/lib.rs"]);
+    let affected: BTreeSet<Key> = selection.packages.clone();
+    assert_eq!(
+        tested(Tier::Fast, &selection, &affected),
+        BTreeSet::from([&key("Cargo.toml", "hal-nested")])
+    );
+}
+
 #[test]
 fn chip_code_is_in_chip_only_and_chip_platform_packages() {
     let affected = BTreeSet::from([

@@ -121,8 +121,16 @@ pub type Key = (String, String);
 pub struct Selection {
     /// Workspaces whose formatting a changed Rust file can break.
     pub format: BTreeSet<String>,
-    /// Packages a changed file belongs to or that declare it an input.
+    /// Packages a change reaches: those a changed file belongs to or that
+    /// declare it an input, every member of a workspace whose shared
+    /// configuration changed, and the members a lock change re-resolves.
     pub packages: BTreeSet<Key>,
+    /// Of those, the packages a changed file belongs to or that declare it
+    /// an input, and the members whose resolved dependencies a lock or
+    /// `[workspace.dependencies]` change changed: the fast tier tests only
+    /// these, and the full tier, which CI runs on the pull request, every
+    /// affected package.
+    pub changed: BTreeSet<Key>,
     /// Workspaces whose manifests or lock changed: their lock must still
     /// match their manifests.
     pub locks: BTreeSet<String>,
@@ -193,9 +201,9 @@ pub fn select(tree: &Tree, changed: &[String]) -> Selection {
             continue;
         }
         if let Some(package) = tree.owner(path) {
-            selection
-                .packages
-                .insert((package.workspace.clone(), package.name.clone()));
+            let key = (package.workspace.clone(), package.name.clone());
+            selection.changed.insert(key.clone());
+            selection.packages.insert(key);
             if extension == "rs" {
                 selection.format.insert(package.workspace.clone());
             }
@@ -212,9 +220,9 @@ pub fn select(tree: &Tree, changed: &[String]) -> Selection {
                 .iter()
                 .any(|pattern| oer_repo::classification::input_matches(pattern, path))
             {
-                selection
-                    .packages
-                    .insert((package.workspace.clone(), package.name.clone()));
+                let key = (package.workspace.clone(), package.name.clone());
+                selection.changed.insert(key.clone());
+                selection.packages.insert(key);
             }
         }
     }
@@ -323,7 +331,82 @@ pub fn select_locks(
                 .iter()
                 .any(|package| package.workspace == workspace && package.name == name)
             {
+                // Their resolved dependencies changed: tested like a changed
+                // package.
+                selection.changed.insert((workspace.clone(), name.clone()));
                 selection.packages.insert((workspace.clone(), name));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The keys of `[workspace.dependencies]` whose entry differs between the
+/// manifests `old` and `new`, added and removed ones included.
+pub fn changed_workspace_dependencies(old: &str, new: &str) -> BTreeSet<String> {
+    let table = |text: &str| -> BTreeMap<String, toml::Value> {
+        text.parse::<toml::Table>()
+            .ok()
+            .and_then(|manifest| {
+                manifest
+                    .get("workspace")?
+                    .get("dependencies")?
+                    .as_table()
+                    .cloned()
+            })
+            .map(|table| table.into_iter().collect())
+            .unwrap_or_default()
+    };
+    let (old, new) = (table(old), table(new));
+    old.keys()
+        .chain(new.keys())
+        .filter(|key| old.get(*key) != new.get(*key))
+        .cloned()
+        .collect()
+}
+
+/// Selects, as changed, the members of every workspace whose manifest is
+/// among `changed` that inherit (`workspace = true`) a `[workspace.dependencies]`
+/// entry that differs between `base` and `to` (the working tree when `None`):
+/// their resolved dependencies changed. The manifest's other tables, such as
+/// lints and profiles, reach every member, which Clippy checks and the pull
+/// request's CI tests.
+pub fn select_workspace_dependencies(
+    ctx: &Checkout,
+    tree: &Tree,
+    changed: &[String],
+    base: &str,
+    to: Option<&str>,
+    selection: &mut Selection,
+) -> Result<()> {
+    for manifest in changed
+        .iter()
+        .filter(|path| tree.workspaces.contains(*path))
+    {
+        let at = |revision: &str| {
+            oer_process::git::output(&ctx.root, ["show", &format!("{revision}:{manifest}")])
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .unwrap_or_default()
+        };
+        let old = at(base);
+        let new = match to {
+            Some(revision) => at(revision),
+            None => std::fs::read_to_string(ctx.root.join(manifest)).unwrap_or_default(),
+        };
+        let keys = changed_workspace_dependencies(&old, &new);
+        if keys.is_empty() {
+            continue;
+        }
+        for package in tree.model.members(manifest) {
+            if package
+                .dependencies
+                .iter()
+                .any(|dependency| dependency.inherited && keys.contains(&dependency.key))
+            {
+                selection
+                    .changed
+                    .insert((manifest.clone(), package.name.clone()));
             }
         }
     }
@@ -352,8 +435,13 @@ pub fn affected(tree: &Tree, selection: &Selection) -> BTreeSet<Key> {
     affected
 }
 
-/// The packages whose tests a change at `tier` runs: the selected ones,
-/// and from [`Tier::Full`] on every affected one.
+/// The packages whose tests a change at `tier` runs: the changed ones
+/// ([`Selection::changed`]: those a changed file belongs to or that declare
+/// it an input, and those whose resolved dependencies a lock or
+/// `[workspace.dependencies]` change changed), and from [`Tier::Full`] on
+/// every affected one. The toolchain, workspace lints or profiles alone test
+/// nothing on the fast tier: Clippy checks every member, and the pull
+/// request's CI tests them.
 pub fn tested<'a>(
     tier: Tier,
     selection: &Selection,
@@ -361,7 +449,7 @@ pub fn tested<'a>(
 ) -> BTreeSet<&'a Key> {
     affected
         .iter()
-        .filter(|key| tier >= Tier::Full || selection.packages.contains(*key))
+        .filter(|key| tier >= Tier::Full || selection.changed.contains(*key))
         .collect()
 }
 
@@ -404,6 +492,7 @@ impl Change {
         let tree = Tree::load(&ctx.root)?;
         let mut selection = select(&tree, &files);
         select_locks(ctx, &tree, &files, base, to, &mut selection)?;
+        select_workspace_dependencies(ctx, &tree, &files, base, to, &mut selection)?;
         let affected = affected(&tree, &selection);
         Ok(Self {
             files,

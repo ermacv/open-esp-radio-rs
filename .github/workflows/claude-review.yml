@@ -1,7 +1,8 @@
 name: Claude review
 
-# Reviews a ready same-repository PR into main once, when it opens or becomes
-# ready, in parallel with CI, and again on an "@claude review" PR comment: the
+# Reviews a ready same-repository PR into main in full when it opens or becomes
+# ready and on an "@claude review" PR comment, and each later push to it over
+# the diff since its last reviewed head, in parallel with CI: the
 # blocking review of every push is the local one (`cargo xtask review`), and
 # this one audits it within the API budget. Every event runs this file from
 # main, which the Anthropic federation rule requires. Through the Claude Agent
@@ -14,7 +15,7 @@ name: Claude review
 # the informational claude-runtime-review status. It never blocks a merge.
 on:
   pull_request_target:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
 
@@ -94,12 +95,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ needs.target.outputs.pr }}
+          ACTION: ${{ github.event.action }}
         run: |
           mkdir review-inputs
           git -C pr diff origin/main...HEAD >review-inputs/diff.patch
           git -C pr diff --stat origin/main...HEAD >review-inputs/diff.stat
           gh pr view "$PR" --json number,title,body,headRefOid,closingIssuesReferences,comments,reviews \
             >review-inputs/pr.json
+          # A later push is a diff pass: the change since this workflow's last
+          # posted review, replayed onto main after a rebase, so main's commits
+          # stay out. Without such a review, or when its head is gone or does
+          # not replay cleanly, the pass is full.
+          if [ "$ACTION" = synchronize ]; then
+            # Every page first, then the newest review of them all.
+            last=$(gh api "repos/$GH_REPO/pulls/$PR/reviews" --paginate |
+              jq -rs 'add | [.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## Claude review")))] | last | .commit_id // empty')
+            if [ -n "$last" ] && git -C pr cat-file -e "$last^{commit}" 2>/dev/null; then
+              if git -C pr merge-base --is-ancestor "$last" HEAD; then
+                from=$last
+              else
+                # Its first output line names the replayed tree; a conflict
+                # exits nonzero and leaves the pass full.
+                # Onto HEAD's own merge base, as diff.patch is taken from.
+                base=$(git -C pr merge-base HEAD origin/main)
+                if tree=$(git -C pr merge-tree --write-tree --merge-base "$(git -C pr merge-base "$last" "$base")" "$base" "$last"); then
+                  from=${tree%%$'\n'*}
+                else
+                  from=
+                fi
+              fi
+              if [ -n "$from" ]; then
+                git -C pr diff "$from" HEAD >review-inputs/round.patch
+                echo "$last" >review-inputs/round.head
+              fi
+            fi
+          fi
           jq -r --arg issues "https://github.com/$GH_REPO/issues/" \
             '.closingIssuesReferences[] | select(.url | startswith($issues)) | .number' review-inputs/pr.json |
             while read -r issue; do
@@ -212,7 +242,7 @@ jobs:
               '{commit_id: $sha, event: "COMMENT", body: $body, comments: $comments}' |
               gh api "repos/$GH_REPO/pulls/$PR/reviews" --input - >/dev/null
           }
-          # No finding blocks: each is filed as an issue once, naming the
+          # No finding fails a check: each is filed as an issue once, naming the
           # branch, first, since the issues are the record that reaches a
           # session; the PR review and comment only show them on the PR.
           if ! recorded=$(PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/review_findings.py); then
@@ -223,9 +253,9 @@ jobs:
           review "$(body false)" "$comments" || review "$(body true)" '[]' ||
             echo "::warning::The PR review was not posted; its findings are filed as issues"
           if [ -n "$recorded" ]; then
-            jq -n --arg body "$(printf 'Findings, filed as issues; the session on this branch fixes them next:\n\n%s' "$recorded")" '{body: $body}' |
+            jq -n --arg body "$(printf 'Findings, filed as issues; an open 🔴 or 🟡 one blocks readiness, 🔵 rides along. The session on this branch fixes them next:\n\n%s' "$recorded")" '{body: $body}' |
               gh api "repos/$GH_REPO/issues/$PR/comments" --input - >/dev/null ||
               echo "::warning::The PR comment naming the issues was not posted"
           fi
           count=$(jq '.findings | length' <<<"$RESULT")
-          status success "$count finding(s) filed as issues; not blocking"
+          status success "$count finding(s) filed as issues; open 🔴/🟡 block readiness"

@@ -12,13 +12,15 @@
 //!
 //! A verdict is kept per diff: its identity is the verbatim patch id of the
 //! diff between the merge base with `origin/main` and `HEAD`, so a rebase
-//! that changes nothing in the diff, or a reworded commit, keeps it. A
-//! re-review of the branch hands Claude the findings of the branch's previous
-//! verdict to check. 🔴 important and 🟡 nit findings block the push, a
+//! that changes nothing in the diff, or a reworded commit, keeps it. Which
+//! review a push gets, the full one or a fix round's, is [`round`]'s
+//! decision; each is handed the findings of the branch's previous verdict,
+//! and a round takes at most [`PASSES`] passes. 🔴 important and 🟡 nit
+//! findings block the push, a
 //! nit being any real defect, text that misstates behavior included; 🔵
 //! wording findings, about the phrasing, naming or clarity of correct text,
 //! do not: `cargo xtask push` files them as `review: …` issues of the branch
-//! once its pull request exists ([`file_wording`]), as the CI review files
+//! once its pull request exists ([`file_findings`]), as the CI review files
 //! its findings. 🟣 pre-existing ones are only printed. This is the only
 //! blocking review: the one in CI reviews a pull request once and files its
 //! findings as issues.
@@ -34,6 +36,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{Result, push};
+
+pub mod round;
+
+use round::{Mode, Plan};
+
+/// The file in the review's checkout that holds a fix round's diff.
+const ROUND_DIFF: &str = "review-round.diff";
 
 /// The model unless `OER_REVIEW_MODEL` names another; the CI review's default.
 const MODEL: &str = "claude-opus-5-5";
@@ -73,7 +82,9 @@ issues, if any, with `gh`. Bash runs only `git diff …`, `git log …`,
 `gh pr diff …` and `gh issue view …`, without
 `cd`, pipes or redirections; any other call is denied and fails the review.
 Rerun a pull request's inventory search with the Grep and Glob tools.
-CI has not run; the push gate's fast checks (tidy,
+In a fix round the prompt names `review-round.diff` at the root: the diff
+since the previous pushed head, which you read with Read; it is not part
+of the branch. CI has not run; the push gate's fast checks (tidy,
 formatting, Clippy and tests of the changed packages) passed. The branch may
 have no pull request yet; then no earlier review exists on GitHub, and the
 prompt lists the findings of the previous local review, if any. The prompt
@@ -89,10 +100,12 @@ pub const SEVERITY: &str = "important: a reachable failure or a violated contrac
      misstates behavior included (documentation, comments, messages, names that say \
      something false). wording: only the phrasing, naming or clarity of text that is \
      correct; text that misstates behavior is never wording. pre-existing: a defect \
-     outside the change.";
+     outside the change. An important or nit finding blocks the pull request's \
+     readiness; a wording one rides along or is filed.";
 
 /// The script that files review findings as issues, for the CI review and
-/// for the wording findings of the local one.
+/// for the local one's wording findings and, past the pass cap, its blocking
+/// ones.
 const FILE_FINDINGS: &str = ".github/scripts/review_findings.py";
 
 /// One finding, as the CI review's schema reports it.
@@ -144,6 +157,30 @@ pub struct Verdict {
     pub identity: String,
     pub report: Report,
     pub cost_usd: f64,
+    /// The review it was ([`round`]) and why.
+    #[serde(default = "full")]
+    pub mode: Mode,
+    #[serde(default)]
+    pub reason: String,
+    /// How long the review ran, as `claude -p` reports it.
+    #[serde(default)]
+    pub seconds: f64,
+    /// The branch's head on `origin` when it ran, `None` before its first
+    /// push: the round its pass counts toward ([`PASSES`]).
+    #[serde(default)]
+    pub pushed: Option<String>,
+    /// A push went through with it past the pass cap: its findings are
+    /// filed, so a retried or rebase-only push that reuses it proceeds too.
+    #[serde(default)]
+    pub capped: bool,
+}
+
+/// Local review passes a round may take: when the last one still blocks, the
+/// push proceeds without it and files its findings.
+pub const PASSES: usize = 2;
+
+fn full() -> Mode {
+    Mode::Full
 }
 
 impl Verdict {
@@ -165,6 +202,21 @@ impl Verdict {
             summary: self.report.summary.clone(),
             findings,
         })
+    }
+
+    /// The report that files its blocking findings, for a push the pass cap
+    /// let through ([`PASSES`]).
+    pub fn blocking_report(&self) -> Report {
+        Report {
+            summary: self.report.summary.clone(),
+            findings: self
+                .report
+                .findings
+                .iter()
+                .filter(|finding| finding.blocking())
+                .cloned()
+                .collect(),
+        }
     }
 }
 
@@ -200,31 +252,48 @@ pub fn schema(labels: &str) -> Result<Value> {
     }))
 }
 
-/// The prompt for `branch` at `head` against `base`, with the findings the
-/// branch's previous verdict reported.
-pub fn prompt(branch: &str, head: &str, base: &str, previous: Option<&Verdict>) -> String {
-    let mut prompt = format!(
-        "Review branch {branch} at head {head}, checked out at the repository root, \
-         against its merge base {base} with origin/main (`git diff {base}...HEAD`), \
-         following the review instructions."
-    );
-    match previous {
-        Some(verdict) if !verdict.report.findings.is_empty() => {
+/// The prompt for `branch` at `head` against `base` under `plan`, with the
+/// findings the branch's previous verdict reported.
+pub fn prompt(
+    branch: &str,
+    head: &str,
+    base: &str,
+    plan: &Plan,
+    previous: Option<&Verdict>,
+) -> String {
+    let mut prompt = match plan.mode {
+        Mode::Full => format!(
+            "Review branch {branch} at head {head}, checked out at the repository root, \
+             against its merge base {base} with origin/main (`git diff {base}...HEAD`), \
+             following the review instructions. This is a full review: {}.",
+            plan.reason
+        ),
+        Mode::Round => format!(
+            "Review the fix round of branch {branch} at head {head}, checked out at the \
+             repository root, following the review instructions: {}. Review the round's \
+             diff, in {ROUND_DIFF} (from the previous pushed head {} to HEAD), check whether \
+             each finding of the previous review below is fixed, and check end to end every owner decision \
+             the pull request implements, which its body links (`gh pr view {branch}`). The \
+             diff against the merge base {base} (`git diff {base}...HEAD`) is the context the \
+             round lands in.",
+            plan.reason,
+            plan.pushed.as_deref().unwrap_or_default()
+        ),
+    };
+    if let Some(verdict) = previous.filter(|verdict| !verdict.report.findings.is_empty()) {
+        prompt.push_str(&format!(
+            "\n\nThe previous local review of this branch, at head {}, reported the \
+             findings below. Report every one still open again, and review the whole round, \
+             not only the fixes: a fix often leaves the same defect elsewhere or brings a new \
+             one.\n",
+            verdict.head
+        ));
+        for finding in &verdict.report.findings {
             prompt.push_str(&format!(
-                "\n\nThe previous local review of this branch, at head {}, reported the \
-                 findings below. Check whether each is fixed, report every one still open \
-                 again, and review the whole diff, not only the fixes: a fix often leaves \
-                 the same defect elsewhere or brings a new one.\n",
-                verdict.head
+                "\n- {} {} ({}:{}): {}",
+                finding.severity, finding.title, finding.path, finding.line, finding.body
             ));
-            for finding in &verdict.report.findings {
-                prompt.push_str(&format!(
-                    "\n- {} {} ({}:{}): {}",
-                    finding.severity, finding.title, finding.path, finding.line, finding.body
-                ));
-            }
         }
-        _ => {}
     }
     prompt
 }
@@ -275,19 +344,19 @@ pub fn moved_line(diff: &str, line: u64) -> u64 {
     moved
 }
 
-/// The environment `review_findings.py` files the wording findings of
-/// `verdict` with, as issues of pull request `pr` on `branch` linking the
-/// pushed commit `head`, or none when it has none. A verdict reused after a
-/// rebase reviewed another commit, `verdict.head`, which may never have been
-/// pushed: `line` gives each finding's line at `head`.
-pub fn wording_filing(
-    verdict: &Verdict,
+/// The environment `review_findings.py` files the findings of `report`
+/// with, as issues of pull request `pr` on `branch` linking the pushed
+/// commit `head`, or none when it has none. A verdict reused after a rebase
+/// reviewed another commit, which may never have been pushed: `line` gives
+/// each finding's line at `head`.
+pub fn filing(
+    report: Option<Report>,
     pr: &str,
     branch: &str,
     head: &str,
     mut line: impl FnMut(&Finding) -> Result<u64>,
 ) -> Result<Option<Vec<(&'static str, String)>>> {
-    let Some(mut report) = verdict.wording() else {
+    let Some(mut report) = report.filter(|report| !report.findings.is_empty()) else {
         return Ok(None);
     };
     for finding in &mut report.findings {
@@ -301,13 +370,14 @@ pub fn wording_filing(
     ]))
 }
 
-/// File the wording findings of `verdict` ([`wording_filing`]) through
+/// File the findings of `report`, from `verdict`, ([`filing`]) through
 /// `review_findings.py`, linking the pushed commit `head`, which validates
 /// their labels and skips a finding already filed; returns its line per
 /// finding.
-pub fn file_wording(
+pub fn file_findings(
     ctx: &Checkout,
     verdict: &Verdict,
+    report: Option<Report>,
     pr: &str,
     branch: &str,
     head: &str,
@@ -330,7 +400,7 @@ pub fn file_wording(
         )?;
         Ok(moved_line(&String::from_utf8_lossy(&diff), finding.line))
     };
-    let Some(filing) = wording_filing(verdict, pr, branch, head, line)? else {
+    let Some(filing) = filing(report, pr, branch, head, line)? else {
         return Ok(Vec::new());
     };
     let token = gh(ctx, &["auth", "token"])?;
@@ -413,24 +483,9 @@ fn load(path: &Path) -> Option<Verdict> {
     serde_json::from_str(&fs::read_to_string(path).ok()?).ok()
 }
 
-/// The newest stored verdict of `branch`.
-fn previous(ctx: &Checkout, branch: &str) -> Option<Verdict> {
-    let mut verdicts: Vec<(std::time::SystemTime, Verdict)> = fs::read_dir(directory(ctx))
-        .ok()?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let modified = entry.metadata().ok()?.modified().ok()?;
-            Some((modified, load(&entry.path())?))
-        })
-        .filter(|(_, verdict)| verdict.branch == branch)
-        .collect();
-    verdicts.sort_by_key(|(modified, _)| *modified);
-    verdicts.pop().map(|(_, verdict)| verdict)
-}
-
 /// Run `claude -p` in `tree`, the reviewed commit's checkout, and return its
 /// report and cost.
-fn claude(ctx: &Checkout, tree: &Path, prompt: &str) -> Result<(Report, f64)> {
+fn claude(ctx: &Checkout, tree: &Path, prompt: &str) -> Result<(Report, f64, f64)> {
     // The instructions and label catalog of `origin/main`, as CI reads them
     // from trusted main: the reviewed branch cannot relax its own review.
     let main = |name: &str| git::text(&ctx.root, ["show", &format!("origin/main:{name}")]);
@@ -473,7 +528,7 @@ fn claude(ctx: &Checkout, tree: &Path, prompt: &str) -> Result<(Report, f64)> {
 /// The report and cost of a `claude -p` JSON result: none for an error, a
 /// missing report or any tool call the `dontAsk` policy denied, since a
 /// report written past a denial may rest on evidence the review never saw.
-fn report(result: &Value) -> Result<(Report, f64)> {
+fn report(result: &Value) -> Result<(Report, f64, f64)> {
     if result["is_error"].as_bool() != Some(false) || result["structured_output"].is_null() {
         return Err(format!(
             "review: claude produced no report ({}): {}",
@@ -502,11 +557,106 @@ fn report(result: &Value) -> Result<(Report, f64)> {
         return Err(format!("review: tool calls were denied: {}", denied.join("; ")).into());
     }
     let report = serde_json::from_value(result["structured_output"].clone())?;
-    Ok((report, result["total_cost_usd"].as_f64().unwrap_or(0.0)))
+    Ok((
+        report,
+        result["total_cost_usd"].as_f64().unwrap_or(0.0),
+        result["duration_ms"].as_f64().unwrap_or(0.0) / 1000.0,
+    ))
+}
+
+/// The head of `branch` on `origin`, `None` before its first push.
+pub fn pushed_head(ctx: &Checkout, branch: &str) -> Result<Option<String>> {
+    Ok(git::text(
+        &ctx.root,
+        ["ls-remote", "origin", &format!("refs/heads/{branch}")],
+    )?
+    .split_whitespace()
+    .next()
+    .map(str::to_owned))
+}
+
+/// The stored verdicts of `branch`, oldest first.
+fn verdicts(ctx: &Checkout, branch: &str) -> Vec<Verdict> {
+    let Ok(entries) = fs::read_dir(directory(ctx)) else {
+        return Vec::new();
+    };
+    let mut verdicts: Vec<(std::time::SystemTime, Verdict)> = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            Some((modified, load(&entry.path())?))
+        })
+        .filter(|(_, verdict)| verdict.branch == branch)
+        .collect();
+    verdicts.sort_by_key(|(modified, _)| *modified);
+    verdicts.into_iter().map(|(_, verdict)| verdict).collect()
+}
+
+/// The local review passes of a branch's round: the pushed head it runs
+/// under and how many reviews ran there. After a push, a rebase keeps the
+/// pushed head and so the round. Before the first push the round is also
+/// bound to its merge base: a branch name reused by a later pull request
+/// starts on another base, and so a new round.
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Round {
+    pushed: Option<String>,
+    /// The merge base of a round before the first push: a later pull
+    /// request under the same branch name starts on another.
+    #[serde(default)]
+    base: Option<String>,
+    passes: usize,
+}
+
+fn round_file(ctx: &Checkout, branch: &str) -> PathBuf {
+    directory(ctx).join(format!("round-{}.json", branch.replace('/', "--")))
+}
+
+/// The round of `branch` under the pushed head `pushed`: the stored one
+/// when it runs under that head (and, before the first push, on the merge
+/// base `base`), else a new one. A rebase before the first push starts a
+/// new round, which only allows a pass more.
+fn round(ctx: &Checkout, branch: &str, pushed: Option<&str>, base: &str) -> Round {
+    let base = pushed.is_none().then(|| base.to_owned());
+    fs::read_to_string(round_file(ctx, branch))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Round>(&text).ok())
+        .filter(|round| round.pushed.as_deref() == pushed && round.base == base)
+        .unwrap_or(Round {
+            pushed: pushed.map(str::to_owned),
+            base,
+            passes: 0,
+        })
+}
+
+/// Count one more review pass of `branch`'s round under `pushed`.
+fn count_pass(ctx: &Checkout, branch: &str, pushed: Option<&str>, base: &str) -> Result<()> {
+    let mut round = round(ctx, branch, pushed, base);
+    round.passes += 1;
+    fs::create_dir_all(directory(ctx))?;
+    oer_durable::atomic_write(
+        &round_file(ctx, branch),
+        serde_json::to_string(&round)?.as_bytes(),
+    )?;
+    Ok(())
+}
+
+/// Whether the round of `branch` since its pushed head `pushed` used its
+/// last local review pass ([`PASSES`]).
+pub fn capped(ctx: &Checkout, branch: &str, pushed: Option<&str>, base: &str) -> bool {
+    round(ctx, branch, pushed, base).passes >= PASSES
+}
+
+/// Mark the stored verdict at `path` as one a push went through with past
+/// the pass cap.
+pub fn mark_capped(path: &Path, verdict: &mut Verdict) -> Result<()> {
+    verdict.capped = true;
+    oer_durable::atomic_write(path, serde_json::to_string_pretty(verdict)?.as_bytes())?;
+    Ok(())
 }
 
 /// The verdict on `branch`'s diff from `base` to the commit `head`: the
-/// stored one when the diff was reviewed already, otherwise a new review.
+/// stored one when the diff was reviewed already, otherwise a new review in
+/// the mode [`round::plan`] decides, handed the previous verdict's findings.
 pub fn verdict(ctx: &Checkout, branch: &str, base: &str, head: &str) -> Result<(Verdict, PathBuf)> {
     let identity = identity(&ctx.root, base, head)?;
     let path = directory(ctx).join(format!("{identity}.json"));
@@ -517,10 +667,36 @@ pub fn verdict(ctx: &Checkout, branch: &str, base: &str, head: &str) -> Result<(
         );
         return Ok((verdict, path));
     }
-    let previous = previous(ctx, branch);
+    let pushed = pushed_head(ctx, branch)?;
+    if pushed.is_some() {
+        // The pushed head of another checkout of the branch; without it the
+        // review is full.
+        let _ = git::output(
+            &ctx.root,
+            [
+                "fetch",
+                "--quiet",
+                "origin",
+                &format!("refs/heads/{branch}"),
+            ],
+        );
+    }
+    let previous = verdicts(ctx, branch).pop();
+    let plan = round::plan(
+        &ctx.root,
+        base,
+        head,
+        pushed.as_deref(),
+        &crate::checks::shared::owners(ctx)?,
+    )?;
     println!(
-        "review: reviewing {branch} at {} with a separate Claude Code run{}",
+        "review: reviewing {branch} at {} with a separate Claude Code run: {} review, {}{}",
         &head[..12],
+        match plan.mode {
+            Mode::Full => "full",
+            Mode::Round => "fix-round",
+        },
+        plan.reason,
         if previous.is_some() {
             "; it checks the previous local findings"
         } else {
@@ -534,13 +710,16 @@ pub fn verdict(ctx: &Checkout, branch: &str, base: &str, head: &str) -> Result<(
         &directory(ctx).join(format!("tree-{identity}")),
         head,
     )?;
+    if let Some(diff) = &plan.diff {
+        fs::write(tree.path().join(ROUND_DIFF), diff)?;
+    }
     let reviewed = claude(
         ctx,
         tree.path(),
-        &prompt(branch, head, base, previous.as_ref()),
+        &prompt(branch, head, base, &plan, previous.as_ref()),
     );
     tree.remove()?;
-    let (report, cost_usd) = reviewed?;
+    let (report, cost_usd, seconds) = reviewed?;
     let verdict = Verdict {
         branch: branch.to_owned(),
         head: head.to_owned(),
@@ -548,9 +727,22 @@ pub fn verdict(ctx: &Checkout, branch: &str, base: &str, head: &str) -> Result<(
         identity,
         report,
         cost_usd,
+        mode: plan.mode,
+        reason: plan.reason,
+        seconds,
+        pushed,
+        capped: false,
     };
+    println!(
+        "review: {} review took {seconds:.0} s, ${cost_usd:.2}",
+        match verdict.mode {
+            Mode::Full => "the full",
+            Mode::Round => "the fix-round",
+        }
+    );
     fs::create_dir_all(directory(ctx))?;
     fs::write(&path, serde_json::to_string_pretty(&verdict)?)?;
+    count_pass(ctx, branch, verdict.pushed.as_deref(), base)?;
     Ok((verdict, path))
 }
 
@@ -620,6 +812,11 @@ mod tests {
                 findings,
             },
             cost_usd: 0.0,
+            mode: Mode::Full,
+            reason: String::new(),
+            seconds: 0.0,
+            pushed: None,
+            capped: false,
         }
     }
 
@@ -654,9 +851,11 @@ mod tests {
             "review: tool calls were denied: Bash: cd pr && git diff"
         );
         result["permission_denials"] = serde_json::json!([]);
-        let (report, cost) = report(&result).unwrap();
+        result["duration_ms"] = serde_json::json!(96_000);
+        let (report, cost, seconds) = report(&result).unwrap();
         assert_eq!(report.summary, "Not verified.");
         assert_eq!(cost, 0.5);
+        assert_eq!(seconds, 96.0);
     }
 
     #[test]
@@ -692,8 +891,8 @@ mod tests {
         // A verdict reused after a rebase reviewed another commit, which may
         // never have been pushed: the link names the pushed one, at the line
         // the finding moved to.
-        let filing = wording_filing(
-            &verdict(vec![finding("wording")]),
+        let environment = filing(
+            verdict(vec![finding("wording")]).wording(),
             "715",
             "fix/b",
             "pushed",
@@ -702,7 +901,7 @@ mod tests {
         .unwrap()
         .unwrap();
         let value = |name: &str| {
-            filing
+            environment
                 .iter()
                 .find(|(key, _)| *key == name)
                 .map(|(_, value)| value.clone())
@@ -715,8 +914,8 @@ mod tests {
         assert_eq!(filed.findings.len(), 1);
         assert_eq!(filed.findings[0].line, 10);
         assert_eq!(
-            wording_filing(
-                &verdict(vec![finding("nit")]),
+            filing(
+                verdict(vec![finding("nit")]).wording(),
                 "715",
                 "fix/b",
                 "pushed",
@@ -814,17 +1013,63 @@ mod tests {
         assert_eq!(item["priority"]["enum"], json!(["priority:p1"]));
     }
 
+    fn plan(mode: Mode) -> Plan {
+        Plan {
+            mode,
+            reason: String::from("the reason"),
+            pushed: (mode == Mode::Round).then(|| String::from("pushed")),
+            diff: None,
+        }
+    }
+
     #[test]
-    fn a_re_review_checks_the_previous_findings() {
-        let first = prompt("fix/a", "h", "b", None);
-        assert!(first.contains("git diff b...HEAD") && !first.contains("previous"));
+    fn a_first_review_is_full_and_a_fix_round_reviews_its_diff_and_the_previous_findings() {
+        let first = prompt("fix/a", "h", "b", &plan(Mode::Full), None);
+        assert!(first.contains("git diff b...HEAD") && first.contains("full review: the reason"));
+        assert!(!first.contains("previous"), "{first}");
         let previous = verdict(vec![finding("nit")]);
-        let again = prompt("fix/a", "h", "b", Some(&previous));
+        let round = prompt("fix/a", "h", "b", &plan(Mode::Round), Some(&previous));
         assert!(
-            again.contains("nit Lost error (crates/a/src/lib.rs:7)"),
-            "{again}"
+            round.contains(ROUND_DIFF) && round.contains("previous pushed head pushed"),
+            "{round}"
         );
-        assert!(again.contains("same defect elsewhere"), "{again}");
+        assert!(round.contains("every owner decision"), "{round}");
+        assert!(
+            round.contains("nit Lost error (crates/a/src/lib.rs:7)"),
+            "{round}"
+        );
+        // A full review gets the previous findings too.
+        assert!(
+            prompt("fix/a", "h", "b", &plan(Mode::Full), Some(&previous))
+                .contains("nit Lost error")
+        );
+    }
+
+    /// The second pass under one pushed head caps its round; a new pushed
+    /// head, or a reused branch name's, starts a new round.
+    #[test]
+    fn the_second_pass_under_one_pushed_head_caps_its_round() {
+        let directory = tempfile::tempdir().unwrap();
+        let ctx = Checkout {
+            root: directory.path().to_owned(),
+        };
+        count_pass(&ctx, "fix/a", None, "b").unwrap();
+        assert!(!capped(&ctx, "fix/a", None, "b"));
+        count_pass(&ctx, "fix/a", None, "b").unwrap();
+        assert!(capped(&ctx, "fix/a", None, "b"));
+        // A later pull request under the same name starts on another base.
+        assert!(!capped(&ctx, "fix/a", None, "c"));
+        // A push starts the next round, whatever the base.
+        assert!(!capped(&ctx, "fix/a", Some("p1"), "b"));
+        count_pass(&ctx, "fix/a", Some("p1"), "b").unwrap();
+        count_pass(&ctx, "fix/a", Some("p1"), "c").unwrap();
+        assert!(capped(&ctx, "fix/a", Some("p1"), "d"));
+        assert!(!capped(&ctx, "fix/b", Some("p1"), "b"));
+        // A verdict a push went through with past the cap says so.
+        let path = directory.path().join("v.json");
+        let mut stored = verdict(vec![finding("nit")]);
+        mark_capped(&path, &mut stored).unwrap();
+        assert!(load(&path).unwrap().capped);
     }
 
     #[test]

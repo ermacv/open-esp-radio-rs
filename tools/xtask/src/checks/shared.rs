@@ -138,6 +138,53 @@ fn package_graph(model: &oer_repo::Model) -> Result<BTreeMap<String, Node>> {
     Ok(graph)
 }
 
+/// The shared crates by the files they own: each package directory of the
+/// repository, longest first, with whether its package is shared, so a file
+/// belongs to the innermost package that holds it.
+#[derive(Clone, Debug, Default)]
+pub struct Owners(Vec<(String, Option<String>)>);
+
+impl Owners {
+    /// From the packages' directories and the shared crates' names.
+    pub fn new(
+        packages: impl IntoIterator<Item = (String, String)>,
+        shared: &BTreeSet<String>,
+    ) -> Self {
+        let mut directories: Vec<(String, Option<String>)> = packages
+            .into_iter()
+            .map(|(directory, name)| {
+                let shared = shared.contains(&name).then_some(name);
+                (directory.trim_end_matches('/').to_owned(), shared)
+            })
+            .collect();
+        directories.sort_by_key(|(directory, _)| std::cmp::Reverse(directory.len()));
+        Self(directories)
+    }
+
+    /// The shared crate that owns the repository file `path`, if any.
+    pub fn shared(&self, path: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(directory, _)| {
+                directory.is_empty() || path.starts_with(&format!("{directory}/"))
+            })
+            .and_then(|(_, shared)| shared.as_deref())
+    }
+}
+
+/// The shared crates of the repository at `ctx` by the files they own.
+pub fn owners(ctx: &Checkout) -> Result<Owners> {
+    let model = crate::checks::common::model(ctx)?;
+    let derived = shared(&package_graph(&model)?)?;
+    Ok(Owners::new(
+        model
+            .packages()
+            .iter()
+            .map(|package| (package.directory.clone(), package.name.clone())),
+        &derived,
+    ))
+}
+
 /// The architecture document and the markers around its table of shared
 /// crates.
 const DOCUMENT: &str = "docs/architecture.md";
@@ -306,6 +353,35 @@ mod tests {
                 .map(String::from)
                 .into()
         );
+    }
+
+    /// A file belongs to the innermost package that holds it.
+    #[test]
+    fn a_file_belongs_to_its_innermost_package() {
+        let owners = Owners::new(
+            [
+                (
+                    "crates/hardware/esp32s31/pac".to_owned(),
+                    "oer-esp32s31-pac".to_owned(),
+                ),
+                (
+                    "crates/hardware/esp32s31/pac/inner".to_owned(),
+                    "oer-inner".to_owned(),
+                ),
+                ("crates/time".to_owned(), "oer-time".to_owned()),
+            ],
+            &["oer-esp32s31-pac", "oer-time"].map(String::from).into(),
+        );
+        assert_eq!(
+            owners.shared("crates/hardware/esp32s31/pac/src/lib.rs"),
+            Some("oer-esp32s31-pac")
+        );
+        assert_eq!(
+            owners.shared("crates/hardware/esp32s31/pac/inner/src/lib.rs"),
+            None
+        );
+        assert_eq!(owners.shared("crates/time-embassy/src/lib.rs"), None);
+        assert_eq!(owners.shared("docs/architecture.md"), None);
     }
 
     #[test]

@@ -2,8 +2,11 @@
 
 The publish job of the review workflow runs this from trusted main with the
 review's structured result in RESULT; `cargo xtask push` runs it with the
-wording findings of the local review, which do not block the push. The CI
-review never blocks a merge, so the issues are the record of what it found:
+wording findings of the local review, which do not block the push, and, when
+a round's second local pass still blocks, its blocking findings too. The CI
+review sets no required status, so the issues are the record of what it
+found; an open 🔴 or 🟡 finding blocks the pull request's readiness, while a
+🔵 one rides along or stays filed (docs/issues.md, review and readiness):
 each finding, 🔴 important, 🟡 nit, 🔵 wording or 🟣 pre-existing, becomes one
 issue (`kind:docs` for wording, `kind:bug` otherwise) with the area and
 priority the reviewer chose and the reviewed branch, which `cargo xtask ci-status` lists to
@@ -55,7 +58,8 @@ SEVERITY = ("important: a reachable failure or a violated contract, with its tri
             "misstates behavior included (documentation, comments, messages, names that say "
             "something false). wording: only the phrasing, naming or clarity of text that is "
             "correct; text that misstates behavior is never wording. pre-existing: a defect "
-            "outside the change.")
+            "outside the change. An important or nit finding blocks the pull request's "
+            "readiness; a wording one rides along or is filed.")
 
 MARKS = {"important": "🔴", "nit": "🟡", "wording": "🔵", "pre-existing": "🟣"}
 
@@ -73,12 +77,13 @@ def body(finding, pr, head, repository, branch, found=None):
     elif finding["severity"] == "wording":
         origin = (f"{MARKS['wording']} wording finding of the Claude review of #{pr} at {place}: "
                   "the phrasing, naming or clarity of correct text that pull request "
-                  "introduces or touches. It does not block; the session on its branch "
-                  "improves it next.")
+                  "introduces or touches. It does not block readiness: it rides along or "
+                  "the session on its branch improves it next.")
     else:
         origin = (f"{MARKS[finding['severity']]} {finding['severity']} finding of the Claude review "
                   f"of #{pr} at {place}: a defect that pull request introduces or touches. "
-                  "The review does not block merging; the session on its branch fixes it next.")
+                  "While it is open it blocks the pull request's readiness "
+                  "([review and readiness](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828)); the session on its branch fixes it next.")
     return "\n".join([origin, "", finding["body"], "", marker(finding, found),
                       branch_marker(branch)])
 

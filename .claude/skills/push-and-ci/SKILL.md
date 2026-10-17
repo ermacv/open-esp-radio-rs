@@ -23,7 +23,7 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    packages and their reverse dependents, the tests of the changed packages
    and, for chip code, image type-checks. `--full` adds the full-tier checks
    CI runs for the change: tests of the dependents, `check docs`, API docs,
-   architecture, examples, PHY, network, register, qualification and
+   architecture, PHY, network, register, qualification and
    provenance checks. Use it only when that set is the point.
    `cargo xtask check tier --list` prints every check with its tier and CI
    job.

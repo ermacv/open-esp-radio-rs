@@ -98,8 +98,8 @@ every check), and the check registry
 (`cargo xtask check tier --list`, the [tooling reference](tools/xtask/README.md#the-check-registry))
 decides what it runs — formatting of every workspace, Clippy and the tests
 of the root workspace, the policy and architecture checks, type checks of the
-final HIL images and the examples with the image compiler flags, both final
-images built with their audits, the ESP32-C5 workspaces, every register
+final HIL images with the image compiler flags, both final images built with
+their audits, the ESP32-C5 workspaces, every register
 publication and qualification program, and the provenance of every cited
 vendor function; a newer push to the same branch cancels the run it
 supersedes, except on `main`. The [CI input planner](tools/xtask/README.md#ci-input-reuse)

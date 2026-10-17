@@ -132,7 +132,7 @@ limitations and work candidates to their owners; it is not an aggregate
 readiness verdict.
 
 Use the toolchain in `rust-toolchain.toml`. Fetch public dependencies before
-offline checks. Examples, platform, HIL, Blobray (`tools/blobray`) and
+offline checks. Platform, HIL, Blobray (`tools/blobray`) and
 verification probes have separate workspaces and lockfiles; a root workspace
 build does not cover them all.
 The [repository guidelines](CLAUDE.md) and

@@ -39,7 +39,7 @@ You do not need to read every component reference to make a first change.
 
 ## Component guides
 
-- [Applications and examples](../README.md#start-here).
+- [Start here](../README.md#start-here).
 - [HIL](../hil/README.md) and [ESP32-S31 target](../hil/targets/esp32s31/README.md).
 - [Qualification programs](../qualification/README.md).
 - [Register publication](../registers/esp32s31/publication/README.md).

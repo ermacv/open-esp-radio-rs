@@ -146,7 +146,7 @@ members = [
     "tools/registers/review",
 ]
 # Independent verification and firmware workspaces own their subtrees.
-exclude = ["examples", "platform", "hil/targets", "verification", "tools/tidy"]
+exclude = ["platform", "hil/targets", "verification", "tools/tidy"]
 resolver = "3"
 
 [workspace.package]

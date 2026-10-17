@@ -35,6 +35,9 @@ and [named checks](../../../qualification/README.md#named-checks).
    promote a parent capability.
 7. **Docs.** A chip `FEATURES.md` links to the catalog; never copy rows or
    write a dated `PASS` table.
+8. **Sweeping changes.** A change that deletes, renames or reclassifies
+   entries everywhere puts the search command and its output in the PR body
+   ([inventories with proof](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828)); the reviewer reruns it.
 
 ## Commands (all `run_in_background: true`)
 

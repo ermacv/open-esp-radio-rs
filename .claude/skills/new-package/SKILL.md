@@ -43,6 +43,8 @@ Read first (about 3k tokens): [package names](../../../docs/architecture.md#pack
 7. **Workspace and lock.** Add the member, then `cargo xtask lock`.
 8. **Moves.** Update every path, `include_str!`, catalog `packages` entry,
    record path and link in the same change; no re-export shim at the old path.
+   The PR body carries the search command that found every place and its
+   output ([inventories with proof](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828)); the reviewer reruns it.
 
 ## Commands (all `run_in_background: true`)
 

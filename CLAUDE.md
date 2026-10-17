@@ -13,7 +13,7 @@ Commands written with `<chip>` take either chip where that input exists.
 
 ## Rules
 
-- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. Any other choice the agent makes itself and records in its PR as its own decision, never as an owner decision. An explicit user decision stays authoritative: do not ask it again.
+- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, add a fallback, leave required work unfinished, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. Any other choice the agent makes itself and records in its PR as its own decision, never as an owner decision. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
 - **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo hil run`, `cargo hil wait`) run asynchronously (`run_in_background: true`); act on completion and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. Claude Code's pre-tool hook enforces this.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
@@ -21,7 +21,7 @@ Commands written with `<chip>` take either chip where that input exists.
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
 - **Generated files.** Never read the raw PACs, `pac/src/generated.rs`, published SVD/bindings or `verification/*/facts` TOML: grep them with an explicit path (tree-wide searches skip them through `.ignore`). Regenerate, never hand-edit; the pre-tool hook refuses such reads and edits.
 - **Own GitHub account only.** Never act on GitHub outside the owner's account: no pushes, pull requests, issues, comments, reviews or any other message in another project, upstream included (`esp-rs/*` and every other third-party repository). Fixes to a dependency go to the owner's fork (for esp-hal, `ermacv/esp-hal` `oer/main`, see its `UPSTREAM.md`); reading other projects is fine.
-- **Decisions.** An owner decision is only what the repository owner said or approved, recorded with a link; the owner may revise it at any time. Never record your own choice as an "owner decision": on a material question (see Ask) propose options and ask; any other choice is recorded in the PR as the agent's own. See [decisions and approval](docs/issues.md#decisions-and-approval).
+- **Decisions.** An owner decision is only what the repository owner said or approved, recorded with a link; the owner may revise it at any time. Never record your own choice as an "owner decision": on a material question (a reading that differs in a shared crate, drops required data, adds a fallback, leaves required work unfinished, changes on-hardware behavior or qualification, or changes a block's public API; see Ask) propose options and ask; any other choice is recorded in the PR as the agent's own. See [decisions and approval](docs/issues.md#decisions-and-approval).
 - **Issue creation.** Before creating any issue through a plugin, API or CLI, validate its explicit labels with `python3 .github/scripts/issue_labels.py validate`: exactly one `kind:*`, at least one `area:*`, and exactly one `priority:*` for an executable issue (tracking may omit priority). Supply that complete set in the creation request and verify the returned labels; never defer them to triage or report creation complete while classification is invalid. See [issue management](docs/issues.md#creation-and-automatic-control).
 - **Sources.** Never commit vendor binaries, disassembly dumps, credentials, unreviewed extraction artifacts or anything from `_oracles/`. Recovered tables and coefficients belong in production source with their provenance: [source policy](docs/source-policy.md#recovered-tables-and-coefficients).
 - **Docs current.** Update the owning README or rustdoc in the same change ([documentation policy](docs/documentation.md)). Never add audit reports, work plans, migration histories, experiment diaries or test-run summaries; generated reports stay in ignored outputs.
@@ -70,12 +70,17 @@ One task is one session and one PR. A block guide skill (`block-wifi`,
 a block's packages across layers, its shared contracts, traps and checks; the
 agent profile of the same name in `.claude/agents/` starts a session with it
 (`@block-wifi` in agent view, `claude --agent block-wifi`). A block decides
-inside its own crates with the repository owner directly; `common`, the
-session in the main checkout that owns the shared crates and coordinates the
-blocks, joins only when a shared crate changes. A shared crate takes only what at least two
-blocks have proven in code. A shared change comes with a prototype in a block
-that shows the failing case, a
-[cost table](docs/architecture.md#changing-a-shared-contract) and one owner
-(`common`), and it merges before dependents build on it: a shared contract
-does not change while a block that depends on it has work in flight. Bounds,
-cancellation and each terminal's slot are specified before a contract's shape.
+inside its own crates with the repository owner directly. A crate is shared
+when it is outside every block and the production packages of two or more
+blocks reach it; [the derived list](docs/architecture.md#changing-a-shared-contract) names
+them, and `registers/` follows the PAC. A shared crate takes only what at
+least two blocks have proven in code. Changing or removing existing public API
+of a shared crate follows the
+[shared-change procedure](docs/architecture.md#changing-a-shared-contract): a
+prototype in a block that shows the failing case and a cost table; the
+repository owner decides, and it merges before dependents build on it: a
+shared contract does not change while a block that depends on it has work in
+flight. An additive change (a new PAC or SVD field, a new HAL accessor,
+nothing existing changed) is the block's own; its pull request names the
+shared crate it extends. Bounds, cancellation and each terminal's slot are specified before a
+contract's shape.

@@ -1,63 +1,29 @@
 # Documentation
 
-Documents describe the current implementation and its boundaries. Component
-details live beside their owner; this directory contains shared contracts.
+This directory holds the contracts that cross code owners. A component's own
+details live beside it, in its `README.md` and rustdoc; `cargo xtask doc`
+builds the API documentation, and each binary's `--help` is its CLI
+reference.
 
-## Choose a route
-
-| Goal | Start | Continue |
-| --- | --- | --- |
-| Make a first contribution | [Host tutorial](first-contribution.md) | [Contribution workflow](../CONTRIBUTING.md), [manage issues and dependencies](issues.md) |
-| Investigate hardware | [Blobray task map](../tools/blobray/README.md#choose-a-task) | [Reviewed models and publication](../registers/README.md), [PHY research](phy/README.md) |
-
-These routes assume Rust and embedded basics. The host route needs no board or
-private binary; the hardware route names additional prerequisites at each step.
-This directory is also an [mdBook](documentation.md#build-the-guides-and-api-documentation) book: the
-[Pages address](https://ermacv.github.io/open-esp-radio-rs/) serves it with
-searchable navigation and the API documentation after a manual publication, and
-`mdbook serve docs` previews it locally.
-
-For learning, start with the explanation and the host exercise. For a concrete
-job, choose the hardware or contribution route. Component references define
-the exact inputs, outputs and limitations once you know which owner you need.
-You do not need to read every component reference to make a first change.
-
-## Architecture and reference
-
-- [Repository ownership](architecture.md): production, tooling, register,
-  HIL, verification and qualification responsibilities.
-- [Driver architecture](../crates/README.md): layers, resources and application
-  integration.
-- [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi, IEEE 802.15.4,
-  Bluetooth and module naming.
-- [Verification and qualification](verification-and-qualification.md): evidence
-  strength, freshness and the sole readiness authority.
+- [Repository architecture](architecture.md): ownership, layers, host
+  layers, radio ports and the
+  [shared contracts](architecture.md#changing-a-shared-contract).
+- [Documentation policy](documentation.md): where information belongs and how
+  documents are checked.
+- [Issues and dependencies](issues.md): issue classification, decisions and
+  approval.
+- [Public source policy](source-policy.md): permitted inputs and source checks.
+- [Verification and qualification](verification-and-qualification.md):
+  evidence strength, freshness and the sole readiness authority.
+- [HIL terminology](hil-terminology.md): one meaning for each
+  hardware-in-the-loop term and role.
 - [HIL provenance and replay](hil-reproducibility.md): artifact identity,
   source reconstruction, rebuild comparison and lab observations.
-- [PHY comparison](phy/README.md): compiled comparison and incomplete outcomes.
-- [Public source policy](source-policy.md): permitted inputs and source checks.
-
-## Component guides
-
-- [Start here](../README.md#start-here).
-- [HIL](../hil/README.md) and [ESP32-S31 target](../hil/targets/esp32s31/README.md).
-- [Qualification programs](../qualification/README.md).
-- [Register publication](../registers/esp32s31/publication/README.md).
-- [Vendor verification](../verification/README.md).
-- [Blobray](../tools/blobray/README.md), [the ELF view](../tools/elf/README.md)
-  and [repository commands](../tools/xtask/README.md).
-
-The [ESP32-S31 radio capability map](../crates/hardware/esp32s31/driver/FEATURES.md) indexes
-shared lifecycle, PHY, coexistence and the Wi-Fi, Bluetooth and IEEE 802.15.4
-inventories. These source references do not replace machine qualification or
-hardware evidence.
-
-For API semantics, consult module/item rustdoc: the published
-[host](https://ermacv.github.io/open-esp-radio-rs/api/host/oer/index.html)
-and [ESP32-S31](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31/oer_esp32s31_phy/index.html)
-documentation, or `cargo xtask doc` from the repository root. Each package is
-documented once, for the target and features in its `[package.metadata.docs.rs]`.
-CLI references use each binary's `--help`; they are separate from library rustdoc.
-
-Follow the [documentation policy](documentation.md) when adding or changing a
-document.
+- [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi,
+  IEEE 802.15.4, Bluetooth and module naming.
+- [Hardware errata](hardware-errata.md): hardware and ROM behaviour the
+  stand's boards show.
+- [PHY comparison](phy/README.md): compiled comparison and incomplete
+  outcomes.
+- [ESP32-S31 vendor contracts](vendor/esp32s31/README.md): pinned vendor
+  ordering, software state and memory ownership, with each observation's limits.

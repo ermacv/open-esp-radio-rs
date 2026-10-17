@@ -22,9 +22,9 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 The port is on the owner shape: `LowerMacBackend` and its parts in `crates/protocols/ieee80211/lower-mac/src/owner.rs`, its lifecycle (`run_port`, `Owner`, `PortBackend`) in the shared `oer-radio-port` (`crates/radio/port`). No ESP32-S31 backend implements it: the old S31 backend was deleted with the old stack (#762), and S31-1 of #760 writes the new one. The portable port services (upper-mac service, ap, sta-ap, the sta port station) were deleted in #709 step 1; git history keeps them for the rebuild on the portable stack. The station is the portable sans-IO `oer_ieee80211_sta::machine` beside the channel arbiter (`oer-ieee80211-arbiter`); the S31 orchestration (station, AP, monitor, ESP-NOW, STA+AP) returns on the port (#563; tags `s31-station-old-path` and `legacy-wifi-2026-10-16` keep the old paths).
 
-## Shared contracts (change only with their owners)
+## Shared contracts
 
-`crates/radio/port` (`RadioPort`, `PortResult`, `Poisoned`, `ClockInfo`, `ClockRelation`, `RelationSample`, `Generation`), `crates/time` (`Instant`, `RadioInstant`), `crates/radio/coex`, the HAL split `crates/hardware/esp32s31/hal/src/root.rs`, PAC and `registers/`.
+Changing or removing existing public API of [the shared crates](../../../docs/architecture.md#changing-a-shared-contract) follows the shared-change procedure; an additive change is the block's own, and its PR names the crate it extends. This block uses these shared crates and items: `crates/radio/port` (`RadioPort`, `PortResult`, `Poisoned`, `ClockInfo`, `ClockRelation`, `RelationSample`, `Generation`), `crates/time` (`Instant`, `RadioInstant`), `crates/radio/coex`, the HAL split `crates/hardware/esp32s31/hal/src/root.rs`, PAC and `registers/`.
 
 ## Traps
 

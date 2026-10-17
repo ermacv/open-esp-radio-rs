@@ -39,9 +39,9 @@ the lower-MAC port. Nothing on `main` runs a Controller or reaches the air.
 - Facade: `crates/oer` features `bluetooth` (HCI and LL) and `esp32s31-bluetooth` (the hardware engine).
 - No HIL image, scenario or host family. The reference peer `hil/peers/esp32c5-ble-dtm` stays for the interop rebuild (#773).
 
-## Shared contracts (change only with their owners)
+## Shared contracts
 
-`crates/radio/port` (#763), `crates/time` (`LeInstant` = `RadioInstant<LeRadio>`, `Timer`), `crates/radio/coex` (`CoexPriority`), the HAL split `crates/hardware/esp32s31/hal/src/root.rs` (`BluetoothPartition`) and `shared_radio.rs` (the `radio-system` lane, #771), PAC and `registers/` (`model/peripherals/bluetooth-*`, `ble-*`).
+Changing or removing existing public API of [the shared crates](../../../docs/architecture.md#changing-a-shared-contract) follows the shared-change procedure; an additive change is the block's own, and its PR names the crate it extends. This block uses these shared crates and items: `crates/radio/port` (#763), `crates/time` (`LeInstant` = `RadioInstant<LeRadio>`, `Timer`), `crates/radio/coex` (`CoexPriority`), the HAL split `crates/hardware/esp32s31/hal/src/root.rs` (`BluetoothPartition`) and `shared_radio.rs` (the `radio-system` lane, #771), PAC and `registers/` (`model/peripherals/bluetooth-*`, `ble-*`).
 
 ## Traps
 

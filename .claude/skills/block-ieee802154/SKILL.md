@@ -38,9 +38,9 @@ hardware.
 - Facade: `crates/oer` features `ieee802154` and `esp32s31-ieee802154` (the engine).
 - No HIL image, scenario or host family. The reference peers `hil/peers/esp32c5-ieee802154` (the PHY cross-check's vendor side) and `hil/peers/esp32c5-openthread` (#774) stay.
 
-## Shared contracts (change only with their owners)
+## Shared contracts
 
-`crates/radio/port` (#763), `crates/time` (`Ieee802154Instant` = `RadioInstant<Ieee802154Radio>`, `Clock`, `Timer`), `crates/radio/coex` and `crates/hardware/espressif/coex`, the PHY concurrent domain, the HAL split `crates/hardware/esp32s31/hal/src/root.rs` (`Ieee802154RadioPartition`) and `shared_radio.rs` (the `radio-system` lane, #771), PAC and `registers/`.
+Changing or removing existing public API of [the shared crates](../../../docs/architecture.md#changing-a-shared-contract) follows the shared-change procedure; an additive change is the block's own, and its PR names the crate it extends. This block uses these shared crates and items: `crates/radio/port` (#763), `crates/time` (`Ieee802154Instant` = `RadioInstant<Ieee802154Radio>`, `Clock`, `Timer`), `crates/radio/coex` and `crates/hardware/espressif/coex`, the PHY concurrent domain, the HAL split `crates/hardware/esp32s31/hal/src/root.rs` (`Ieee802154RadioPartition`) and `shared_radio.rs` (the `radio-system` lane, #771), PAC and `registers/`.
 
 ## Traps
 

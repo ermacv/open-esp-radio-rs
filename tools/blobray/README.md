@@ -14,8 +14,7 @@ belongs to the portable protocol layer.
 
 ## Choose a task
 
-Start with [the host tutorial](../../docs/first-contribution.md) for a synthetic
-exercise; real input needs your own identified vendor artifacts.
+Real input needs your own identified vendor artifacts.
 
 | Task | Interface | Reference |
 | --- | --- | --- |

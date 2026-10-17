@@ -17,7 +17,6 @@ changes.
 | `qualification/catalog/` and source declarations | Canonical capability identities, dependencies and source facts |
 | `qualification/targets/<chip>/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
-| `docs/book.toml` and `docs/SUMMARY.md` | mdBook configuration and guide order; documents elsewhere remain with their owners |
 | Root and directory `CLAUDE.md` | Agent rules and navigation: always-relevant rules at the root; a directory's layout, local rules and commands; links to the owner documents instead of restating them |
 | Root and directory `AGENTS.md` | Relative symlinks to the colocated `CLAUDE.md`, exposing the same scoped instructions to Codex without a second copy |
 | `.claude/` | Claude Code task skills (checklists that link to owner sections), block guide skills (a block's packages, shared contracts, traps and checks), frontmatter-only agent profiles in `agents/` that start a session with a block guide, shared permissions and the hooks that enforce agent rules. Guidance cites code by path and item, not line number; `cargo tidy check` holds the links, skill and profile frontmatter and that rule |
@@ -27,12 +26,8 @@ The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does
 not repeat a complete crate inventory or a second capability matrix.
 
-The guides in `docs/` render as an mdBook book (see
-[Build the guides and API documentation](#build-the-guides-and-api-documentation));
-add a new guide to `docs/SUMMARY.md`. Links from a guide to documents or code outside `docs/`
-stay relative in the source and point to the same commit on GitHub in the
-rendered book. The published site adds `cargo doc` API documentation under
-`api/`. Component documents are read on GitHub beside their owners.
+Documents are read on GitHub, which renders their Markdown and Mermaid
+diagrams; links stay relative in the source.
 
 ## Write for a specific task
 
@@ -137,51 +132,28 @@ runtime evidence, evaluate readiness, flash a device or install fixtures.
 Documentation checks establish consistency within their stated scope, not radio
 behavior or qualification.
 
-For guide changes, also run `mdbook build docs` and `mdbook test docs`. Markdown
-link validation does not check Mermaid syntax; view changed diagrams in the
-rendered book (`mdbook serve docs`) or on GitHub.
+Markdown link validation does not check Mermaid syntax; view changed
+diagrams on GitHub.
 
-The checked Markdown surface consists of tracked documents plus the root
-`CONTRIBUTING.md`, owner documents under `docs/`, package `README.md` files and Cargo `readme` targets,
+The checked Markdown surface consists of tracked documents plus owner
+documents under `docs/`, package `README.md` files and Cargo `readme` targets,
 including newly created files before they are staged. Arbitrary untracked task
 notes are outside that surface. Local relative links, images, references,
 directory targets, percent-encoded paths and supported anchors are checked;
 external URLs are reported as `external-not-checked`.
 
-## Build the guides and API documentation
-
-Install the tool versions that
-[the Documentation workflow](../.github/workflows/docs.yml) pins:
-
-```console
-cargo install --locked mdbook --version 0.5.4
-cargo install --locked mdbook-mermaid --version 0.17.1
-cargo install --locked mdbook-permalinks --version 3.0.2
-```
+## Build the API documentation
 
 From the repository root:
 
 ```console
-mdbook-mermaid install docs
-mdbook build docs
-mdbook test docs
-mdbook serve docs
 cargo xtask doc
 ```
 
-`mdbook-mermaid install docs` writes the Mermaid scripts that `docs/book.toml`
-loads; Git ignores them. `mdbook build docs` writes `target/book/`. The
-[mdbook-permalinks](https://docs.tonywu.dev/mdbookkit/permalinks/) preprocessor
-rewrites a guide's relative link to a file outside `docs/` into a GitHub link at
-the commit being built; links inside the book are unchanged.
 `cargo xtask doc` writes the standard Cargo documentation directories:
 `target/doc/` for host packages and `target/riscv32imafc-unknown-none-elf/doc/` for
-chip packages.
-
-Every push runs the workflow's checks and packages one site: the
-book at the root and API documentation under `api/host/` and `api/esp32s31/`. A manual run from `main` deploys it to the
-[Pages address](https://ermacv.github.io/open-esp-radio-rs/) with the official
-GitHub Pages actions.
+chip packages. The Documentation workflow builds it for all of `main` and,
+on a branch, for the packages the change reaches.
 
 ## Basis for these conventions
 

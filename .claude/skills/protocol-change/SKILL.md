@@ -36,12 +36,14 @@ Find the owning package in the
 7. **Docs.** Update the package README or rustdoc that describes the changed
    contract; a capability whose support changed keeps its
    `// CAPABILITY:` anchor in step (`qualification-entry` skill).
-8. **Shared contracts.** A change to a contract more than one block uses
-   (the list is in
+8. **Shared contracts.** Changing or removing existing public API of a
+   shared crate (the derived list is in
    [changing a shared contract](../../../docs/architecture.md#changing-a-shared-contract))
-   follows that section:
-   a prototype in the block with the failing case, the cost table, and a merge
-   before dependents build on it. A need of one block stays in that block.
+   follows that section: a prototype in the block with the failing case, the
+   cost table, the repository owner's decision, and a merge before dependents
+   build on it. An additive change (a new PAC or SVD field, a new HAL
+   accessor, nothing existing changed) is the block's own; its PR names the
+   shared crate it extends. A need of one block stays in that block.
 
 ## Commands (all `run_in_background: true`)
 

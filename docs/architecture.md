@@ -526,14 +526,71 @@ tokens ([Radio ports](#radio-ports)).
 
 ## Changing a shared contract
 
-A shared contract is a crate or trait that more than one block depends on.
-Each block guide skill lists its own under "Shared contracts"; today they
-include `oer-radio-port`, the permit pool, `oer-time`, PHY, coexistence, the
-HAL split, the PAC and `registers/`. It takes only what at least two blocks
-have proven in code; a need of one block stays in that block until a second
-one has it. A change starts from a prototype in the block that needs it,
-showing the case the current contract fails, and lands before the blocks that
-depend on it build on it.
+A crate is shared when it is outside every block and the block packages of
+two or more blocks reach it, directly or transitively, through normal
+dependencies; a dev-dependency is no edge ([owner
+decisions](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231763056), [6232386489](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6232386489) and [6233116554](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6233116554)). Transitive reach counts: a change
+to the PAC, the clocks or the analog layer reaches every block even when no
+block depends on it directly. `registers/` follows the PAC. A block package
+carries its block's domain token in its name (`ieee80211`, `bluetooth`,
+`ieee802154`) and is production code by its layer's scope (`Layer::scope`
+in `oer-repo`'s classification); a name carrying two blocks' tokens is
+refused ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231802807)). A HIL, verification or tool package with a token
+is no block package, and what only such packages reach is not shared.
+Neither is a closed register PAC of the architecture policy (`CLOSED_PACS`:
+`oer-ieee80211-pac`, `oer-ieee80211-pac-raw`, `oer-ieee802154-pac`), which the
+shared chip PAC re-exports; it is listed when two blocks reach it ([owner
+decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6235017175)). What
+block packages reach counts whatever its own scope: a development crate two
+blocks' production code reaches is listed. The list
+is derived, never written by hand: the `shared-crates` check
+(`cargo xtask check tier fast --job host-lint --checks shared-crates`, on every
+change to a manifest, this document, the check, its closed PAC list or the
+repository model) fails
+when the table below differs
+from the derivation. Host tooling and HIL infrastructure change under their
+owners' process ([#761](https://github.com/ermacv/open-esp-radio-rs/issues/761),
+[#783](https://github.com/ermacv/open-esp-radio-rs/issues/783)), not this
+procedure. Each
+block guide skill links here and names the items of the shared crates its
+block uses.
+
+A block package without a domain token in its name counts as outside the
+blocks. It appears in the table itself when the block packages of two blocks reach
+it, but its own dependencies count for no block: a crate only it and one other
+block reach is not listed, so the mistake can also leave out procedure. The
+derivation stays as it is and this limit is documented
+([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6232190081)).
+
+<!-- shared-crates: begin -->
+| Crate | Path | Shares |
+| --- | --- | --- |
+| `oer-radio-port` | `crates/radio/port` | The base trait and vocabulary every radio port shares: refusals and poisoning, event loss, the owner-shape lifecycle, cancellation, correlation identities, clock relation, the `PermitPool` contract |
+| `oer-time` | `crates/time` | Monotonic time, the clock and timer contract (`Instant`, `RadioInstant<R>`, `Clock`, `Timer`) |
+| `oer-memory` | `crates/memory` | Audited buffer ownership boundaries |
+| `oer-radio-coex` | `crates/radio/coex` | Portable identities and priorities of the protocols that share one RF path (`RadioClient`, `CoexPriority`) |
+| `oer-espressif-coex` | `crates/hardware/espressif/coex` | The Espressif coexistence priority table, timer policy and time-slice schedule |
+| `oer-radio-clock` | `crates/hardware/radio/clock` | The shared modem clock reference-count planner |
+| `oer-radio-analog` | `crates/hardware/radio/analog` | The PHY's analog register bus contract and field transactions |
+| `oer-esp32s31-phy` | `crates/hardware/esp32s31/phy` | The ESP32-S31 PHY state machines: RF algorithms, calibration state and tracking |
+| `oer-esp32s31-hal` | `crates/hardware/esp32s31/hal` | The radio's ownership and async HAL boundaries, each block's partition (`src/root.rs`, `src/shared_radio.rs`) |
+| `oer-esp32s31-pac` | `crates/hardware/esp32s31/pac` | The closed typed radio PAC, published from `registers/` |
+| `oer-esp32s31-pac-raw` | `crates/hardware/esp32s31/pac/raw` | Its svd2rust backend |
+| `oer-ieee80211-pac` | `crates/hardware/ieee80211/pac` | The closed Wi-Fi MAC register PAC chips share, which the chip PAC re-exports (`MacInterface`) |
+| `oer-ieee80211-pac-raw` | `crates/hardware/ieee80211/pac/raw` | Its svd2rust backend |
+| `oer-ieee802154-pac` | `crates/hardware/ieee802154/pac` | The closed IEEE 802.15.4 MAC register PAC, which the chip PAC re-exports |
+<!-- shared-crates: end -->
+
+A shared crate takes only what at least two blocks have proven in code; a
+need of one block stays in that block until a second one has it. The
+procedure governs changing or removing existing public API of a shared crate:
+an existing item's shape or meaning, or its removal ([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231763056)).
+Such a change starts from a prototype in the block that needs it, showing the
+case the current contract fails, comes with the cost table below, is decided
+by the repository owner, and lands before the blocks that depend on it build
+on it. An additive change, such as a new PAC or SVD field publication or a new
+HAL accessor with nothing existing changed, is the block's own: it is reviewed
+as usual, and its pull request names the shared crate it extends.
 
 Every proposed change comes with a cost table, and is not accepted without one:
 

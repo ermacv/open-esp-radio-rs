@@ -22,14 +22,10 @@ documented behavior.
 
 | Your interest | A useful starting point | Requirements |
 | --- | --- | --- |
-| Binary analysis and hardware research | [Blobray task map](tools/blobray/README.md#choose-a-task) and the synthetic exercise | Linux host; real research also needs your own identified vendor artifacts |
-| Portable Rust and resource ownership | [First host contribution](docs/first-contribution.md) | Rust basics and public build dependencies; no private inputs |
+| Binary analysis and hardware research | [Blobray task map](tools/blobray/README.md#choose-a-task) | Linux host; real research also needs your own identified vendor artifacts |
 
-Start with the [documentation routes](docs/README.md) and
-[contribution guide](CONTRIBUTING.md). The [documentation build](docs/documentation.md#build-the-guides-and-api-documentation)
-renders the guides in `docs/` as an mdBook with `cargo doc` API documentation
-beside it; the [Pages address](https://ermacv.github.io/open-esp-radio-rs/)
-serves them after a manual publication, and `mdbook serve docs` previews locally.
+The [documentation index](docs/README.md) lists the contracts that cross code
+owners; `cargo xtask doc` builds the API documentation.
 
 The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
 
@@ -37,7 +33,6 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 
 | Task | Documentation |
 | --- | --- |
-| Make a first contribution | [Host tutorial](docs/first-contribution.md), [contribution guide](CONTRIBUTING.md) |
 | Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
@@ -108,7 +103,7 @@ versions, including after a PR merge changes the commit ID. Its default
 `observe` mode executes all checks while reporting possible reuse; the
 repository variable `CI_REUSE_MODE=reuse` enables skipping covered jobs.
 The [Documentation workflow](.github/workflows/docs.yml)
-checks the guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
+checks the Markdown documents and the API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
 runs the nightly tier: every HIL image class and every ESP32-S31 example
 built with their audits, the RV32 decoder against the toolchain's
 `llvm-objdump`, Blobray and each chip's vendor probes and host stands. The

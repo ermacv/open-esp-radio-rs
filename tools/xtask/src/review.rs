@@ -50,6 +50,11 @@ const ALLOWED_TOOLS: &[&str] = &[
     "Bash(git diff *)",
     "Bash(git log *)",
     "Bash(git show *)",
+    // A pull request's inventory with proof names a search the reviewer
+    // reruns (docs/issues.md, review and readiness), with Grep or these
+    // listings. Never `git grep`: its `-O` runs a program.
+    "Bash(git ls-files *)",
+    "Bash(git ls-tree *)",
     "Bash(gh pr view *)",
     "Bash(gh pr diff *)",
     "Bash(gh issue view *)",
@@ -64,8 +69,10 @@ The branch is checked out at the repository root, not in `pr/`: run `git`
 without `-C pr` and read files from the root. There is no `review-inputs/`:
 diff against the merge base named in the prompt and read the PR and its
 issues, if any, with `gh`. Bash runs only `git diff …`, `git log …`,
-`git show …`, `gh pr view …`, `gh pr diff …` and `gh issue view …`, without
+`git show …`, `git ls-files …`, `git ls-tree …`, `gh pr view …`,
+`gh pr diff …` and `gh issue view …`, without
 `cd`, pipes or redirections; any other call is denied and fails the review.
+Rerun a pull request's inventory search with the Grep and Glob tools.
 CI has not run; the push gate's fast checks (tidy,
 formatting, Clippy and tests of the changed packages) passed. The branch may
 have no pull request yet; then no earlier review exists on GitHub, and the
@@ -614,6 +621,19 @@ mod tests {
             },
             cost_usd: 0.0,
         }
+    }
+
+    /// A pull request's inventory with proof names a search the reviewer
+    /// reruns, so the read-only Git listings are allowed and named, and
+    /// `git grep`, whose `-O` runs a program, is not.
+    #[test]
+    fn the_review_can_rerun_an_inventorys_search() {
+        for command in ["git ls-files", "git ls-tree"] {
+            assert!(ALLOWED_TOOLS.contains(&format!("Bash({command} *)").as_str()));
+            assert!(LOCAL.contains(&format!("`{command} …`")), "{command}");
+        }
+        assert!(!ALLOWED_TOOLS.iter().any(|tool| tool.contains("git grep")));
+        assert!(LOCAL.contains("Grep and Glob"));
     }
 
     #[test]

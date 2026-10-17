@@ -33,6 +33,10 @@ MAX_BUDGET_USD = 5.0
 TOOLS = ["Read", "Grep", "Glob", "Agent", "Bash"]
 ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Agent",
                  "Bash(git -C pr diff *)", "Bash(git -C pr log *)", "Bash(git -C pr show *)",
+                 # A PR's inventory with proof names a search the reviewer
+                 # reruns (docs/issues.md, review and readiness), with Grep
+                 # or these listings. Never `git grep`: its `-O` runs a program.
+                 "Bash(git -C pr ls-files *)", "Bash(git -C pr ls-tree *)",
                  "Bash(gh pr view *)", "Bash(gh pr diff *)", "Bash(gh issue view *)"]
 # What the workflow prepares before the review: the diff against the merge
 # base, the PR with its comments and reviews, and each issue it closes.

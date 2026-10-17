@@ -1,7 +1,7 @@
 //! Static documentation checks: local Markdown links and qualification catalogs.
 //!
-//! API documentation is built by `cargo xtask doc`, and the guides in `docs/`
-//! by `mdbook build docs`; this check covers what neither of them validates.
+//! API documentation is built by `cargo xtask doc`; this check covers what
+//! it does not validate.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -358,11 +358,7 @@ fn owned_documents(
         let owner_name = relative.file_name().is_some_and(|name| {
             name == "README.md" || name == "FEATURES.md" || name == "OWNERSHIP.md"
         });
-        if repo.is_tracked(file)
-            || relative.starts_with("docs")
-            || relative == Path::new("CONTRIBUTING.md")
-            || owner_name
-        {
+        if repo.is_tracked(file) || relative.starts_with("docs") || owner_name {
             documents.insert(ctx.root.join(file));
         }
     }

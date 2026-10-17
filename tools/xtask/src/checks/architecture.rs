@@ -8,7 +8,7 @@ use super::common::*;
 mod facade;
 mod interrupts;
 mod sans_io;
-mod unsafe_policy;
+pub(crate) mod unsafe_policy;
 mod zeroed;
 
 /// Layers whose packages stay free of the platform runtime: whatever they
@@ -137,9 +137,8 @@ pub fn reject_wifi_in_bluetooth(
         // The package naming rule gives every Wi-Fi package the `ieee80211`
         // domain token.
         let wifi = !closed_pacs.iter().any(|pac| pac == name)
-            && name
-                .strip_prefix("oer-")
-                .is_some_and(|tokens| tokens.split('-').any(|token| token == "ieee80211"));
+            && crate::checks::shared::block_of(name)?
+                == Some(crate::checks::shared::Block::Ieee80211);
         if wifi || name.starts_with("embassy-net") {
             return Err(format!("Bluetooth consumer depends on Wi-Fi package {name}").into());
         }

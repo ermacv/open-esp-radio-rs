@@ -182,12 +182,8 @@ fn a_renamed_file_counts_at_both_paths() {
 }
 
 #[test]
-fn every_input_of_the_guides_selects_the_documentation() {
-    for path in [
-        "docs/book.toml",
-        "docs/theme/head.hbs",
-        "crates/a/README.md",
-    ] {
+fn markdown_selects_the_documentation() {
+    for path in ["docs/architecture.md", "crates/a/README.md"] {
         assert!(run(&[path]).docs, "{path}");
     }
     assert!(!run(&["tools/tool/src/main.rs"]).docs);

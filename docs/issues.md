@@ -60,10 +60,39 @@ revise or withdraw a decision at any time; the record then says what
 changed and when, and the superseded wording is not kept as current.
 Agents never write "owner decision" for anything the repository owner did
 not say. On a material question (one that changes a shared crate, drops
-data, changes on-hardware behavior or qualification, or changes a block's
-public API) they propose options with a recommendation and ask. Any other
+required data, adds a fallback, leaves required work unfinished, changes
+on-hardware behavior or qualification, or changes a block's public API) they propose options with a recommendation and ask. Any other
 choice they make themselves and record in the pull request as their own
 decision, which the owner may revise like any other.
+
+## Review and readiness
+
+These rules are an [owner decision of 2026-10-17](https://github.com/ermacv/open-esp-radio-rs/issues/714#issuecomment-6231604828).
+
+**When a pull request is ready.** It is ready when no 🔴 and no 🟡 finding
+is open.
+
+- 🔵 covers only what does not change behaviour: wording, names, test
+  clarity. Correctness, safety, conformance to an owner decision and current
+  documentation are always 🟡 at least.
+- A 🔵 finding rides along when the pull request changes anyway. Otherwise
+  it is filed as a `review: …` issue, which the same session fixes before
+  any new work.
+- A fix round is reviewed against the diff from the previous head, every
+  earlier finding, and every owner decision the pull request implements, end
+  to end, including the unchanged code around it.
+- A full review is repeated when a fix touches concurrency, `unsafe`, a
+  public API shape or a shared crate.
+- `claude-runtime-review` in CI stays the independent second check when the
+  owner opens the pull request for review.
+
+**Inventories with proof.** When a pull request deletes, renames or
+reclassifies something everywhere (catalog entries, call sites, features,
+prose), its body carries the search command and its output, not a list from
+memory. The reviewer reruns the search.
+
+**Merge order.** Small pull requests merge first, then large ones. The next
+merging pull request rebases.
 
 ## Creation and automatic control
 

@@ -42,7 +42,8 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
     let mut bundle = ImageBundle::new(&output, profile, flash);
     bundle.layout_seed = spec.layout_seed;
     let log = BuildLog::create(&output.join(files::BUILD_LOG))?;
-    let cache = crate::compile_cache()?;
+    let compile_cache = crate::compile_cache(root)?;
+    let cache = compile_cache.path().to_owned();
     let policy = StackPolicy::load(&root.join(&spec.stack_policy))?;
     // Private copies of both committed catalogs: patched networks and local
     // overrides resolve into them, never into the source tree.
@@ -50,14 +51,13 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
     let runtime_lock = BuildLock::prepare(&workspace, &output.join("locks/runtime"))?;
     let bootstrap_lock = BuildLock::prepare(&platform, &output.join("locks/bootstrap"))?;
 
-    // Every image uplifts into the same `<target>/release` of the shared
-    // cache: each build holds it until its ELF and dependency information
-    // are copied out.
+    // Every image of the tree uplifts into the same `<target>/release` of
+    // its cache: each build holds it until its ELF and dependency
+    // information are copied out.
     let release = cache.join(target).join("release");
     let (runtime_elf, mut compiled) = {
-        let _cache = oer_toolchain::image::lock_compile_cache(&cache)?;
-        let mut runtime = crate::runtime_command(spec, profile, "build", &policy)?;
-        runtime.env("CARGO_TARGET_DIR", &cache);
+        let _cache = compile_cache.lock()?;
+        let mut runtime = crate::runtime_command(spec, profile, "build", &policy, &cache)?;
         runtime_lock.configure(&mut runtime);
         if spec.overrides.is_empty() {
             crate::cargo::ensure_fetched(root, &workspace.join("Cargo.toml"), |command| {
@@ -118,7 +118,7 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
     // The bootstrap embeds the runtime with `include_bytes!`; a stable path
     // that keeps its timestamp while its bytes are unchanged leaves the
     // bootstrap fresh.
-    let bootstrap_cache = oer_toolchain::image::lock_compile_cache(&cache)?;
+    let bootstrap_cache = compile_cache.lock()?;
     let embedded = std::path::absolute(cache.join("stage-two-runtime.bin"))?;
     crate::replace_if_changed(&runtime_bin, &embedded)?;
     let mut bootstrap = crate::cargo::command();
@@ -138,7 +138,7 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
     crate::zeroed_inputs(&mut bootstrap, profile);
     oer_toolchain::image::configure(
         &mut bootstrap,
-        &policy.image_compiler(root, &crate::linker_cache()?, target),
+        &policy.image_compiler(root, &cache, &crate::host_build_root()?, target),
     )?;
     if spec.overrides.esp_hal.is_none() {
         crate::cargo::ensure_fetched(root, &platform.join("Cargo.toml"), |command| {

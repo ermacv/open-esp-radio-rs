@@ -6,8 +6,8 @@
 //! This crate owns what is HIL's own about an image: the class's features
 //! and network integration, the agent package of each chip, the HIL stack
 //! policies, the radio observers' placement, where class builds write their
-//! bundles, and the records. Every build compiles in the pipeline's one
-//! shared compile cache (`oer_image::compile_cache`). Compiling, gating and encoding are
+//! bundles, and the records. Every build compiles in its tree's compile
+//! cache (`oer_image::compile_cache`). Compiling, gating and encoding are
 //! the pipeline's.
 
 use std::{
@@ -262,7 +262,7 @@ pub(crate) fn built(spec: &ImageSpec, features: &FeatureDelta) -> Result<Artifac
 
 /// Type-check the runtime of `class` for `chip` against the committed
 /// pins, with the image build's target, features and compiler
-/// configuration, in the image pipeline's shared compile cache. A pre-push check:
+/// configuration, in the tree's compile cache. A pre-push check:
 /// lints that need monomorphization (`large_assignments`) and the link-time
 /// gates still need `cargo hil image build`.
 pub fn check(root: &Path, chip: &str, class: ImageClass) -> Result<()> {

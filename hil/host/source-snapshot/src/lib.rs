@@ -118,9 +118,9 @@ enum Checkout {
     /// A fresh temporary directory, for readers of the sources.
     Temporary(tempfile::TempDir),
     /// A fixed build workspace held under an exclusive lock. A stable path
-    /// keeps Cargo's unit identities stable in the shared compile cache, and
-    /// unchanged files keep their modification times, so Cargo rebuilds only
-    /// the packages a snapshot actually changes.
+    /// keeps the workspace's own compile cache, and unchanged files keep
+    /// their modification times, so Cargo rebuilds only the packages a
+    /// snapshot actually changes.
     Workspace {
         path: PathBuf,
         _lock: oer_process::lock::FileLock,
@@ -137,8 +137,8 @@ impl Checkout {
 }
 
 /// Persistent build workspaces of the host: one per source tree that can
-/// build at the same time; later builds wait for a slot. They all compile in
-/// the image pipeline's one shared compile cache.
+/// build at the same time; later builds wait for a slot. Each compiles in
+/// its own compile cache.
 const WORKSPACE_SLOTS: usize = 3;
 
 impl FrozenSources {

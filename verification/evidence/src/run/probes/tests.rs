@@ -64,12 +64,12 @@ fn build_job_override_is_optional_and_rejects_nonpositive_or_nondecimal_values()
 }
 
 #[test]
-fn every_declared_role_builds_a_distinct_locked_embedded_package_in_the_shared_cache() {
+fn every_declared_role_builds_a_distinct_locked_embedded_package_in_the_checkouts_cache() {
     let directory = repository();
     let context = Checkout::new(directory.path()).unwrap();
     let mut packages = BTreeSet::new();
     let mut outputs = BTreeSet::new();
-    let cache = std::path::Path::new("/host/build/cargo");
+    let cache = std::path::Path::new("/host/build/firmware/0123456789abcdef");
     let declared = all(&context.root).unwrap();
     assert_eq!(declared.len(), 3);
     for probe in &declared {

@@ -5,10 +5,20 @@
 //!
 //! Incremental session data of every feature set ever built and per-image
 //! HIL build caches accumulate in a checkout's `target/` until the disk
-//! fills. Only caches Cargo recreates are removed, only in this checkout,
+//! fills. Only caches a build recreates are removed: in this checkout's
+//! `target/`, and in the host build root the incremental data of this
+//! checkout's compile cache and what no checkout owns (below);
 //! never run bundles, evidence or archives, never a directory whose Cargo build lock is held and never what
 //! a queued HIL job was fixed with. Another checkout's `target/` is its
 //! owner's to sweep.
+//!
+//! The host build root holds what no checkout owns once its tree is gone:
+//! the firmware compile cache of a tree that no longer exists (a removed
+//! checkout, the base worktree of `cargo hil images compare`) and an installed image
+//! linker no build has used for the policy's age, which the next image build
+//! installs again. A sweep from any checkout removes those, and the stale
+//! incremental data of its own compile cache's linker build, never a compile
+//! cache a build holds.
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -163,7 +173,8 @@ fn class_output(name: &str) -> bool {
 
 /// Per-image HIL build outputs of every chip in `chips`, unused for the
 /// policy's age and not building: the class outputs of `target/hil/<chip>`.
-/// The compile cache is the image pipeline's one shared cache.
+/// The checkout's compile cache is below the host build root
+/// ([`firmware_caches`]).
 fn image_caches(
     target: &Path,
     chips: &[String],
@@ -189,9 +200,113 @@ fn image_caches(
     }
 }
 
-/// Every removable cache of the checkout at `root` whose chips are `chips`.
+/// Whether a build holds the firmware compile cache `cache`.
+fn cache_held(cache: &Path) -> bool {
+    !matches!(
+        oer_process::lock::FileLock::try_acquire(
+            &cache.join("build.lock"),
+            oer_process::lock::Mode::Shared
+        ),
+        Ok(Some(_))
+    )
+}
+
+/// The firmware compile caches below `build_root` whose tree is gone, and
+/// the incremental data of the linker build in the cache of the tree at
+/// `root`; never a cache a build holds.
+fn firmware_caches(
+    build_root: &Path,
+    root: &Path,
+    policy: Policy,
+    now: SystemTime,
+    found: &mut Vec<Candidate>,
+) {
+    let own = fs::canonicalize(root).ok();
+    for recorded in oer_toolchain::image::compile_caches(build_root).unwrap_or_default() {
+        if cache_held(&recorded.cache) {
+            continue;
+        }
+        if recorded.is_gone() {
+            found.push(Candidate {
+                path: recorded.cache,
+                reason: "compile cache of a tree that is gone".into(),
+            });
+        } else if recorded.tree == own {
+            incremental(&recorded.cache, policy, now, found);
+        }
+    }
+}
+
+/// The installed image linkers below `build_root` no build has used for the
+/// policy's age; each use renews its file's modification time.
+fn linkers(build_root: &Path, policy: Policy, now: SystemTime, found: &mut Vec<Candidate>) {
+    let directory = build_root.join(oer_toolchain::image::LINKERS);
+    for entry in fs::read_dir(&directory).into_iter().flatten().flatten() {
+        // A removal moves a linker aside under a dot name first; an
+        // interrupted one is `interrupted_removals`'.
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() && linker_unused(&path, policy, now) {
+            found.push(Candidate {
+                path,
+                reason: "image linker unused".into(),
+            });
+        }
+    }
+}
+
+/// Whether the installed linker in `directory` was unused for the policy's
+/// age: its file's modification time is its last use.
+fn linker_unused(directory: &Path, policy: Policy, now: SystemTime) -> bool {
+    let used = directory.join("oer-image-linker");
+    let age = if used.is_file() {
+        age(&used, now)
+    } else {
+        age(directory, now)
+    };
+    age.is_some_and(|age| age > policy.image_caches)
+}
+
+/// Directories a removal moved aside (`.removing-*`) and left behind when it
+/// was interrupted, below the compile caches and the linkers of `build_root`:
+/// not one whose remover (the process its name ends in) still runs, nor one
+/// moved aside less than a minute ago.
+fn interrupted_removals(build_root: &Path, now: SystemTime, found: &mut Vec<Candidate>) {
+    for store in [
+        oer_toolchain::image::COMPILE_CACHES,
+        oer_toolchain::image::LINKERS,
+    ] {
+        for entry in fs::read_dir(build_root.join(store))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(rest) = name.strip_prefix(".removing-") else {
+                continue;
+            };
+            let running = rest
+                .rsplit_once('-')
+                .and_then(|(_, pid)| pid.parse::<u32>().ok())
+                .is_some_and(|pid| Path::new("/proc").join(pid.to_string()).exists());
+            let recent = age(&entry.path(), now).is_none_or(|age| age < Duration::from_secs(60));
+            if !running && !recent {
+                found.push(Candidate {
+                    path: entry.path(),
+                    reason: "interrupted removal".into(),
+                });
+            }
+        }
+    }
+}
+
+/// Every removable cache of the checkout at `root` whose chips are `chips`,
+/// and the host build root's at `build_root`.
 pub fn candidates(
     root: &Path,
+    build_root: &Path,
     chips: &[String],
     policy: Policy,
     now: SystemTime,
@@ -200,6 +315,9 @@ pub fn candidates(
     let mut found = Vec::new();
     incremental(&target, policy, now, &mut found);
     image_caches(&target, chips, policy, now, &mut found);
+    firmware_caches(build_root, root, policy, now, &mut found);
+    linkers(build_root, policy, now, &mut found);
+    interrupted_removals(build_root, now, &mut found);
     found.sort_by(|a, b| a.path.cmp(&b.path));
     found
 }
@@ -220,33 +338,89 @@ fn size(path: &Path) -> u64 {
     }
 }
 
-/// List, or with `apply` remove, the caches of the checkout at `root`;
-/// returns the bytes that were (or would be) freed.
+/// Remove `candidate`, deciding again at removal what the listing decided;
+/// `Ok(false)` keeps it.
+///
+/// - A firmware compile cache below `build_root` goes only under its build
+///   lock and while its tree is still gone.
+/// - An installed linker is moved aside first and its age read again there:
+///   a build that took it meanwhile renewed it, so it goes back, unless a
+///   build installed it anew in the meantime.
+fn remove(candidate: &Candidate, build_root: &Path, policy: Policy) -> Result<bool> {
+    let name = candidate
+        .path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let parent = candidate.path.parent();
+    if name.starts_with(".removing-") {
+        fs::remove_dir_all(&candidate.path)?;
+        return Ok(true);
+    }
+    if parent == Some(&build_root.join(oer_toolchain::image::COMPILE_CACHES)) {
+        return oer_toolchain::image::remove_orphaned_compile_cache(&candidate.path);
+    }
+    if parent == Some(&build_root.join(oer_toolchain::image::LINKERS)) {
+        let aside = candidate
+            .path
+            .with_file_name(format!(".removing-{name}-{}", std::process::id()));
+        fs::rename(&candidate.path, &aside)?;
+        if !linker_unused(&aside, policy, SystemTime::now()) {
+            if fs::rename(&aside, &candidate.path).is_err() {
+                fs::remove_dir_all(&aside)?;
+            }
+            return Ok(false);
+        }
+        fs::remove_dir_all(&aside)?;
+        return Ok(true);
+    }
+    fs::remove_dir_all(&candidate.path)?;
+    Ok(true)
+}
+
+/// List, or with `apply` remove, the caches of the checkout at `root`, and
+/// in the host build root the compile caches of trees that are gone and the
+/// unused image linkers; returns the bytes that were (or would be) freed.
 pub fn run(root: &Path, policy: Policy, apply: bool) -> Result<u64> {
     let chips: Vec<String> = oer_chip_profile::Profile::all(root)?
         .into_iter()
         .map(|profile| profile.id)
         .collect();
+    let build_root = oer_image::host_build_root()?;
     let found = unheld(
-        candidates(root, &chips, policy, SystemTime::now()),
+        candidates(root, &build_root, &chips, policy, SystemTime::now()),
         &held_by_jobs()?,
     );
-    let mut bytes = 0;
+    let (mut bytes, mut count) = (0, 0);
     for candidate in &found {
-        bytes += size(&candidate.path);
+        let candidate_bytes = size(&candidate.path);
         if apply {
-            if let Err(error) = fs::remove_dir_all(&candidate.path) {
-                eprintln!("sweep: cannot remove {}: {error}", candidate.path.display());
+            match remove(candidate, &build_root, policy) {
+                Ok(true) => {
+                    bytes += candidate_bytes;
+                    count += 1;
+                }
+                Ok(false) => eprintln!(
+                    "sweep: kept {}: a build took it since it was listed",
+                    candidate.path.display()
+                ),
+                Err(error) => {
+                    eprintln!("sweep: cannot remove {}: {error}", candidate.path.display());
+                }
             }
-        } else if found.len() <= 20 {
-            println!("  {} ({})", candidate.path.display(), candidate.reason);
+        } else {
+            bytes += candidate_bytes;
+            count += 1;
+            if found.len() <= 20 {
+                println!("  {} ({})", candidate.path.display(), candidate.reason);
+            }
         }
     }
     println!(
         "{} {}: {} caches, {:.1} GiB",
         if apply { "removed" } else { "would remove" },
         root.display(),
-        found.len(),
+        count,
         bytes as f64 / (1u64 << 30) as f64
     );
     Ok(bytes)
@@ -285,7 +459,13 @@ mod tests {
             aged(directory, 30);
         }
         let chips = ["chip-b", "chip-a"].map(String::from);
-        let found = candidates(root.path(), &chips, Policy::default(), SystemTime::now());
+        let found = candidates(
+            root.path(),
+            &root.path().join("build"),
+            &chips,
+            Policy::default(),
+            SystemTime::now(),
+        );
         let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
         assert_eq!(paths, [old, stale, peer]);
     }
@@ -326,12 +506,125 @@ mod tests {
             oer_process::lock::Mode::Exclusive,
         )
         .unwrap();
-        assert!(candidates(root.path(), &[], Policy::default(), SystemTime::now()).is_empty());
+        assert!(
+            candidates(
+                root.path(),
+                &root.path().join("build"),
+                &[],
+                Policy::default(),
+                SystemTime::now()
+            )
+            .is_empty()
+        );
         drop(lock);
         assert_eq!(
-            candidates(root.path(), &[], Policy::default(), SystemTime::now()).len(),
+            candidates(
+                root.path(),
+                &root.path().join("build"),
+                &[],
+                Policy::default(),
+                SystemTime::now()
+            )
+            .len(),
             1
         );
+    }
+
+    /// The host build root loses the compile cache of a tree that is gone
+    /// and an unused linker, and keeps a live tree's cache, one a build
+    /// holds and a linker in use.
+    #[test]
+    fn caches_of_gone_trees_and_unused_linkers_are_swept() {
+        let host = tempfile::tempdir().unwrap();
+        let build_root = host.path().join("build");
+        let live = tempfile::tempdir().unwrap();
+        let gone = tempfile::tempdir().unwrap();
+        let busy = tempfile::tempdir().unwrap();
+        let live_cache = oer_toolchain::image::compile_cache(&build_root, live.path())
+            .unwrap()
+            .path()
+            .to_owned();
+        let gone_cache = oer_toolchain::image::compile_cache(&build_root, gone.path()).unwrap();
+        let busy_cache = oer_toolchain::image::compile_cache(&build_root, busy.path()).unwrap();
+        let gone_path = gone.path().to_owned();
+        drop(gone);
+        drop(busy);
+        let _held = busy_cache.lock().unwrap();
+        let linkers = build_root.join(oer_toolchain::image::LINKERS);
+        let (old, used) = (linkers.join("old"), linkers.join("used"));
+        for linker in [&old, &used] {
+            fs::create_dir_all(linker).unwrap();
+            fs::write(linker.join("oer-image-linker"), "").unwrap();
+        }
+        aged(&old.join("oer-image-linker"), 10);
+        let policy = Policy::default();
+        let found = candidates(live.path(), &build_root, &[], policy, SystemTime::now());
+        let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
+        let mut expected = vec![gone_cache.path().to_owned(), old.clone()];
+        expected.sort();
+        assert_eq!(paths, expected);
+        assert!(live_cache.is_dir());
+        // At removal the tree is looked at again: a live tree keeps its cache.
+        let live_candidate = Candidate {
+            path: live_cache.clone(),
+            reason: String::from("listed"),
+        };
+        assert!(!remove(&live_candidate, &build_root, policy).unwrap());
+        assert!(live_cache.is_dir());
+        // A build that takes a listed cache before its removal keeps it.
+        let gone = found
+            .iter()
+            .find(|candidate| candidate.path == gone_cache.path())
+            .unwrap();
+        let taken = gone_cache.lock().unwrap();
+        assert!(!remove(gone, &build_root, policy).unwrap());
+        assert!(gone_cache.path().is_dir());
+        drop(taken);
+        // Another directory now at the gone tree's path is another tree.
+        fs::create_dir_all(&gone_path).unwrap();
+        assert!(remove(gone, &build_root, policy).unwrap());
+        assert!(!gone_cache.path().exists());
+        fs::remove_dir(&gone_path).unwrap();
+        // A linker a build renewed since the listing stays.
+        let unused = found
+            .iter()
+            .find(|candidate| candidate.path == old)
+            .unwrap();
+        fs::File::open(old.join("oer-image-linker"))
+            .unwrap()
+            .set_modified(SystemTime::now())
+            .unwrap();
+        assert!(!remove(unused, &build_root, policy).unwrap());
+        assert!(old.join("oer-image-linker").is_file());
+        aged(&old.join("oer-image-linker"), 10);
+        assert!(remove(unused, &build_root, policy).unwrap());
+        assert!(!old.exists());
+        // A removal interrupted after moving a cache aside is swept once its
+        // remover is gone and a minute has passed; a recent one is kept.
+        let caches = build_root.join(oer_toolchain::image::COMPILE_CACHES);
+        // Above the kernel's largest pid: no process has it.
+        let (left, fresh) = (
+            caches.join(".removing-0123456789abcdef-4194305"),
+            caches.join(".removing-fedcba9876543210-4194305"),
+        );
+        fs::create_dir_all(&left).unwrap();
+        fs::create_dir_all(&fresh).unwrap();
+        aged(&left, 10);
+        // A linker moved aside is listed once, as an interrupted removal.
+        let aside = linkers.join(".removing-old-4194305");
+        fs::create_dir_all(&aside).unwrap();
+        fs::write(aside.join("oer-image-linker"), "").unwrap();
+        aged(&aside.join("oer-image-linker"), 10);
+        aged(&aside, 10);
+        let found = candidates(live.path(), &build_root, &[], policy, SystemTime::now());
+        assert!(found.iter().any(|candidate| candidate.path == left));
+        assert!(!found.iter().any(|candidate| candidate.path == fresh));
+        let listed: Vec<_> = found
+            .iter()
+            .filter(|candidate| candidate.path == aside)
+            .map(|candidate| candidate.reason.as_str())
+            .collect();
+        assert_eq!(listed, ["interrupted removal"]);
     }
 
     /// A job names the snapshot it reads with `--source-snapshot`; a sweep

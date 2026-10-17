@@ -4,9 +4,9 @@
 //!
 //! - [`BuildLock`]: one build owns the private lockfile copy in its
 //!   directory; a second build of the same directory fails at once.
-//! - the host's one compile cache ([`crate::compile_cache`]) is used by one
-//!   build at a time, from its Cargo run until its outputs are copied out,
-//!   the next waiting for it ([`oer_toolchain::image::lock_compile_cache`]);
+//! - a tree's compile cache ([`crate::compile_cache`]) is used by one build
+//!   of the tree at a time, from its Cargo run until its outputs are copied out,
+//!   the next waiting for it ([`oer_toolchain::image::CompileCache::lock`]);
 //! - [`slot`]: the host-wide limit on concurrent image compilations, one of
 //!   a fixed number of lock files;
 //! - the ESP-IDF cache: exclusive while its tree and tools change, shared

@@ -247,7 +247,8 @@ queue, are `cargo stand`):
   cargo hil images check --all|--class C|--reaching PKG [--type-check]   image classes with their audits
   cargo hil images compare --base REV [--class C]   image classes at REV and here, modulo placement
   cargo hil observer                  prepare the observer configuration without running HIL
-  cargo hil sweep [--apply]           list (or remove) this checkout's unused incremental and image caches
+  cargo hil sweep [--apply]           list (or remove) this checkout's unused incremental and image caches,
+                                      the host's compile caches of trees that are gone and unused image linkers
 
 Lease options, before any HIL command, after `lease`, or among a runner command's arguments:
   --owner NAME     default: enclosing lease owner, else the checkout directory name

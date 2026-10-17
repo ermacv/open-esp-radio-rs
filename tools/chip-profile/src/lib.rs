@@ -514,7 +514,7 @@ pub struct NetworkProfile {
 
 /// One Rust probe image of the vendor comparison: the artifact role it
 /// serves and its package in `verification/<id>/probes`. Every probe
-/// compiles in the host's one firmware compile cache.
+/// compiles in its checkout's firmware compile cache.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Probe {

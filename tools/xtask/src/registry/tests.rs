@@ -302,6 +302,36 @@ fn a_change_never_runs_a_whole_tier_check_or_one_above_its_tier() {
     assert!(!selected.contains(&"final-images") && !selected.contains(&"image-classes"));
 }
 
+/// The checkout isolation check runs on a change to what places the
+/// firmware compile caches and the linker, and on no other change.
+#[test]
+fn checkout_isolation_runs_when_the_compile_caches_change() {
+    for file in [
+        "tools/image/pipeline/src/lib.rs",
+        "tools/toolchain/src/image.rs",
+        "tools/process/src/lock.rs",
+        "tools/xtask/src/registry.rs",
+        "hil/host/image/src/lib.rs",
+        "hil/host/image/tests/checkout_isolation.rs",
+        "crates/runtime/esp32s31/ieee80211-form/tests/placement.rs",
+    ] {
+        assert!(
+            ids(of_change(&change(&[file], Tier::Full))).contains(&"image-isolation"),
+            "{file}"
+        );
+    }
+    for file in [
+        "crates/driver/src/lib.rs",
+        "tools/xtask/src/push.rs",
+        "README.md",
+    ] {
+        assert!(
+            !ids(of_change(&change(&[file], Tier::Full))).contains(&"image-isolation"),
+            "{file}"
+        );
+    }
+}
+
 #[test]
 fn a_job_runs_its_checks_up_to_its_tier() {
     let full: Vec<&str> = ids(of_job(Tier::Full, "verification"));

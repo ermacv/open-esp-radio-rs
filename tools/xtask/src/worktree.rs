@@ -265,7 +265,9 @@ fn remove_incremental(profile: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Removes a worktree added by [`add`], including its private `target/`.
+/// Removes a worktree added by [`add`], including its private `target/`, and
+/// then its firmware compile cache below the host build root, found by the
+/// tree it records; a cache a build holds is left to `cargo hil sweep`.
 pub fn remove(ctx: &Checkout, path: &Path) -> Result<()> {
     let listed = String::from_utf8(
         process::capture(oer_process::git::command(&ctx.root).args([
@@ -301,6 +303,30 @@ pub fn remove(ctx: &Checkout, path: &Path) -> Result<()> {
             .arg(&path),
     )?;
     println!("worktree: removed {}", path.display());
+    // After Git removed the tree, which it may refuse: the cache goes only
+    // with its tree.
+    if let Err(error) = remove_compile_caches(&oer_toolchain::image::host_build_root()?, &path) {
+        eprintln!("worktree: {error}; `cargo hil sweep --apply` removes it once no build holds it");
+    }
+    Ok(())
+}
+
+/// Remove the firmware compile cache below `build_root` that records the
+/// tree at the canonical path `tree`, if it has one; fails while a build
+/// holds it.
+fn remove_compile_caches(build_root: &Path, tree: &Path) -> Result<()> {
+    for recorded in oer_toolchain::image::compile_caches(build_root)? {
+        if recorded.tree.as_deref() == Some(tree)
+            && !oer_toolchain::image::remove_compile_cache(&recorded.cache)?
+        {
+            return Err(format!(
+                "a build holds the firmware compile cache {} of {}",
+                recorded.cache.display(),
+                tree.display()
+            )
+            .into());
+        }
+    }
     Ok(())
 }
 
@@ -315,6 +341,31 @@ mod tests {
         assert_eq!(remote_branch("origin/"), None);
         assert_eq!(remote_branch("main"), None);
         assert_eq!(remote_branch("HEAD"), None);
+    }
+
+    /// Removing a worktree removes its firmware compile cache, only its own,
+    /// and refuses while a build holds it.
+    #[test]
+    fn a_removed_worktree_takes_its_compile_cache_along() {
+        let build_root = tempfile::tempdir().unwrap();
+        let tree = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let canonical = tree.path().canonicalize().unwrap();
+        let cache = oer_toolchain::image::compile_cache(build_root.path(), &canonical).unwrap();
+        let kept = oer_toolchain::image::compile_cache(build_root.path(), other.path()).unwrap();
+        let held = cache.lock().unwrap();
+        let error = remove_compile_caches(build_root.path(), &canonical)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("a build holds"), "{error}");
+        drop(held);
+        // The cache is found by its record after its tree is gone.
+        drop(tree);
+        remove_compile_caches(build_root.path(), &canonical).unwrap();
+        assert!(!cache.path().exists());
+        assert!(kept.path().is_dir());
+        // A tree without a cache has nothing to remove.
+        remove_compile_caches(build_root.path(), &canonical).unwrap();
     }
 
     #[test]

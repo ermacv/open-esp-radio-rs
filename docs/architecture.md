@@ -190,15 +190,22 @@ workload configuration remain ordinary environment settings. Process tests
 exercise ordinary children, selected descendants, malformed contexts and owner
 loss during real I/O, including an external writer surviving both callers.
 
-**Image compile cache.** Every firmware build of a host, whatever the
-checkout, application, chip, image class or example, and the vendor
-comparison probes, compiles in one shared Cargo target directory below the
-host build root (`oer_toolchain::image::compile_cache`,
-`$XDG_CACHE_HOME/open-esp-radio/build/cargo`, overridden by
-`OER_BUILD_ROOT`). Compiler flags are identical per chip, so units are
-reused across builds; a build holds the cache lock from its Cargo run until
-its outputs are copied out, and publishes its bundle by rename only after
-full success.
+**Image compile cache.** Every firmware build of a tree (a checkout or a
+source snapshot's build workspace), whatever the application, chip, image
+class or example, and the vendor comparison probes and chip-target test
+fixtures of the root workspace, compiles in that tree's own Cargo target
+directory below the host build root (`oer_toolchain::image::compile_cache`,
+`$XDG_CACHE_HOME/open-esp-radio/build/firmware/<digest of the tree's
+canonical path>`, overridden by `OER_BUILD_ROOT`). Cargo names a workspace's
+own packages by their path relative to the workspace root and judges
+freshness by modification times, so a cache two trees shared would hand
+one tree units compiled from the other's sources (#793). Registry and Git
+crates are shared between trees only by a content-addressed compiler cache
+such as `sccache`. The image linker is installed once per identity of its
+inputs (`<build root>/image-linkers/<identity>/`), so trees with the same
+linker sources name one linker path in their flags. A build holds its
+cache's lock from its Cargo run until its outputs are copied out, and
+publishes its bundle by rename only after full success.
 
 ### Sans-IO protocols, executors and time
 

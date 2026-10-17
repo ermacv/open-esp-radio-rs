@@ -278,16 +278,19 @@ impl StackPolicy {
     }
 
     /// The image compiler setup of an image under this policy, built from
-    /// the tree at `root` with the image linker's build in `linker_target`.
+    /// the tree at `root` in its compile cache `cache`, its image linker
+    /// installed below `build_root`.
     pub fn image_compiler<'a>(
         &self,
         root: &'a Path,
-        linker_target: &'a Path,
+        cache: &'a Path,
+        build_root: &'a Path,
         rust_target: &'a str,
     ) -> oer_toolchain::image::ImageCompiler<'a> {
         oer_toolchain::image::ImageCompiler {
             root,
-            linker_target,
+            cache,
+            build_root,
             rust_target,
             max_move_bytes: self.max_move_bytes,
             runtime_environment: self.runtime_environment(),

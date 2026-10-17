@@ -8,7 +8,7 @@ private vendor artifacts live here.
 | --- | --- |
 | `<chip>/artifacts.toml` | The single pin (repository, revision, SHA-256) of every vendor archive, ROM ELF and SDK firmware |
 | `<chip>/facts/` | Cited-function fingerprints (`provenance.toml`) and recovered name maps |
-| `<chip>/probes/`, `<chip>/scenarios/` | Compiled production entries (built with the chip's image compiler, in the shared firmware cache) and typed Blobray comparisons (the verdict library; `scenarios/cli` its binary) |
+| `<chip>/probes/`, `<chip>/scenarios/` | Compiled production entries (built with the chip's image compiler, in the checkout's firmware compile cache) and typed Blobray comparisons (the verdict library; `scenarios/cli` its binary) |
 | `<chip>/hil-vendor/`, `<chip>/hardware/` | Vendor firmware and isolated firmware probes of board state |
 | `harness/` | Probe generation and the chip-neutral scenario engine |
 | `evidence/` | `oer-vendor-evidence`: evidence producers, orchestration, the verdict source policy and the `Producer` contract; re-exports the shared shard format |

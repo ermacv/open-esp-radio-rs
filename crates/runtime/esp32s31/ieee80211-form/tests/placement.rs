@@ -23,9 +23,11 @@ fn build(
     variant: &str,
     diagnostics: bool,
 ) -> Result<Vec<u8>> {
+    // The checkout's own firmware compile cache: its packages are named by
+    // their workspace-relative paths, which every checkout shares (#793).
     let build = oer_toolchain::image::host_build_root()?;
-    let cache = oer_toolchain::image::compile_cache(&build);
-    let linker = oer_toolchain::image::linker_target(&build);
+    let compile_cache = oer_toolchain::image::compile_cache(&build, root)?;
+    let cache = compile_cache.path().to_owned();
     fs::create_dir_all(output)?;
     let script_path = output.join(format!("{variant}.x"));
     fs::write(&script_path, script)?;
@@ -51,18 +53,20 @@ fn build(
         .arg(&cache)
         .args(["--", "-Clink-arg=--emit-relocs"])
         .arg(format!("-Clink-arg=-T{}", script_path.display()));
+    // The cache lock covers the linker's build in it and the copy, not only
+    // cargo's build.
+    let _lock = compile_cache.lock()?;
     oer_toolchain::image::configure(
         &mut command,
         &oer_toolchain::image::ImageCompiler {
             root,
-            linker_target: &linker,
+            cache: &cache,
+            build_root: &build,
             rust_target: "riscv32imafc-unknown-none-elf",
             max_move_bytes: 4096,
             runtime_environment: vec![],
         },
     )?;
-    // The host-wide cache lock covers the copy, not only cargo's build.
-    let _lock = oer_toolchain::image::lock_compile_cache(&cache)?;
     let result = command.output()?;
     fs::write(output.join(format!("{variant}.build.log")), &result.stderr)?;
     if !result.status.success() {

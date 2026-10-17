@@ -33,6 +33,7 @@ toml = "1.1"
 oer-hil-scenario = { path = "../scenario", features = ["test-support"] }
 oer-hil-run-bundle = { path = "../run-bundle", features = ["test-support"] }
 oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
+oer-toolchain = { path = "../../../tools/toolchain" }
 
 [lints]
 workspace = true

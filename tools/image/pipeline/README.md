@@ -14,7 +14,7 @@ stack policy, what the interrupt-stack gate requires (`Required::Proven`, or
 `Partial` for diagnostic images), the layout seed, local dependency
 `Overrides` (`ESP_HAL_ROOT`), the
 caller's builder packages and extra policy files, the bundle directory
-(every build compiles in the host's one `compile_cache()`) and an optional audit of the runtime ELF (HIL's observer
+(every build compiles in its tree's own `compile_cache(root)`) and an optional audit of the runtime ELF (HIL's observer
 placement).
 
 The chip profile's boot kind selects the pipeline:
@@ -197,7 +197,7 @@ is an input from the day it is linked.
 
 Build exclusion has one mechanism, the foundation's file lock
 (`oer_process::lock::FileLock`, shared or exclusive): one build at a
-time in the shared compile cache (`exclusion::compile_cache`, `<cache>/build.lock`,
+time in a tree's compile cache (`compile_cache(root)`, `<cache>/build.lock`,
 waiting, held from the Cargo run until the ELF is copied out), one
 build per private lock copy (`BuildLock`, refusing), the host's image build
 slots (`exclusion::slot` under `host_build_root()/tokens`: half the cores, at

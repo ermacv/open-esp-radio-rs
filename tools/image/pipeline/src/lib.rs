@@ -109,7 +109,7 @@ pub struct ImageSpec {
     /// Further repository files the build reads, relative to `root`.
     pub reads: Vec<PathBuf>,
     /// The bundle's directory; every build of an image has its own. The
-    /// compile cache is the host's one [`compile_cache`].
+    /// compile cache is the tree's own [`compile_cache`].
     pub output: PathBuf,
     /// The checks to run; `None` runs none.
     pub checks: Option<Box<dyn Checks>>,
@@ -163,11 +163,9 @@ pub fn type_check(spec: &ImageSpec) -> Result<()> {
         &spec.root.join(&spec.application.workspace),
         &spec.output.join("locks/check"),
     )?;
-    let cache = compile_cache()?;
-    // The image linker the flags name is the shared one.
-    let _cache = oer_toolchain::image::lock_compile_cache(&cache)?;
-    let mut command = runtime_command(spec, &profile, "check", &policy)?;
-    command.env("CARGO_TARGET_DIR", &cache);
+    let cache = compile_cache(&spec.root)?;
+    let _cache = cache.lock()?;
+    let mut command = runtime_command(spec, &profile, "check", &policy, cache.path())?;
     lock.configure(&mut command);
     let manifest = spec
         .root
@@ -199,12 +197,13 @@ pub fn profile(root: &Path, chip: &str) -> Result<oer_chip_profile::Profile> {
 /// The Cargo `subcommand` (`build` or `check`) of `spec`'s runtime with the
 /// image compiler of `policy`: the application package for the chip's
 /// target, its features alone, `--locked` unless a dependency is
-/// overridden.
+/// overridden, in the tree's compile cache `cache`.
 fn runtime_command(
     spec: &ImageSpec,
     profile: &oer_chip_profile::Profile,
     subcommand: &str,
     policy: &StackPolicy,
+    cache: &Path,
 ) -> Result<std::process::Command> {
     let application = &spec.application;
     let mut command = cargo::command();
@@ -216,6 +215,7 @@ fn runtime_command(
         .args(["-p", &application.package, "--bin", &application.binary])
         .args(["--release", "--target", &profile.rust_target])
         .args(application.feature_arguments())
+        .env("CARGO_TARGET_DIR", cache)
         .env("CARGO_INCREMENTAL", "0");
     if spec.overrides.is_empty() {
         command.arg("--locked");
@@ -227,7 +227,7 @@ fn runtime_command(
     zeroed_inputs(&mut command, profile);
     oer_toolchain::image::configure(
         &mut command,
-        &policy.image_compiler(&spec.root, &linker_cache()?, &profile.rust_target),
+        &policy.image_compiler(&spec.root, cache, &host_build_root()?, &profile.rust_target),
     )?;
     Ok(command)
 }
@@ -255,19 +255,12 @@ pub fn host_build_root() -> Result<PathBuf> {
     oer_toolchain::image::host_build_root()
 }
 
-/// The host's one firmware compile cache
-/// ([`oer_toolchain::image::compile_cache`]); a build holds
-/// [`oer_toolchain::image::lock_compile_cache`] from its Cargo run until its
-/// ELF and dependency information are copied out.
-pub fn compile_cache() -> Result<PathBuf> {
-    Ok(oer_toolchain::image::compile_cache(&host_build_root()?))
-}
-
-/// The target directory of the image linker, built once for every image
-/// build; its path is part of every image's `RUSTFLAGS`, so it must not
-/// differ between builds.
-pub(crate) fn linker_cache() -> Result<PathBuf> {
-    Ok(oer_toolchain::image::linker_target(&host_build_root()?))
+/// The firmware compile cache of the tree at `root` below the host build
+/// root ([`oer_toolchain::image::compile_cache`]); a build holds its
+/// [`lock`](oer_toolchain::image::CompileCache::lock) from its Cargo run
+/// until its ELF and dependency information are copied out.
+pub fn compile_cache(root: &Path) -> Result<oer_toolchain::image::CompileCache> {
+    oer_toolchain::image::compile_cache(&host_build_root()?, root)
 }
 
 /// Copy `source` to `target` unless `target` already holds the same bytes, so

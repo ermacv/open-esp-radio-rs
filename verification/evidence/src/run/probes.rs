@@ -1,6 +1,6 @@
 //! Build each chip's caller-owned vendor comparison artifacts.
 //!
-//! The probes build into the host's shared firmware compile cache with
+//! The probes build into their checkout's firmware compile cache with
 //! exactly the image compiler of their chip (`oer_toolchain::image`: the
 //! image linker, the stack-size section, the move limit of the chip's stack
 //! policy, shared generics, and the zeroed inputs the image linker checks),
@@ -44,7 +44,7 @@ fn probes(root: &std::path::Path, chip: &str) -> Result<Vec<Probe>> {
 }
 
 /// The built comparison ELF of the probe `package`: copied out of the
-/// shared compile cache into the repository's `target/verification/<chip>/`,
+/// checkout's compile cache into the repository's `target/verification/<chip>/`,
 /// one file per probe package.
 pub fn elf(context: &Checkout, package: &str) -> Result<std::path::PathBuf> {
     let probe = all(&context.root)?
@@ -63,12 +63,10 @@ fn output(context: &Checkout, probe: &Probe) -> std::path::PathBuf {
         .join(&probe.probe.package)
 }
 
-/// The host's one firmware compile cache, which the probes share with the
-/// images.
-fn compile_cache() -> Result<std::path::PathBuf> {
-    Ok(oer_toolchain::image::compile_cache(
-        &oer_toolchain::image::host_build_root()?,
-    ))
+/// The firmware compile cache of the checkout at `root`, which its probes
+/// share with its images.
+fn compile_cache(root: &std::path::Path) -> Result<oer_toolchain::image::CompileCache> {
+    oer_toolchain::image::compile_cache(&oer_toolchain::image::host_build_root()?, root)
 }
 
 pub fn run(context: &Checkout, chip: &str, list_roles: bool) -> Result<()> {
@@ -83,11 +81,12 @@ pub fn run(context: &Checkout, chip: &str, list_roles: bool) -> Result<()> {
         }
         return Ok(());
     }
-    let cache = compile_cache()?;
+    let compile_cache = compile_cache(&context.root)?;
+    let cache = compile_cache.path().to_owned();
     let profile = oer_chip_profile::Profile::load(&context.root, chip)?;
     let target = profile.rust_target.clone();
     let policy = oer_image_policy::StackPolicy::load(&context.root.join(profile.stack_policy()))?;
-    let linker = oer_toolchain::image::linker_target(&oer_toolchain::image::host_build_root()?);
+    let build_root = oer_toolchain::image::host_build_root()?;
     build(
         context,
         chip,
@@ -112,14 +111,15 @@ pub fn run(context: &Checkout, chip: &str, list_roles: bool) -> Result<()> {
                 oer_toolchain::image::ZEROED_INPUTS_ENV,
                 profile.zeroed_inputs(),
             );
-            oer_toolchain::image::configure(
-                command,
-                &policy.image_compiler(&context.root, &linker, &target),
-            )?;
             {
                 // Every build uplifts into the same `<target>/release`: hold
-                // the cache until this probe's ELF is copied out.
-                let _cache = oer_toolchain::image::lock_compile_cache(&cache)?;
+                // the cache from the linker's build in it until this probe's
+                // ELF is copied out.
+                let _cache = compile_cache.lock()?;
+                oer_toolchain::image::configure(
+                    command,
+                    &policy.image_compiler(&context.root, &cache, &build_root, &target),
+                )?;
                 process::run(command)?;
                 std::fs::create_dir_all(elf.parent().ok_or("probe output has no parent")?)?;
                 let built = cache.join(&target).join("release").join(&package);

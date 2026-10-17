@@ -461,6 +461,29 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| hil(ctx, &["images", "check", "--class", "boot-smoke"]),
     },
     Check {
+        id: "image-isolation",
+        tier: Tier::Full,
+        job: "images",
+        summary: "two checkouts with diverging sources each build the image linker and a root-workspace chip package from their own code",
+        // What decides the firmware compile caches and the linker's
+        // identity, and this check and its test.
+        trigger: Some(|change| {
+            touches(
+                change,
+                &[
+                    "tools/image/",
+                    "tools/toolchain/",
+                    "tools/process/src/lock.rs",
+                    "tools/xtask/src/registry.rs",
+                    "hil/host/image/src/",
+                    "hil/host/image/tests/checkout_isolation.rs",
+                    "crates/runtime/esp32s31/ieee80211-form/tests/placement.rs",
+                ],
+            )
+        }),
+        run: image_isolation,
+    },
+    Check {
         id: "image-classes",
         tier: Tier::Nightly,
         job: "classes",
@@ -1332,8 +1355,31 @@ fn verification(ctx: &Checkout, args: &[&str]) -> Result<()> {
 }
 
 fn examples(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    // The examples share the host's one image compile cache.
+    // The examples share the checkout's image compile cache.
     fw(ctx, &["build", "--all"])
+}
+
+/// The pipeline's checkout isolation (#793): its ignored tests build
+/// firmware twice, in a build root of their own so no other build's caches
+/// take part, removed afterwards and outside `target/`, which CI caches.
+fn image_isolation(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    let build_root = tempfile::Builder::new()
+        .prefix("oer-image-isolation-")
+        .tempdir()?;
+    process::run(
+        oer_toolchain::cargo_in(&ctx.root)
+            .args([
+                "test",
+                "--locked",
+                "-p",
+                "oer-hil-image",
+                "--test",
+                "checkout_isolation",
+                "--",
+                "--ignored",
+            ])
+            .env(oer_toolchain::image::BUILD_ROOT_ENV, build_root.path()),
+    )
 }
 
 /// The example workspaces' directory prefix.

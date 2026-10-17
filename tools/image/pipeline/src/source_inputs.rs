@@ -37,7 +37,7 @@ pub fn collect(repository: &Path, builds: &[(&Path, &str)]) -> Result<BTreeSet<P
     let mut files = BTreeSet::new();
     for (release, binary) in builds {
         let dep_info = fs::read_to_string(release.join(format!("{binary}.d")))?;
-        for path in dependencies(&dep_info) {
+        for path in oer_toolchain::image::dep_info_paths(&dep_info) {
             if let Some(relative) = inside(&repository, &path) {
                 files.insert(relative);
             }
@@ -154,36 +154,6 @@ pub fn write(output: &Path, files: &BTreeSet<PathBuf>) -> Result<PathBuf> {
         &serde_json::json!({"schema": SCHEMA, "files": files}),
     )?;
     Ok(path)
-}
-
-/// The paths of a dep-info file, whose spaces inside a path are escaped.
-fn dependencies(dep_info: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for line in dep_info.lines() {
-        let Some((_, list)) = line.split_once(": ") else {
-            continue;
-        };
-        let mut current = String::new();
-        let mut characters = list.chars().peekable();
-        while let Some(character) = characters.next() {
-            match character {
-                '\\' if characters.peek() == Some(&' ') => {
-                    current.push(' ');
-                    characters.next();
-                }
-                ' ' => {
-                    if !current.is_empty() {
-                        paths.push(PathBuf::from(std::mem::take(&mut current)));
-                    }
-                }
-                character => current.push(character),
-            }
-        }
-        if !current.is_empty() {
-            paths.push(PathBuf::from(current));
-        }
-    }
-    paths
 }
 
 /// `path` relative to `repository` after resolving `.` and `..` lexically,

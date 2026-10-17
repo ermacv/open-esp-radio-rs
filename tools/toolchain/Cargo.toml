@@ -11,8 +11,6 @@ description = "The host tools repository builds run: their lookup, recorded vers
 [dependencies]
 oer-durable = { path = "../durable" }
 oer-process = { path = "../process" }
-
-[dev-dependencies]
 tempfile = "=3.27.0"
 
 [lints]

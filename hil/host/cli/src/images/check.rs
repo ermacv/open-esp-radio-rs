@@ -200,8 +200,9 @@ struct Queue {
 
 /// Builds or type-checks every selected class, up to `jobs` at once, and
 /// reports the outcomes in catalog order. Every class compiles in the
-/// image pipeline's one shared compile cache, so a dependency is compiled
-/// once for all of them; the cache serializes their Cargo runs.
+/// compile cache of the tree it is built from (a source snapshot's build
+/// slot for a build, the checkout for a type check), so a dependency is
+/// compiled once for all of them; the cache serializes their Cargo runs.
 pub fn run(
     ctx: &Checkout,
     chip: &str,

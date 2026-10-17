@@ -82,17 +82,18 @@ fn validation_rejects_any_change_to_the_committed_pins() {
 
 #[test]
 fn the_compile_cache_is_used_by_one_build_at_a_time() {
-    let directory = tempfile::tempdir().unwrap();
-    let cache = directory.path().join("nested");
-    let first = oer_toolchain::image::lock_compile_cache(&cache).unwrap();
-    let path = cache.join("build.lock");
+    let build_root = tempfile::tempdir().unwrap();
+    let tree = tempfile::tempdir().unwrap();
+    let cache = oer_toolchain::image::compile_cache(build_root.path(), tree.path()).unwrap();
+    let first = cache.lock().unwrap();
+    let path = cache.path().join("build.lock");
     assert!(
         FileLock::try_acquire(&path, Mode::Shared)
             .unwrap()
             .is_none()
     );
     drop(first);
-    let _second = oer_toolchain::image::lock_compile_cache(&cache).unwrap();
+    let _second = cache.lock().unwrap();
     assert!(
         FileLock::try_acquire(&path, Mode::Exclusive)
             .unwrap()

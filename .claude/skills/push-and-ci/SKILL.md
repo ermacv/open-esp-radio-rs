@@ -94,4 +94,4 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
   `cargo hil images check --class <class> --type-check`; without
   `--type-check` the class's image bundle is built with every gate.
 - Blobray: `--manifest-path tools/blobray/Cargo.toml`.
-- `cargo hil sweep` lists rebuildable caches when the disk runs low.
+- `cargo hil sweep` lists rebuildable caches when the disk runs low: the checkout's, and in the host build root the firmware compile caches of trees that are gone and unused image linkers.

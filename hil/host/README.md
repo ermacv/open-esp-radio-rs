@@ -244,8 +244,11 @@ paths. Artifacts (including copies of both ELFs) and the snapshot reference
 remain under `~/.cache/open-esp-radio/build/<chip>/snapshot-builds/`. The live
 checkout is not a build source for this explicit mode.
 
-Every image build compiles in one shared cache,
-`~/.cache/open-esp-radio/build/cargo/`; `cargo hil images check` builds its classes there too. At most half the host's cores, and no
+Every image build compiles in its tree's own cache,
+`~/.cache/open-esp-radio/build/firmware/<tree digest>/` (a checkout's, or a
+build slot's for a source snapshot); `cargo hil images check` builds its
+classes there too, and `cargo hil sweep` removes the caches of trees that
+are gone. At most half the host's cores, and no
 more than its memory holds at 2 GB each, compile image runtimes at once across
 all checkouts; further builds wait for a free build slot in
 `~/.cache/open-esp-radio/build/tokens/`.

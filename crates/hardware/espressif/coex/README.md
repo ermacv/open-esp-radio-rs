@@ -130,18 +130,21 @@ policy under the arbiter lease, as the pinned libcoexist does:
   radio when at least two participants take part and another radio publishes
   schedule status (`CoexStatusWords`).
 - **Status around an enable.** IEEE 802.15.4 enters coexistence and then
-  publishes `schedule::IEEE802154_COEX_STATUS` ([`src/schedule.rs`](src/schedule.rs)) (`esp_coex_ieee802154_status_enable`);
-  leaving clears it first and publishes it again when the disable fails.
-  External coexistence enables the participant and publishes
-  `schedule::EXTERNAL_COEX_STATUS` (`esp_coex_external_set`); stopping clears it,
-  withdraws the requests, then clears the priorities, disables the block and
-  releases its module clock (`esp_coex_external_stop`).
-- **What Wi-Fi reads.** Its power management reads, on every beacon and
-  slice, `coex_status_get(WIFI)`, the schedule's current and flexible period
+  publishes `schedule::IEEE802154_COEX_STATUS`
+  ([`src/schedule.rs`](src/schedule.rs))
+  (`esp_coex_ieee802154_status_enable`); leaving clears it first and publishes
+  it again when the disable fails. External coexistence enables the
+  participant and publishes `schedule::EXTERNAL_COEX_STATUS`
+  (`esp_coex_external_set`); stopping clears it, withdraws the requests, then
+  clears the priorities, disables the block and releases its module clock
+  (`esp_coex_external_stop`).
+- **What Wi-Fi reads.** Its power management reads, on every beacon and slice,
+  `coex_status_get(WIFI)`, the schedule's current and flexible period
   (`coex_schm_curr_period_get`, `_flexible_period_get`), its interval
   (`coex_schm_interval_get`), the share of phase 0
-  (`coex_schm_get_phase_by_idx(0)`) and the priorities of
-  `pti::wifi_events` ([`src/pti.rs`](src/pti.rs)) `BEACON`, `SLICE` and `CONNECTION` (`coex_pti_get(0, 1, 46)`).
+  (`coex_schm_get_phase_by_idx(0)`) and the priorities of `pti::wifi_events`
+  ([`src/pti.rs`](src/pti.rs)) `BEACON`, `SLICE` and `CONNECTION`
+  (`coex_pti_get(0, 1, 46)`).
 - **Order of IEEE 802.15.4 join and leave.** Joining prepares the shared PHY
   (`esp_phy_enable`), takes the BTBB reference and enters the PHY client
   set (`esp_btbb_enable`); leaving releases the PHY client and the BTBB

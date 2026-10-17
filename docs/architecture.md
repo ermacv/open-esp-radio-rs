@@ -528,11 +528,12 @@ tokens ([Radio ports](#radio-ports)).
 
 A shared contract is a crate or trait that more than one block depends on.
 Each block guide skill lists its own under "Shared contracts"; today they
-include `oer-radio-port`, the permit pool, `oer-time`, PHY, coexistence, the HAL split, the PAC and `registers/`. It takes only what at least two blocks have proven in code; a
-need of one block stays in that block until a second one has it. A change
-starts from a prototype in the block that needs it, showing the case the
-current contract fails, and lands before the blocks that depend on it build
-on it.
+include `oer-radio-port`, the permit pool, `oer-time`, PHY, coexistence, the
+HAL split, the PAC and `registers/`. It takes only what at least two blocks
+have proven in code; a need of one block stays in that block until a second
+one has it. A change starts from a prototype in the block that needs it,
+showing the case the current contract fails, and lands before the blocks that
+depend on it build on it.
 
 Every proposed change comes with a cost table, and is not accepted without one:
 
@@ -921,13 +922,14 @@ catalog. Producer and evaluator independently validate the format and reject
 ambiguous entries. Firmware and host share a typed wire contract and must be
 updated together when that contract changes.
 
-The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board profile,
-Flash bootstrap, stage-two relocation, the staged-boot address map and image
-header, linker scripts and per-core SRAM IRQ stacks. HIL images use that boot contract. The host
-[`oer-image`](../tools/image/pipeline/README.md) pipeline builds every image: payload
-packing, the stack and placement gates and the flash contents, encoded at build
-time into an image bundle that a flash only writes; HIL adds its image
-classes, observers and evidence. The platform does not depend on HIL.
+The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board
+profile, Flash bootstrap, stage-two relocation, the staged-boot address map
+and image header, linker scripts and per-core SRAM IRQ stacks. HIL images use
+that boot contract. The host [`oer-image`](../tools/image/pipeline/README.md)
+pipeline builds every image: payload packing, the stack and placement gates
+and the flash contents, encoded at build time into an image bundle that a
+flash only writes; HIL adds its image classes, observers and evidence. The
+platform does not depend on HIL.
 
 Linux network helpers and remote OpenWrt operations belong to HIL. Repository
 checks do not install fixtures, flash devices or change network state.

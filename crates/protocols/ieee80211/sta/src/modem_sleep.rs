@@ -212,8 +212,7 @@ pub enum PmCoexAction {
 pub enum PmAction {
     /// Send a Null Data frame advertising (`true`) or leaving power save.
     SendNull { power_save: bool },
-    /// A coexistence effect, which the shared radio's owner shared by every radio
-    /// protocol performs.
+    /// A coexistence effect, which the owner of the shared radio performs.
     Coex(PmCoexAction),
     /// Block the MAC TX queues, as the slice end does.
     BlockTx,

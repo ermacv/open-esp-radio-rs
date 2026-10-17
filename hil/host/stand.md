@@ -6,12 +6,13 @@ air. This guide covers leases, boards and their firmware; the
 [runs and investigation](runs.md) what a run leaves behind.
 
 
-The [arbiter](../../stand/arbiter/README.md) orders every use of the stand. A lease claims the resources its work uses:
-boards by MAC, fixtures such as the laptop radio, the OpenWrt host or the
-Bluetooth adapter, and the air, shared by all radio work and exclusive for
-scenarios tagged `air-exclusive` that measure the radio environment. Leases
-whose claims do not conflict run in parallel; conflicting requests are served
-by their owners' balances (below). Hardware commands (`run`, `run-all`, `fixture check` and `flash`) wait for
+The [arbiter](../../stand/arbiter/README.md) orders every use of the stand. A
+lease claims the resources its work uses: boards by MAC, fixtures such as the
+laptop radio, the OpenWrt host or the Bluetooth adapter, and the air, shared
+by all radio work and exclusive for scenarios tagged `air-exclusive` that
+measure the radio environment. Leases whose claims do not conflict run in
+parallel; conflicting requests are served by their owners' balances (below).
+Hardware commands (`run`, `run-all`, `fixture check` and `flash`) wait for
 their claims instead of failing when they are busy. A run builds its images
 before it queues, so the lease covers flashing and execution only.
 

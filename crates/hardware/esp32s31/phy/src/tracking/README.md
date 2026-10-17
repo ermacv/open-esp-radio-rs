@@ -41,10 +41,11 @@ owner remains pending until the selected target children complete.
 
 The concurrent domain runs the vendor periodic tracking when its owner calls
 `track_concurrent_phy` every tracking period under the arbiter lease (the
-radio system that did went in #770, tag `legacy-radio-2026-10-16`; #771
-brings it back), and due work starts at once, as the vendor's does: no protocol pauses, and
-the tracking graph brackets its RF-sensitive regions with the grant-protect
-request. There is no protocol-selected maintenance of individual operations.
+radio system that did went in #770, tag `legacy-radio-2026-10-16`; #771 brings
+it back), and due work starts at once, as the vendor's does: no protocol
+pauses, and the tracking graph brackets its RF-sensitive regions with the
+grant-protect request. There is no protocol-selected maintenance of individual
+operations.
 
 ## Operations and hardware effects
 

@@ -15,11 +15,11 @@ use crate::bluetooth_address::bluetooth_public_address_from_base;
 
 /// Sole safe owner of the ESP32-S31 shared radio-platform singletons.
 ///
-/// Construction consumes the official ESP-HAL singleton tokens. The tokens
-/// stay private for the owner's whole lifetime; the shared radio's owner holds it as
+/// Construction consumes the official ESP-HAL singleton tokens. The tokens stay
+/// private for the owner's whole lifetime; the shared radio's owner holds it as
 /// the platform its PHY target port borrows. It performs no register access
-/// itself: every clock transaction and reference count lives in the custom
-/// PAC route.
+/// itself: every clock transaction and reference count lives in the custom PAC
+/// route.
 pub struct EspHalRadioPlatform {
     _modem_syscon: MODEM_SYSCON<'static>,
     _modem_lpcon: MODEM_LPCON<'static>,

@@ -1175,7 +1175,8 @@ where
     ) -> Admission {
         let queue = common.queue;
         let (scheduler_priority, packet_priority, priority_count) = match coex {
-            // A connection frame under the shared radio owner's reconnect policy.
+            // A connection frame under the shared radio owner's reconnect
+            // policy.
             CoexPriority::Elevated => {
                 let connection = self.coex.connection_frame_priorities();
                 (

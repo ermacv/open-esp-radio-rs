@@ -1,10 +1,10 @@
 # Radio execution
 
 `ieee80211` (`oer-ieee80211-runtime`) holds the chip-independent Wi-Fi
-execution primitives (the station service, the lower-MAC owner glue,
-monitor handoffs), which no chip runtime uses yet. No Bluetooth LE or
-IEEE 802.15.4 runtime exists since #770 (tag `legacy-radio-2026-10-16`). Directory boundaries describe the execution
-responsibility of each package.
+execution primitives (the station service, the lower-MAC owner glue, monitor
+handoffs), which no chip runtime uses yet. No Bluetooth LE or IEEE 802.15.4
+runtime exists since #770 (tag `legacy-radio-2026-10-16`). Directory
+boundaries describe the execution responsibility of each package.
 
 ## Execution and time contract
 

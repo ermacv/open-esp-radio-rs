@@ -150,19 +150,19 @@ common flags at `+0x1c`. Its call to `r_ble_lll_conn_coex_pti_init`
 (`r_sym_coexConn_BqYvJSQvD3IUJJyL5jD8`) initializes the two five-bit
 radio-request priorities at `+0x24`; advertising has a different, four-lane
 producer. With another radio on the antenna the open radio applies the
-vendor's dynamic priority control: `coexConn.c.o_1.o`
-`r_sym_coexConn_BqYv...` installs base lanes 4 from the default table
-`04 04 08`, and `r_sym_coexConn_sQLo...` replaces lane zero for every event
-with 4, 9 or 11 from the table `04 09 0b 04 09 0b 08 06 03 14 02 28 01 50`
-at the event's level. The kept `coexistence` module of the LE Controller raises the first six events,
-events after more missed receptions than the interval allows (3 up to
-12.5 ms, 2 up to 25 ms, 1 up to 50 ms, none beyond) and events during a
-local control procedure (`r_sym_coexConn_zaMn...`). `r_sym_coexConn_H75Y...`
+vendor's dynamic priority control: `coexConn.c.o_1.o` `r_sym_coexConn_BqYv...`
+installs base lanes 4 from the default table `04 04 08`, and
+`r_sym_coexConn_sQLo...` replaces lane zero for every event with 4, 9 or 11
+from the table `04 09 0b 04 09 0b 08 06 03 14 02 28 01 50` at the event's
+level. The kept `coexistence` module of the LE Controller raises the first six
+events, events after more missed receptions than the interval allows (3 up to
+12.5 ms, 2 up to 25 ms, 1 up to 50 ms, none beyond) and events during a local
+control procedure (`r_sym_coexConn_zaMn...`). `r_sym_coexConn_H75Y...`
 protects the connection for eight 625 us slots, 20 units of 256 us in
 link-state `+0x30` bits 19:14 with bits 21:20 set. Alone on the antenna both
-lanes request 15 and no protection is set; this equal standalone policy is
-a product choice. Recycle and recurring cancellation retain
-these allocation fields while replacing event timing.
+lanes request 15 and no protection is set; this equal standalone policy is a
+product choice. Recycle and recurring cancellation retain these allocation
+fields while replacing event timing.
 
 The fixed open connection pool starts with a completed, packetless predecessor
 followed by two packet-bearing nodes. Both the connection's private receive

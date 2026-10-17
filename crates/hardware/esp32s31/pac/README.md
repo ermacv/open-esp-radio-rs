@@ -78,7 +78,8 @@ names each word and its guarantee.
 
 `cargo registers generate --check` and `cargo xtask check architecture`
 validate register sources, dependency direction and handwritten unsafe
-boundaries. Publication checks also cover source-only publication reproducibility unconditionally. Artifact-scoped
-publication is additionally checked when its review report is present.
-Generated addresses, masks and field positions are not regression test oracles;
-ownership and memory protocols are tested through behavior and typed contracts.
+boundaries. Publication checks also cover source-only publication
+reproducibility unconditionally. Artifact-scoped publication is additionally
+checked when its review report is present. Generated addresses, masks and
+field positions are not regression test oracles; ownership and memory
+protocols are tested through behavior and typed contracts.

@@ -116,17 +116,16 @@ Every runner works over a change's reach or over the whole tree. Each CI job
 (`.github/workflows/ci.yml`, `docs.yml`, `nightly.yml`) prepares its runner
 (caches, a toolchain component, clang, GNU ld) and runs `cargo xtask check
 tier TIER --job JOB`, on a branch with `--checks` naming what its change
-reaches; a test holds the workflows to the registry, so no
-workflow lists checks of its own. A check without a trigger runs only with
-its whole tier: every image class, the conformance check (it needs clang and the Sail model), Blobray's
-whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
-the probes and the host stands. The boot smoke image build (`final-images`)
-runs for a change under `platform/`, whose boot path it builds, and with its
-tier. The session start hook
-reads CI's state through `ci-status`, and the pre-tool hook reads its
-heavy-command list from `cargo xtask hooks`. The fast host `claude-hooks`
-check runs the hook's offline regressions
-(`.claude/hooks/test_pre_tool_use.py`) when `.claude/hooks/` or
+reaches; a test holds the workflows to the registry, so no workflow lists
+checks of its own. A check without a trigger runs only with its whole tier:
+every image class, the conformance check (it needs clang and the Sail model),
+Blobray's whole workspace and its standalone extraction (both need GNU RISC-V
+ld 2.47), the probes and the host stands. The boot smoke image build
+(`final-images`) runs for a change under `platform/`, whose boot path it
+builds, and with its tier. The session start hook reads CI's state through
+`ci-status`, and the pre-tool hook reads its heavy-command list from `cargo
+xtask hooks`. The fast host `claude-hooks` check runs the hook's offline
+regressions (`.claude/hooks/test_pre_tool_use.py`) when `.claude/hooks/` or
 `.claude/settings.json` changes.
 
 ## CI input reuse
@@ -356,12 +355,13 @@ performs no hardware operations.
 ## Image checks
 
 Every image is built by the one image pipeline,
-[`oer-image`](../image/pipeline/README.md): `check firmware` and `compare images` through `oer-hil-image`'s class specs.
-The Blobray audit of a product image's calls into the vendor radio ROM was
-removed with the last image it audited (#762); it returns with the first
-product image, and the forbidden ROM ranges stay in `chip.toml`. Encoding uses the `espflash` library, so no build needs the `espflash`
-executable. This gate does not run on hardware or measure runtime stack
-high-water.
+[`oer-image`](../image/pipeline/README.md): `check firmware` and `compare
+images` through `oer-hil-image`'s class specs. The Blobray audit of a product
+image's calls into the vendor radio ROM was removed with the last image it
+audited (#762); it returns with the first product image, and the forbidden ROM
+ranges stay in `chip.toml`. Encoding uses the `espflash` library, so no build
+needs the `espflash` executable. This gate does not run on hardware or measure
+runtime stack high-water.
 
 ## Network dependency checks
 

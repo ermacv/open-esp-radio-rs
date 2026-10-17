@@ -465,3 +465,17 @@ fn a_job_runs_only_the_checks_named_and_refuses_one_it_lacks() {
     let foreign = [String::from("architecture")];
     assert!(selected(Tier::Full, "verification", Some(&foreign)).is_err());
 }
+
+#[test]
+fn a_platform_change_alone_selects_the_final_images_and_others_do_not() {
+    let platform = ids(of_change(&change(
+        &["platform/esp32s31/linker/sections.x"],
+        Tier::Full,
+    )));
+    assert!(platform.contains(&"final-images"), "{platform:?}");
+    let elsewhere = ids(of_change(&change(
+        &["crates/driver/src/lib.rs"],
+        Tier::Full,
+    )));
+    assert!(!elsewhere.contains(&"final-images"), "{elsewhere:?}");
+}

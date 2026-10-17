@@ -116,7 +116,7 @@ source-fact-refs = [
 [[capabilities.source-contracts]]
 id = "bluetooth-phy-demand-and-release"
 composition = "production"
-scope = "Enter and leave the shared PHY domain and BTBB as the Bluetooth client of the radio arbiter; the arbiter's domain turns due or periodic evaluation into the exact pending tracking request, and the release reports the last-client fact that lets the radio system close RF"
+scope = "Enter and leave the shared PHY domain and BTBB as the Bluetooth client of the radio arbiter; the arbiter's domain turns due or periodic evaluation into the exact pending tracking request, and the release reports the last-client fact that lets the arbiter's owner close RF (the radio system that did went in #770, tag `legacy-radio-2026-10-16`; #771 brings it back)"
 limits = "These lower transitions acquire no Controller or shared-RF permission. The referenced idle maintenance and powered-release facts own their composed subsets; periodic active-role service retains its separate incomplete fact"
 source-paths = [
   "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",

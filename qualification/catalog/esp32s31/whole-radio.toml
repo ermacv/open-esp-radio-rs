@@ -228,7 +228,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Cold reconstruction after shutdown"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "The radio system registers the PHY once per boot; no path powers the radio fully down and reconstructs it from cold by replaying a final-state calibration cache into a new registration. The Wi-Fi idle restart keeps the registration: it closes RF when Wi-Fi is the last PHY client and wakes it on rejoin (see the RF sleep and RF wake entries)."
+scope-and-limitations = "The PHY is registered once per boot; no path powers the radio fully down and reconstructs it from cold by replaying a final-state calibration cache into a new registration. The radio system that registered it went in #770 and the Wi-Fi idle restart, which kept the registration, closed RF when Wi-Fi was the last PHY client and woke it on rejoin, went in #762 (tags `legacy-radio-2026-10-16`, `legacy-wifi-2026-10-16`); #771 brings the composition back."
 
 [[items]]
 id = "whole-radio-concurrent-ownership-and-arbitration-wifi-bluetooth-concurrent-composition"

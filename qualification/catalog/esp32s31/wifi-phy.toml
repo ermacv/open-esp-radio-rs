@@ -148,7 +148,7 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 id = "runtime-phy-calibration"
 source-fact-refs = ["connected-calibration-owners"]
 title = "Connected runtime PHY calibration"
-scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute in the radio system's periodic tracking under the vendor admission, bracketed by the grant-protect request, and publish one coherent semantic outcome while the station keeps running"
+scope = "Temperature-selected common RXCAL and shared Wi-Fi TXCAL execute in one periodic tracking tick under the vendor admission, bracketed by the grant-protect request, and publish one coherent semantic outcome while the station keeps running; the radio system whose timer ran the tick went in #770 (tag `legacy-radio-2026-10-16`), and #771 brings it back"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -293,7 +293,7 @@ id = "phy-protocol-consumer-composition"
 domain = "phy"
 title = "Protocol consumer composition"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
-overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[the shared PHY domain](src/concurrent.rs),\n[the Wi-Fi PHY client](src/wifi_client.rs),\n[the Bluetooth PHY client](src/bluetooth_client.rs) and\n[the IEEE 802.15.4 PHY client](src/ieee802154_client.rs).\nBluetooth and IEEE 802.15.4 join the shared PHY domain and BTBB baseband as\narbiter clients; membership alone is not RF readiness."
+overview = "Statuses follow the code of each protocol entry point. A `lower-primitive`\nlevel marks an entry whose code remains while no composition runs it: the radio\nsystem and the protocol compositions went in #770 (tag `legacy-radio-2026-10-16`),\nand #771 brings them back. `PARTIAL` can mean an available target entry point\nwithout a public operational caller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[the shared PHY domain](src/concurrent.rs),\n[the Wi-Fi PHY client](src/wifi_client.rs),\n[the Bluetooth PHY client](src/bluetooth_client.rs) and\n[the IEEE 802.15.4 PHY client](src/ieee802154_client.rs).\nBluetooth and IEEE 802.15.4 join the shared PHY domain and BTBB baseband as\narbiter clients; membership alone is not RF readiness."
 packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-ieee80211", "oer-esp32s31-phy"]
 
 [[sections]]
@@ -675,7 +675,7 @@ section = "phy-calibration-state-and-tracking"
 title = "Periodic tracking service"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines, and the radio system's periodic timer runs one `track_concurrent_phy` tick every tracking period; due tracking starts at once under the vendor admission, the domain's only one, which tracks with every protocol running and brackets the RF-sensitive regions with the grant-protect request. There is no protocol-selected maintenance of individual operations. Tracking under concurrent traffic is not HIL-qualified."
+scope-and-limitations = "[Client state](src/state/client.rs) evaluates tracking deadlines, and one `track_concurrent_phy` tick runs per tracking period (the radio system whose timer called it went in #770, tag `legacy-radio-2026-10-16`; #771 brings it back); due tracking starts at once under the vendor admission, the domain's only one, which tracks with every protocol running and brackets the RF-sensitive regions with the grant-protect request. There is no protocol-selected maintenance of individual operations. Tracking under concurrent traffic is not HIL-qualified."
 packages = ["oer-esp32s31-phy"]
 
 [[items]]
@@ -683,8 +683,8 @@ id = "phy-protocol-consumer-cold-registration-calibration-entry-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Cold registration/calibration entry — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "the radio system registers the shared domain once, before Wi-Fi joins it"
+level = "lower-primitive"
+scope-and-limitations = "a composition registers the shared domain once, before Wi-Fi joins it (the radio system that did went in #770, tag `legacy-radio-2026-10-16`); the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-cold-registration-calibration-entry-bluetooth"
@@ -707,16 +707,16 @@ id = "phy-protocol-consumer-protocol-client-ownership-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Protocol-client ownership — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "Wi-Fi bring-up joins the shared domain as a client (`join_wifi`) before MAC startup and leaves through `leave_wifi` at release; the Wi-Fi runtime that retained the `WifiPhyMembership` was removed (#762, tag `legacy-wifi-2026-10-16`)"
+level = "lower-primitive"
+scope-and-limitations = "Wi-Fi bring-up joins the shared domain as a client (`join_wifi`) before MAC startup and leaves through `leave_wifi` at release; the Wi-Fi runtime that retained the `WifiPhyMembership` was removed (#762, tag `legacy-wifi-2026-10-16`); the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-client-ownership-bluetooth"
 section = "phy-protocol-consumer-composition"
 title = "Protocol-client ownership — Bluetooth"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "acquisition and initial tracking settle before BTBB entry"
+level = "lower-primitive"
+scope-and-limitations = "acquisition and initial tracking settle before BTBB entry; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-protocol-client-ownership-ieee802154"
@@ -731,16 +731,16 @@ id = "phy-protocol-consumer-initial-tracking-before-client-handoff-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Initial tracking before client handoff — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "cold start evaluates the monotonic acquisition timestamp and settles any required tracking before initial channel selection and MAC entry"
+level = "lower-primitive"
+scope-and-limitations = "cold start evaluates the monotonic acquisition timestamp and settles any required tracking before initial channel selection and MAC entry; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-initial-tracking-before-client-handoff-bluetooth"
 section = "phy-protocol-consumer-composition"
 title = "Initial tracking before client handoff — Bluetooth"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "PHY setup drives the initial request to a terminal result"
+level = "lower-primitive"
+scope-and-limitations = "PHY setup drives the initial request to a terminal result; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-bluetooth-initial-phy-handoff"
@@ -831,8 +831,8 @@ id = "phy-protocol-consumer-resume-after-rf-sleep-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Resume after RF sleep — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "the idle production supervisor that composed final-client release, RF close/wake, Wi-Fi client reacquisition and stopped-owner reconstruction while retaining the registered PHY epoch was removed (#762, tag `legacy-wifi-2026-10-16`); this immediate cycle is not scheduled modem sleep"
+level = "lower-primitive"
+scope-and-limitations = "the idle production supervisor that composed final-client release, RF close/wake, Wi-Fi client reacquisition and stopped-owner reconstruction while retaining the registered PHY epoch was removed (#762, tag `legacy-wifi-2026-10-16`); this immediate cycle is not scheduled modem sleep; the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-resume-after-rf-sleep-bluetooth"
@@ -855,8 +855,8 @@ id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-wifi"
 section = "phy-protocol-consumer-composition"
 title = "Complete last-client RF/analog shutdown — Wi-Fi"
 status = "implemented"
-level = "composed-product"
-scope-and-limitations = "the production Wi-Fi supervisor that quiesced an idle role frontier, released the final client, executed target RF close, restored the captured route-owned clock/reset baseline during cold-owner reunion and cold-restarted with the final-state cache was removed (#762, tag `legacy-wifi-2026-10-16`)"
+level = "lower-primitive"
+scope-and-limitations = "the production Wi-Fi supervisor that quiesced an idle role frontier, released the final client, executed target RF close, restored the captured route-owned clock/reset baseline during cold-owner reunion and cold-restarted with the final-state cache was removed (#762, tag `legacy-wifi-2026-10-16`); the primitive remains, and no composition runs it since the radio system went in #770 (tag `legacy-radio-2026-10-16`): #771 brings it back"
 
 [[items]]
 id = "phy-protocol-consumer-complete-last-client-rf-analog-shutdown-ieee802154"
@@ -928,7 +928,7 @@ section = "phy-lifecycle-boundaries"
 title = "Re-registration after owned shutdown"
 status = "absent"
 level = "lower-primitive"
-scope-and-limitations = "The radio system registers the shared PHY domain once per boot, optionally from a calibration cache supplied before the first registration; no cold release re-registers it from a final-state cache. A restart that keeps the registration closes and wakes RF instead (RF sleep/power-down and RF wake from retained sleep)."
+scope-and-limitations = "The shared PHY domain is registered once per boot, optionally from a calibration cache supplied before the first registration; no cold release re-registers it from a final-state cache. The radio system that registered it went in #770 (tag `legacy-radio-2026-10-16`), and #771 brings it back. A restart that keeps the registration closed and woke RF instead (RF sleep/power-down and RF wake from retained sleep)."
 
 [[items]]
 id = "phy-lifecycle-boundaries-tracking-failure-containment"

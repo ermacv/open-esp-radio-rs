@@ -243,51 +243,6 @@ pub struct RxZeroCopyEvidence {
     pub peak_held: u16,
 }
 
-/// Cores whose load a session reports: the ESP32-S31's two.
-pub const CPU_LOAD_CORES: usize = 2;
-
-/// Each core's CPU load over the session's throughput measurement window: the
-/// cycles its executor spent in its idle wait (`wfi`) against the window's
-/// cycles. Everything else on the core is busy: tasks, interrupt handlers and
-/// the executor's own polling.
-///
-/// An image with the executor's idle accounting published it for every TCP
-/// session and every one-direction UDP session; a bidirectional UDP session
-/// runs one window per direction and publishes none. No image publishes it
-/// now: the `telemetry/cpu-load` property and the Wi-Fi images that set it
-/// went in #770 and #762 (tags `legacy-radio-2026-10-16`,
-/// `legacy-wifi-2026-10-16`).
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct CpuLoadEvidence {
-    /// The window's length in CPU cycles.
-    pub window_cycles: u64,
-    /// By core: the idle cycles in the window, `None` when the core ran no
-    /// executor or did not answer at a boundary.
-    pub idle_cycles: [Option<u64>; CPU_LOAD_CORES],
-}
-
-impl CpuLoadEvidence {
-    /// The share of the window `core` was busy, in basis points: `None`
-    /// when it was not measured or the window is empty. Idle cycles beyond
-    /// the window's (a waiting core's wake-up latency at a boundary) read
-    /// as zero load.
-    pub fn busy_basis_points(&self, core: usize) -> Option<u64> {
-        let idle = (*self.idle_cycles.get(core)?)?;
-        let window = self.window_cycles;
-        if window == 0 {
-            return None;
-        }
-        let busy = window.saturating_sub(idle);
-        u64::try_from(u128::from(busy) * 10_000 / u128::from(window)).ok()
-    }
-
-    /// The share of the window `core` waited, in basis points: the
-    /// complement of [`busy_basis_points`](Self::busy_basis_points).
-    pub fn idle_basis_points(&self, core: usize) -> Option<u64> {
-        self.busy_basis_points(core).map(|busy| 10_000 - busy)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct TxRadioEvidence {
     /// Station-only terminal receipts within the snapshot interval. These do

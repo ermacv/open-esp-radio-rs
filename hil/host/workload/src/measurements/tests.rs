@@ -240,29 +240,3 @@ fn measurements_survive_link_failure_and_unwinding_capture() {
         values.len()
     );
 }
-
-#[test]
-fn cpu_load_records_each_measured_core_s_busy_share_lower_better() {
-    use oer_hil_protocol::network::CpuLoadEvidence;
-    use oer_hil_run_bundle_format::run::Better;
-
-    let recorder = Recorder::default();
-    recorder.cpu_load(&CpuLoadEvidence {
-        window_cycles: 1_000_000,
-        idle_cycles: [Some(250_000), None],
-    });
-    recorder.cpu_load(&CpuLoadEvidence {
-        window_cycles: 2_000_000,
-        idle_cycles: [Some(1_000_000), None],
-    });
-    let values = recorder.snapshot();
-    assert_eq!(values.len(), 1, "an unmeasured core records nothing");
-    assert_eq!(values[0].name, "cpu.core0.load");
-    assert_eq!(
-        values[0].value, 5_000,
-        "the later window replaces the earlier"
-    );
-    assert_eq!(values[0].unit, MeasurementUnit::BasisPoints);
-    assert_eq!(values[0].better, Some(Better::Lower));
-    assert!(values[0].threshold.is_none());
-}

@@ -64,13 +64,13 @@ fn enclosing_lease_reaches_preparation_and_replay() {
 
 #[test]
 fn a_feature_delta_reaches_the_runner_as_one_argument_even_when_it_removes_first() {
-    let removal = "features=-cpu-load"
+    let removal = "features=-panic-hook"
         .parse::<VariantSpec>()
         .unwrap()
         .features;
     assert_eq!(
         features_argument(&removal).as_deref(),
-        Some("--features=-cpu-load")
+        Some("--features=-panic-hook")
     );
     assert_eq!(features_argument(&FeatureDelta::default()), None);
 }
@@ -86,12 +86,12 @@ fn a_variant_is_a_revision_and_its_dependency_overrides() {
         })
     );
     assert_eq!(
-        "features=+trace,-psram-stack"
+        "features=+usb-jtag-off,-panic-hook"
             .parse::<VariantSpec>()
             .unwrap()
             .features
             .to_string(),
-        "+trace,-psram-stack"
+        "+usb-jtag-off,-panic-hook"
     );
     assert_eq!(
         "override:esp-hal=/h"

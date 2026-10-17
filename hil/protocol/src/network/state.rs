@@ -61,7 +61,6 @@ pub enum EvidenceRecord {
     Link(LinkHealth),
     Stack(StackUsage),
     RxZeroCopy(RxZeroCopyEvidence),
-    CpuLoad(CpuLoadEvidence),
 }
 
 /// Computes the digest carried by [`crate::network::Finished`] for an ordered evidence

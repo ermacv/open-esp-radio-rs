@@ -347,7 +347,7 @@ seed is recorded in the report and every run's manifest.
 is a repository revision (`rev=`, HEAD when omitted) and, after `;`, local
 checkouts that replace pinned dependencies (`override:esp-hal=`, the
 checkout `ESP_HAL_ROOT` names). A variant may also add or remove
-runtime features of every image class it builds, `features=+trace,-psram-stack`:
+runtime features of every image class it builds, `features=+usb-jtag-off,-panic-hook`:
 its runs build with `cargo hil run --features`, which only an experiment
 accepts, the build record keeps the delta, the preflight accepts the flashed
 image by the image keys of its class's features with the delta applied (an arm

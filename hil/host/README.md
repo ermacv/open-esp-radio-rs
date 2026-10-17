@@ -151,12 +151,12 @@ reports), and records the transcript of every exchange.
 `cargo hil plan <scenario>` prints the selection's plan without opening a lab
 configuration or device: each scenario's procedure digest, image, repetitions,
 requirements and the named checks it supplies. `--proof <check>` filters the selected scenarios by an actually implemented
-named check (for example `bluetooth.trace.connection-steps`). Repeated `--proof`
-arguments require all named checks, and `--tag` can restrict the profile. For
-example:
+named check. No current scenario supplies one: the Wi-Fi and Bluetooth
+families whose scenarios did went in #762 and #770. Repeated `--proof`
+arguments require all named checks, and `--tag` can restrict the profile:
 
 ```console
-cargo hil plan --proof bluetooth.trace.connection-steps
+cargo hil plan --proof <check>
 ```
 
 The plan lists provided checks and selection reasons; it does not infer success

@@ -38,7 +38,6 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         rx_delivery: None,
         network_scheduler: None,
         rx_zero_copy: None,
-        cpu_load: None,
         stack: StackUsage {
             cpu0_irq: None,
             cpu1_irq: None,

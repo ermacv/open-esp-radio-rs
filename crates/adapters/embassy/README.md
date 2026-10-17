@@ -1,7 +1,8 @@
 # Embassy bindings
 
-These crates bind Embassy facilities to driver contracts. Chip Wi-Fi and
-Bluetooth execution lives in the [radio runtime domain](../../runtime/README.md).
+These crates bind Embassy facilities to driver contracts. Chip radio
+execution belongs to the [radio runtime domain](../../runtime/README.md), which
+holds no Bluetooth runtime since #770.
 
 | Location | Responsibility |
 | --- | --- |

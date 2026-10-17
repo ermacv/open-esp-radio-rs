@@ -3,8 +3,8 @@
 //! The Controller enable runs `esp_phy_enable(PHY_MODEM_BT)` and
 //! `esp_btbb_enable` after the controller HAL, scheduler and low-power
 //! hardware are initialized and before the BLE base stack is enabled. The
-//! radio system registers or wakes the shared domain first; this module only
-//! enters and leaves it. The BTBB gain byte is projected by the PHY client
+//! arbiter's owner must register or wake the shared domain first; this module
+//! only enters and leaves it. The BTBB gain byte is projected by the PHY client
 //! from the registration that describes the lease.
 
 use oer_esp32s31_hal::shared_radio::SharedRadioLease;

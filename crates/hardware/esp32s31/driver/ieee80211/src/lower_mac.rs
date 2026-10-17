@@ -109,7 +109,7 @@
 //! `MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS` slots. Coexistence maps `CoexPriority::Normal` onto the static
 //! per-access-category priority of
 //! [`LegacyTxQueue::vendor_data_packet_priority`] and
-//! `CoexPriority::Elevated` onto the radio system's connection-frame
+//! `CoexPriority::Elevated` onto the shared radio owner's connection-frame
 //! priorities. An individually addressed frame without acknowledgement is
 //! published at legacy rates only, the one program with a response field;
 //! hardware has not confirmed its on-air behaviour. A published attempt
@@ -376,7 +376,7 @@ pub trait RxBeaconPriorityHardware {
     fn clear_rx_beacon_pti(&mut self);
 }
 
-/// The coexistence priorities of the radio system the core shares its RF
+/// The coexistence priorities of the shared radio the core shares its RF
 /// with, as it last published them.
 pub trait RadioCoexPriorities {
     /// The priority of the beacon-window event (`coex_pti_get(0)`), which
@@ -628,7 +628,7 @@ pub struct RxBlockAckValues {
 /// The beacon receive priority ([`LowerMacCore::set_rx_beacon_priority`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxBeaconPriority {
-    /// The radio system's beacon-window priority.
+    /// The shared radio owner's beacon-window priority.
     BeaconWindow,
     /// Priority zero.
     Zero,
@@ -833,7 +833,7 @@ pub struct LowerMacCore<
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'core, 'slot, BUFFER_SIZE, Path>>; LOWER_MAC_TX_QUEUES],
-    /// The radio system's coexistence priorities: the beacon window's and
+    /// The shared radio owner's coexistence priorities: the beacon window's and
     /// a connection frame's.
     coex: &'slot dyn RadioCoexPriorities,
 }
@@ -1175,7 +1175,7 @@ where
     ) -> Admission {
         let queue = common.queue;
         let (scheduler_priority, packet_priority, priority_count) = match coex {
-            // A connection frame under the radio system's reconnect policy.
+            // A connection frame under the shared radio owner's reconnect policy.
             CoexPriority::Elevated => {
                 let connection = self.coex.connection_frame_priorities();
                 (

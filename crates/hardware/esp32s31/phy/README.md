@@ -80,7 +80,7 @@ reset or retained-sleep wakeup replay.
 flowchart TD
     W[Wi-Fi client] --> L[Radio arbiter lease]
     Z[IEEE 802.15.4 client] --> L
-    T[Radio system tracking timer] --> L
+    T[Shared radio owner's tracking timer] --> L
     P[PHY demand and calibration state] --> T
     L --> E[PHY finite executor]
     E --> H[HAL / semantic PAC]

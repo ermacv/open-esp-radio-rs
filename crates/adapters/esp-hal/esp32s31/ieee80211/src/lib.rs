@@ -34,7 +34,7 @@ pub mod mac_interrupt_epoch;
 /// It retains the virtual `WIFI` singleton, the routes of its two interrupt
 /// sources in the image's interrupt table and the calibrated TX power profile
 /// consumed by cold MAC initialization. The shared radio-platform singletons
-/// belong to the radio system's `EspHalRadioPlatform`.
+/// belong to the shared radio owner's `EspHalRadioPlatform`.
 pub struct EspHalWifiPlatform {
     _wifi: WIFI<'static>,
     mac: Route,

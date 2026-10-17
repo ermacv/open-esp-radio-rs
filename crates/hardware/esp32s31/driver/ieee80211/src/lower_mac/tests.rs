@@ -394,7 +394,7 @@ impl RxBeaconPriorityHardware for Hardware {
     }
 }
 
-/// A radio system whose beacon-window event has priority 9, its connection
+/// A shared radio owner whose beacon-window event has priority 9, its connection
 /// event 6 and its slice event 4.
 struct RadioNine;
 

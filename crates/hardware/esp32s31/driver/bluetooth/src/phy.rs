@@ -111,7 +111,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
     ControllerLowPowerHardwareInitialized<'cells, MODEM_TIMER_CAPACITY>
 {
     /// Enter the shared PHY domain and BTBB as the Bluetooth client, with
-    /// the radio system's proof that it prepared the domain.
+    /// the shared radio owner's proof that it prepared the domain.
     ///
     /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
     /// tracking before the Controller uses RF.
@@ -154,7 +154,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
 
 /// Leave the shared PHY domain and drop the BTBB reference of a retired
 /// Controller. Returns whether Bluetooth was the last PHY client, in which
-/// case the radio system closes RF.
+/// case the shared radio's owner closes RF.
 ///
 /// # Errors
 ///

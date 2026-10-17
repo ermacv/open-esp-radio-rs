@@ -188,7 +188,7 @@ pub struct PmTbttSchedule {
 }
 
 /// One coexistence effect of the power manager. The coexistence schedule
-/// belongs to the radio system every radio protocol shares, not to the
+/// belongs to the shared radio every radio protocol shares, not to the
 /// Wi-Fi MAC, so its owner performs these.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PmCoexAction {
@@ -212,7 +212,7 @@ pub enum PmCoexAction {
 pub enum PmAction {
     /// Send a Null Data frame advertising (`true`) or leaving power save.
     SendNull { power_save: bool },
-    /// A coexistence effect, which the radio system shared by every radio
+    /// A coexistence effect, which the shared radio's owner shared by every radio
     /// protocol performs.
     Coex(PmCoexAction),
     /// Block the MAC TX queues, as the slice end does.

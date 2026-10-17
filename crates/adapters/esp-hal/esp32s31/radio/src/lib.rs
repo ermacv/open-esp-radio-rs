@@ -8,7 +8,7 @@
 //!
 //! [`EspHalRadioPlatform`] retains the official system PAC singletons that
 //! modem clocking and common PHY initialization touch, so no other safe
-//! owner can be constructed from them while the radio system holds it;
+//! owner can be constructed from them while the shared radio's owner holds it;
 //! [`EspHalRadioClocks`] supplies the platform clock sources of the modem
 //! clocks.
 

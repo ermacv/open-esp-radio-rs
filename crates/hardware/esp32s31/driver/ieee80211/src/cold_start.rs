@@ -253,7 +253,7 @@ pub fn power_up_esp32s31_wifi<W>(
 /// Bring the initialized Wi-Fi client up on the shared PHY domain the radio
 /// system prepared: the second half of the bring-up.
 ///
-/// `platform` is the radio system's PHY platform token. Initial tracking
+/// `platform` is the shared radio owner's PHY platform token. Initial tracking
 /// runs at once, as the domain's periodic tracking does.
 ///
 /// # Cancellation
@@ -277,7 +277,7 @@ where
         mut clocked,
         platform: wifi_platform,
     } = initialized;
-    // The radio system prepared the domain; prove it ready under the lease
+    // The shared radio's owner prepared the domain; prove it ready under the lease
     // the join uses.
     let joined = match phy_ready(lease) {
         Ok(ready) => join_wifi(ready, &clocked, timer)

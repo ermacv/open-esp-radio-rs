@@ -39,8 +39,9 @@ application starts
 so no image configures it after the singleton moves here. No lock is shared
 with ESP-HAL.
 
-Every protocol composition reaches these singletons through the one shared
-radio system that owns this platform; the Wi-Fi ESP-HAL adapter owns only the
+A protocol composition reaches these singletons through the one owner of the
+shared radio that holds this platform (none exists since #770, tag
+`legacy-radio-2026-10-16`; #771 brings it back); the Wi-Fi ESP-HAL adapter owns only the
 `WIFI` singleton. No adapter grants a second claim of the platform resources.
 
 The Bluetooth interrupt binding that lived here (sources, routes and the

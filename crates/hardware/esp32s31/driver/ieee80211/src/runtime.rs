@@ -206,7 +206,7 @@ impl<W> WifiReleaseFailure<W> {
 pub struct WifiReleased<W> {
     pub partition: WifiPartition,
     pub platform: W,
-    /// Whether Wi-Fi was the last PHY client; the radio system then closes
+    /// Whether Wi-Fi was the last PHY client; the shared radio's owner then closes
     /// RF.
     pub last_phy_client: bool,
 }
@@ -246,7 +246,7 @@ impl<W> WifiStopped<W, ()> {
     /// outside coexistence. The stopped MAC and RX walker are
     /// checked before any change. Wi-Fi RX
     /// is disabled at the vendor-shaped per-client edge. RF close after the
-    /// last client belongs to the radio system.
+    /// last client belongs to the shared radio's owner.
     #[allow(
         clippy::result_large_err,
         reason = "failure must return the complete Wi-Fi frontier"
@@ -466,7 +466,7 @@ impl<M> WifiRuntimeContext<M> {
     /// Put Wi-Fi's RF to sleep, as the vendor modem sleep's
     /// `wifi_rf_phy_disable` does: clear the Wi-Fi receive path, then leave
     /// the PHY client set, keeping the registration and calibration.
-    /// Returns whether Wi-Fi was the last client; the radio system then
+    /// Returns whether Wi-Fi was the last client; the shared radio's owner then
     /// closes RF.
     ///
     /// # Errors
@@ -502,7 +502,7 @@ impl<M> WifiRuntimeContext<M> {
 
     /// Wake Wi-Fi's RF, as the vendor modem wake's `wifi_rf_phy_enable`
     /// does: re-enter the PHY client set, then enable the Wi-Fi receive
-    /// path. The radio system must have woken closed RF first, which `ready`
+    /// path. The shared radio's owner must have woken closed RF first, which `ready`
     /// proves. A returned
     /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
     /// tracking before the MAC uses RF.

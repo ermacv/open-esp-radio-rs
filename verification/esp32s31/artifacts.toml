@@ -1,11 +1,9 @@
-# The single pin of every ESP32-S31 vendor artifact this repository compares
-# against.
+# The single pin of every ESP32-S31 vendor artifact this repository follows.
 #
-# Each artifact names its upstream source and SHA-256. `cargo xtask
-# vendor-fetch esp32s31` downloads every fetchable artifact into
-# `target/vendor/<source>/<revision>/<path>` and verifies it; the vendor
-# scenarios default to those paths and authenticate every input against this
-# file. Changing a pin means changing this file, and production follows the
+# Each artifact names its upstream source and SHA-256. `cargo xtask vendor
+# fetch esp32s31` downloads every fetchable artifact into
+# `target/vendor/<source>/<revision>/<path>` and verifies it; every reader
+# authenticates its input against this file. Changing a pin means changing this file, and production follows the
 # pinned behaviour. Historical hashes in reviewed register evidence and
 # reference notes record the artifact a fact was observed in; they are not
 # pins.
@@ -44,8 +42,8 @@ revision = "20260528"
 asset = "esp-rom-elfs-20260528.tar.gz"
 sha256 = "caa463d3cbef2430a5a35847c1d9f2f152403b17a802050927ff60c8da54fe46"
 
-# ESP-IDF sources the IEEE 802.15.4 host stand compiles: the driver's
-# translation units and every header they include. Fetched file by file, so
+# ESP-IDF sources of the IEEE 802.15.4 driver: its translation units and
+# every header they include. Fetched file by file, so
 # `target/vendor/esp-idf/<revision>/` mirrors the checkout's layout.
 [[source]]
 id = "esp-idf"
@@ -54,8 +52,8 @@ repository = "https://github.com/espressif/esp-idf"
 revision = "4d59230ddff16327812782151ef0afef202dc6d7"
 
 # ESP-IDF's `esp_phy` component at the same revision, read for the vendor PHY
-# path (enable, tracking and modem retention) and compiled by no stand; kept
-# apart from the stand's sources. Its prebuilt library submodule is
+# path (enable, tracking and modem retention); kept apart from the IEEE
+# 802.15.4 driver sources. Its prebuilt library submodule is
 # `esp-phy-lib`.
 [[source]]
 id = "esp-idf-phy"
@@ -183,7 +181,7 @@ source = "phy-tracking-reference"
 path = "target/vendor-firmware/esp32s31/phy-tracking-reference/build/phy_tracking_reference.elf"
 
 # ESP-IDF component archives of the same build: the modem clock
-# driver and its HAL, linked for the Bluetooth low-power clock comparison.
+# driver and its HAL, the vendor Bluetooth low-power clock path.
 [[artifact]]
 id = "libesp-hw-support"
 source = "phy-tracking-reference"

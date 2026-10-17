@@ -12,6 +12,7 @@ oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-process = { path = "../process" }
 oer-toolchain = { path = "../toolchain" }
 oer-repo = { path = "../repo" }
+oer-vendor-artifacts = { path = "../vendor-artifacts" }
 cargo_metadata = "=0.23.1"
 clap = { version = "=4.5.48", features = ["derive"] }
 serde = { version = "=1.0.229", features = ["derive"] }

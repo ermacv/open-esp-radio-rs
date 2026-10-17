@@ -92,10 +92,6 @@ pub struct Profile {
     /// What the repository gate builds and audits for the chip.
     #[serde(default)]
     pub gate: Gate,
-    /// The Rust probe images of the chip's vendor comparison, in build
-    /// order (`verification/<id>/probes`).
-    #[serde(default)]
-    pub probe: Vec<Probe>,
     /// The staged boot's host contract; a chip with images names it.
     #[serde(default)]
     pub staged: Option<StagedBoot>,
@@ -510,16 +506,6 @@ pub struct NetworkProfile {
     pub manifest: PathBuf,
     #[serde(default)]
     pub features: Vec<String>,
-}
-
-/// One Rust probe image of the vendor comparison: the artifact role it
-/// serves and its package in `verification/<id>/probes`. Every probe
-/// compiles in the host's one firmware compile cache.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct Probe {
-    pub role: String,
-    pub package: String,
 }
 
 /// A Wi-Fi band the chip's radio serves.

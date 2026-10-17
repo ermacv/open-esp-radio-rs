@@ -1,7 +1,6 @@
-//! The separate host-tool workspaces — Blobray and vendor verification —
-//! and their build outputs, as every caller that builds or runs them from
-//! another workspace reaches them: the vendor scenarios and probes, the
-//! register inventory and the conformance check.
+//! The separate host-tool workspace of Blobray and its build outputs, as
+//! every caller that builds or runs it from another workspace reaches them:
+//! the register inventory and the conformance check.
 
 use std::{
     path::{Path, PathBuf},
@@ -22,13 +21,6 @@ pub struct Workspace {
 pub const BLOBRAY: Workspace = Workspace {
     directory: "tools/blobray",
     profile: "blobray",
-};
-
-/// Vendor verification: the scenario engine, the chips' scenarios, the
-/// evidence producers and `cargo vendor`.
-pub const VERIFICATION: Workspace = Workspace {
-    directory: "verification",
-    profile: "verification",
 };
 
 impl Workspace {

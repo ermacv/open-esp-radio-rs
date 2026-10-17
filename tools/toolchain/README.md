@@ -22,7 +22,7 @@ builds run and record which ones ran.
 - `blobray::{cargo, binary, host}`: Cargo commands in the separate Blobray
   workspace with its own target directory, and the built `blobray` host, as
   every caller that builds or runs Blobray from the root workspace (the
-  vendor scenarios, the register inventory, the conformance check) reaches them.
+  register inventory, the conformance check) reaches them.
 
 It depends only on `oer-process`.
 

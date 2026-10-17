@@ -1,6 +1,6 @@
 ---
 name: block-bluetooth
-description: Use when a task changes or investigates the Bluetooth LE block of this repository — HCI codecs, the Link Layer, the LE Controller's pure timing and receive pieces, the LE radio values, the ESP32-S31 Bluetooth driver and controller memory, Bluetooth vendor comparison, or rebuilding the Bluetooth orchestration. Maps the block's packages across layers, its shared contracts, traps and checks.
+description: Use when a task changes or investigates the Bluetooth LE block of this repository — HCI codecs, the Link Layer, the LE Controller's pure timing and receive pieces, the LE radio values, the ESP32-S31 Bluetooth driver and controller memory, or rebuilding the Bluetooth orchestration. Maps the block's packages across layers, its shared contracts, traps and checks.
 ---
 
 # Bluetooth LE block
@@ -60,6 +60,5 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 
 - `cargo test -p <package>`.
 - RV32: `cargo check -p oer-esp32s31-bluetooth --target riscv32imafc-unknown-none-elf`.
-- Vendor comparison: the `bluetooth` scenario over the probes in `verification/esp32s31/probes/bluetooth`.
 
 Package detail: [S31 driver](../../../crates/hardware/esp32s31/driver/bluetooth/README.md) and its [feature page](../../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md); the other packages document themselves in their crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/bluetooth-*.md`.

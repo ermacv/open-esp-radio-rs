@@ -1,8 +1,7 @@
-# The single pin of every ESP32-C5 vendor artifact this repository compares
-# against.
+# The single pin of every ESP32-C5 vendor artifact this repository follows.
 #
-# Each artifact names its upstream source and SHA-256. `cargo xtask
-# vendor-fetch esp32c5` downloads every artifact into
+# Each artifact names its upstream source and SHA-256. `cargo xtask vendor
+# fetch esp32c5` downloads every artifact into
 # `target/vendor/<source>/<revision>/<path>` and verifies it. The library
 # revisions are the submodules of the pinned ESP-IDF revision, which are the
 # same PHY, Wi-Fi and coexistence revisions the ESP32-S31 pin uses.

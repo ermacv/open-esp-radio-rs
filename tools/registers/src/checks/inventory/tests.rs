@@ -86,7 +86,7 @@ fn classify_reports_each_status_and_ignores_whole_word_masks() {
         access("absent", 0x1010, Access::Load, None),
         access("outside", 0x2000, Access::Store, None),
     ];
-    let words = classify(&region(), &declared, &[], &observations, &BTreeSet::new());
+    let words = classify(&region(), &declared, &[], &observations);
     let status: BTreeMap<u32, Status> = words.iter().map(|w| (w.address, w.status)).collect();
     assert_eq!(
         status,
@@ -112,27 +112,10 @@ fn byte_lane_masks_shift_into_the_word() {
         &declared,
         &[],
         &[access("lane", 0x1002, Access::Expression, Some(0xff))],
-        &BTreeSet::new(),
     );
     assert_eq!(words[0].address, 0x1000);
     assert_eq!(words[0].field_bits, 0xff_0000);
     assert_eq!(words[0].status, Status::Declared);
-}
-
-#[test]
-fn rank_puts_cited_words_first() {
-    let declared = BTreeMap::new();
-    let observations = [
-        access("a", 0x1000, Access::Load, None),
-        access("b", 0x1000, Access::Load, None),
-        access("cited", 0x1004, Access::Load, None),
-    ];
-    let cited = BTreeSet::from([function("cited")]);
-    let mut words = classify(&region(), &declared, &[], &observations, &cited);
-    rank(&mut words);
-    assert_eq!(words[0].address, 0x1004);
-    assert!(words[0].cited);
-    assert!(!words[1].cited);
 }
 
 #[test]
@@ -203,16 +186,10 @@ fn an_indexed_access_touches_its_bounded_words_or_its_declared_array() {
     );
     let declared = declared_words(&registers);
     let words = |observation: Observation| -> Vec<(u32, usize)> {
-        classify(
-            &region(),
-            &declared,
-            &arrays,
-            &[observation],
-            &BTreeSet::new(),
-        )
-        .into_iter()
-        .map(|word| (word.address, word.indexed))
-        .collect()
+        classify(&region(), &declared, &arrays, &[observation])
+            .into_iter()
+            .map(|word| (word.address, word.indexed))
+            .collect()
     };
     // Unbounded: the array the base is an element of, at its stride.
     assert_eq!(
@@ -263,7 +240,6 @@ fn an_indexed_access_touches_its_bounded_words_or_its_declared_array() {
         &declared,
         &super::arrays(&single),
         &[indexed("queue", 0x1040, 0x10, Some(256))],
-        &BTreeSet::new(),
     )
     .into_iter()
     .map(|word| word.address)

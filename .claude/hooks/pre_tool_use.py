@@ -40,7 +40,8 @@ REGENERATED = [
      "`cargo registers generate --manifest registers/<chip>/publication/<publication>.toml` "
      "after editing the register model or policy"),
     (re.compile(r"(?:^|/)verification/[^/]+/facts/provenance\.toml$"),
-     "`cargo verification provenance --chip <chip> --accept NAME` after review"),
+     "`cargo verification provenance --chip <chip> --accept NAME`, restored from the tag "
+     "legacy-tooling-2026-10-17 (#827 removed it)"),
     (re.compile(r"(?:^|/)verification/[^/]+/facts/names/[^/]+\.toml$"),
      "the `oer-symbol-lineage` command in tools/symbol-lineage/README.md"),
 ]

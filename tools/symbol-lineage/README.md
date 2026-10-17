@@ -52,10 +52,10 @@ the candidate pools, so a later round can pair a function whose closest
 rival has since been paired elsewhere, and a call-graph or neighbourhood vote
 can use pairs found by similarity.
 
-Bodies are compared by the vendor fingerprint of
-[`oer-vendor-provenance`](../vendor-provenance/README.md), the one that
-registers cited vendor functions: it masks exactly the bits that each RISC-V
-relocation resolves at link time. Opcodes, registers, relocation types and
+Bodies are compared by the crate's vendor fingerprint (`fingerprint`, the
+one `verification/<chip>/facts/provenance.toml` recorded for cited vendor
+functions): it masks exactly the bits that each RISC-V relocation resolves at
+link time. Opcodes, registers, relocation types and
 branch targets inside the function stay significant; target symbol names do
 not. Similarity is the longest common subsequence of its per-instruction
 tokens relative to both lengths.

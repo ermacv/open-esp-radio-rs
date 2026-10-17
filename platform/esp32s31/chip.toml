@@ -221,20 +221,6 @@ facade = [
     { features = "esp32s31-ieee802154", required = ["oer-espressif-ieee802154-engine", "oer-ieee802154"], forbidden = ["wifi", "bluetooth"] },
 ]
 
-# The Rust probe images of the vendor comparison (verification/esp32s31/probes),
-# in build order: the artifact role each serves.
-[[probe]]
-role = "rust-artifact"
-package = "oer-esp32s31-probe-radio-elf"
-
-[[probe]]
-role = "rust-artifact:wifi-registers"
-package = "oer-esp32s31-probe-register-elf"
-
-[[probe]]
-role = "rust-artifact:bluetooth"
-package = "oer-esp32s31-probe-bluetooth-elf"
-
 # Why the core last reset, which the stand reads through JTAG after a power
 # cycle: the board lost power only if it reads a power-on reset. The field is
 # the platform publication's (registers/esp32s31/publication/platform.toml), with

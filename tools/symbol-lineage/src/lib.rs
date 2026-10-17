@@ -10,4 +10,5 @@
 
 pub mod archive;
 pub mod correspond;
+pub mod fingerprint;
 pub mod lineage;

@@ -1,14 +1,14 @@
 # Repository commands
 
 `oer-xtask` (`cargo xtask`) holds the repository commands a person runs by
-hand to build or test: API documentation, lock files, worktrees, push, and
+hand to build or test: API documentation, lock files, worktrees, the vendor
+fetch, push, and
 the compile-fail and feature-set tests. It runs no gate, no CI planning and
 no review. Domain work lives with its owners and their command lines:
 images in [`oer-image`](../image/pipeline/README.md) and
-[`oer-hil-image`](../../hil/host/README.md), vendor probes, scenario runs and
-shard regeneration in [`oer-vendor-evidence`](../../verification/evidence/README.md)
-(`cargo verification`), the register inventory in the
-[register tool](../registers/README.md).
+[`oer-hil-image`](../../hil/host/README.md), the vendor pins and store in
+[`oer-vendor-artifacts`](../vendor-artifacts/README.md), the register
+inventory in the [register tool](../registers/README.md).
 
 | Command | Contract |
 | --- | --- |
@@ -16,7 +16,8 @@ shard regeneration in [`oer-vendor-evidence`](../../verification/evidence/README
 | `cargo xtask check ui` | Compile every case in `tests/ui.toml` and its positive twin, checking the exact rustc diagnostics ([contract diagnostics](#contract-diagnostics)) |
 | `cargo xtask check feature-sets` | Test every root-workspace package with each feature set its `open-radio.test-feature-sets` declares |
 | `cargo xtask lock [--check]` | Update every workspace's `Cargo.lock` to its manifests after a dependency or pin change (online); `--check` only verifies, offline, that every lock matches its manifests and names every stale one. `cargo tidy fetch` downloads what the locks name and the cache lacks: its independent host-only workspace needs no firmware Git sources to start. If tidy's registry dependencies are missing, use `cargo --config net.offline=false tidy fetch` to bootstrap it |
-| `cargo xtask worktree add PATH --branch B [--from REV]` / `remove PATH` / `prepare` | Create a Git worktree on a new branch from `REV` (default `origin/main`, fetched first when it names an `origin/` branch, so the branch starts on the current `main`) whose `target/` starts from this checkout's build outputs (without incremental data, HIL outputs and vendor firmware builds, whose CMake caches name the source checkout), so only the workspace's own crates rebuild; `remove` deletes it with its `target/`. When `target/` is a btrfs subvolume the seed is an instant snapshot, otherwise a reflink copy taking minutes; `prepare` turns this checkout's `target/` into a subvolume once (run it while no build uses `target/`) |
+| `cargo xtask worktree add PATH --branch B [--from REV]` / `remove PATH` / `prepare` | Create a Git worktree on a new branch from `REV` (default `origin/main`, fetched first when it names an `origin/` branch, so the branch starts on the current `main`) whose `target/` starts from this checkout's build outputs (without incremental data, HIL outputs and vendor firmware builds, whose CMake caches name the source checkout), so only the workspace's own crates rebuild, and whose `target/vendor` links the host-wide vendor store; `remove` deletes it with its `target/`. When `target/` is a btrfs subvolume the seed is an instant snapshot, otherwise a reflink copy taking minutes; `prepare` turns this checkout's `target/` into a subvolume once (run it while no build uses `target/`) |
+| `cargo xtask vendor fetch CHIP [--artifact ID]` | Download the pinned vendor artifacts of `verification/<chip>/artifacts.toml` (every one, or each `--artifact`) into the host-wide store, linked as `target/vendor`, and verify each against its pin ([`oer-vendor-artifacts`](../vendor-artifacts/README.md)); firmware outputs are built by `cargo hil firmware build`, not fetched |
 | `cargo xtask push` | Push the current branch with `git push` and open its pull request into `main` as a draft when it has none; no checks and no review run. It refuses `main` and a detached `HEAD`, and replaces a rebased branch's remote copy with `--force-with-lease` bound to the copy it saw. A person marks the pull request ready and merges it |
 
 Cargo runs offline here (`.cargo/config.toml`).

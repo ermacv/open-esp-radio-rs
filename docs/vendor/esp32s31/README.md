@@ -19,7 +19,7 @@ results, work plans or product readiness declarations.
 | [IEEE 802.15.4 control](ieee802154-control.md) | Ordered state transitions, STOP and timers |
 | [IEEE 802.15.4 driver port](ieee802154-driver-port.md) | Complete open driver ledger, closed dependencies and ownership map |
 
-The [project](../../../verification/esp32s31/README.md) owns input selection, scopes and comparison policy.
+The [vendor pins](../../../verification/esp32s31/README.md) name the vendor code these references describe.
 [Registers](../../../registers/README.md) owns reviewed hardware models
 and publication. Production behavior belongs to the [crates](../../../crates/README.md).
 Source hashes and artifact identities are

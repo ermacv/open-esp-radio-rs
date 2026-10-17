@@ -26,7 +26,7 @@ process or recovery protocol.
 | `in_process::verify` | An `ExecutionRequest`, the executables of both implementations, selected contracts and projections | Records, verdict and completeness |
 
 The CLI exposes the target audit and register accesses; the other operations
-are library calls used by the vendor verification scenarios. JSON output is a
+are library calls. JSON output is a
 serialization of the same typed results, not a second implementation.
 
 ## Identity
@@ -334,10 +334,8 @@ writes to captured writable ELF memory; a RAM seed cannot overlap or replace tha
 mapping. Unknown register copies and spills propagate as unknown values, even
 into filled stack memory, and stop execution only where they decide control flow,
 form an address or reach a device. The explicit-input regression in
-[session tests](../../cli/tests/execution/sessions.rs) checks both paths. The
-[PHY I2C scenario](../../../../verification/esp32s31/README.md#captured-i2c-command-memory-comparison)
-records this narrower input/observation scope and uses shipping HAL/PAC behavior.
-Chip-specific setup, addresses and expectations stay with the verification owner.
+[session tests](../../cli/tests/execution/sessions.rs) checks both paths.
+Chip-specific setup, addresses and expectations stay with the caller.
 
 `DeviceDeclaration` is a caller assumption with explicit applicability, stable
 content identity and phase/session lifetime. Application `devices` owns configuration

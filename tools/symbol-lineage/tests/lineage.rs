@@ -6,12 +6,12 @@ use object::{
     write::{Object, Relocation, Symbol, SymbolSection},
 };
 use oer_elf::{Code, Reference, Site};
+use oer_symbol_lineage::fingerprint::Function;
 use oer_symbol_lineage::{
     archive::{Revision, read_archive},
     correspond::{Evidence, Policy, correlate},
     lineage::{NameClass, trace},
 };
-use oer_vendor_provenance::fingerprint::Function;
 
 const R_RISCV_CALL: u32 = 18;
 const RET: [u8; 2] = [0x82, 0x80];

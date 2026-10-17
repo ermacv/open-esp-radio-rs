@@ -1,6 +1,6 @@
 ---
 name: block-ieee802154
-description: Use when a task changes or investigates the IEEE 802.15.4 block of this repository — the portable 802.15.4 MAC values and port (owner shape), the Espressif MAC engine ported from ESP-IDF, the ESP32-S31 HAL and PHY parts of 802.15.4, the 802.15.4 vendor host stand, or rebuilding the 802.15.4 orchestration. Maps the block's packages across layers, its shared contracts, traps and checks.
+description: Use when a task changes or investigates the IEEE 802.15.4 block of this repository — the portable 802.15.4 MAC values and port (owner shape), the Espressif MAC engine ported from ESP-IDF, the ESP32-S31 HAL and PHY parts of 802.15.4, or rebuilding the 802.15.4 orchestration. Maps the block's packages across layers, its shared contracts, traps and checks.
 ---
 
 # IEEE 802.15.4 block
@@ -60,8 +60,7 @@ Changing or removing existing public API of [the shared crates](../../../docs/ar
 
 ## Checks
 
-- `cargo test -p <package>` (the register model of the engine is test-only); the vendor host stand is its own workspace: `cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml`.
+- `cargo test -p <package>` (the register model of the engine is test-only).
 - RV32: `cargo check -p oer-esp32s31-hal -p oer-espressif-ieee802154-engine --target riscv32imafc-unknown-none-elf`.
-- Vendor comparison: the host stand's `compare` and its `ieee802154-host` shard.
 
-Package detail: the READMEs of the [engine](../../../crates/hardware/espressif/ieee802154/engine/README.md), the [vendor host stand](../../../verification/esp32s31/host/ieee802154/README.md) and the [feature page](../../../crates/hardware/esp32s31/driver/ieee802154/FEATURES.md); the protocol documents itself in its crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/ieee802154-*.md`.
+Package detail: the READMEs of the [engine](../../../crates/hardware/espressif/ieee802154/engine/README.md) and the [feature page](../../../crates/hardware/esp32s31/driver/ieee802154/FEATURES.md); the protocol documents itself in its crate-root rustdoc. Vendor behavior: `docs/vendor/esp32s31/ieee802154-*.md`.

@@ -24,8 +24,6 @@ members = [
     "tools/stats",
     "tools/symbol-lineage",
     "tools/toolchain",
-    "tools/markers",
-    "tools/phy-archive",
     "tools/vendor-artifacts",
     "tools/vendor-pins",
     "tools/repo",
@@ -110,7 +108,6 @@ members = [
     "hil/host/image-class",
     "tools/durable",
     "tools/elf",
-    "tools/vendor-provenance",
     "hil/host/source-snapshot",
     "hil/host/scenario",
     "hil/host/executor",
@@ -132,7 +129,6 @@ members = [
     "hil/host/family/phy",
     "hil/host/family/phy-esp32s31",
     "hil/host/family/system",
-    "qualification/evidence-shard",
     "tools/riscv/analysis",
     "tools/riscv/decode",
     "tools/riscv/lift",
@@ -145,8 +141,8 @@ members = [
     "tools/registers/model",
     "tools/registers/review",
 ]
-# Independent verification and firmware workspaces own their subtrees.
-exclude = ["platform", "hil/targets", "verification", "tools/tidy"]
+# Independent firmware and tool workspaces own their subtrees.
+exclude = ["platform", "hil/targets", "tools/tidy"]
 resolver = "3"
 
 [workspace.package]

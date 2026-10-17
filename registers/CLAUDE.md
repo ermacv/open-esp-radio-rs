@@ -24,7 +24,8 @@ Generated outputs also land in `crates/hardware/<chip>/pac/raw/src/lib.rs` and
 - A field that handwritten code needs is published here, never replaced by a
   local mask or shift in a driver.
 - Every declaration keeps its evidence; register and field descriptions that
-  cite vendor functions are covered by `cargo verification check provenance`.
+  cite vendor functions name the pinned revision and symbol
+  ([source policy](../docs/source-policy.md)).
 - `policy/api.toml` is large: grep for the register or transaction name.
 - Facts from vendor code (which function touches a register, with what
   value, from which callers) come from Blobray's research commands, not

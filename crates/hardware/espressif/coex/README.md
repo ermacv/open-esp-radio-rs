@@ -38,9 +38,7 @@ publishes, and `Ieee802154CoexLevel` from and into its `CoexPriority`
 `CoexSchedule` is the recovered `coex_schm_env` of esp-coex-lib `c758e7b5`.
 Each radio publishes status bits (`set_status_bits`, `clear_status_bits`);
 the status words select one of the 107 recovered schemes of
-`coexist_scheme.o`, exactly as `coex_schm_status_change` does. The
-[vendor `coex` scenario](../../../../verification/esp32s31/README.md#coexistence-schedule-comparison)
-compares the compiled schedule with the pinned `libcoexist.a` entries. A scheme
+`coexist_scheme.o`, exactly as `coex_schm_status_change` does. A scheme
 divides a period into phases; a phase lasts period × interval × share
 microseconds and notifies Wi-Fi, Bluetooth or both. The schedule programs no
 priority itself: a notified radio requests its own events through

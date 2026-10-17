@@ -176,14 +176,8 @@ pac-consumers = ["oer-esp32c5-pac-raw", "oer-esp32c5-pac", "oer-esp32c5-hal"]
 
 # What the repository gate builds and audits for the chip (`cargo xtask`).
 [gate]
-release-builds = ["verification/esp32c5/hardware/register-probe"]
 target-builds = ["oer-esp32c5-pac", "oer-esp32c5-hal"]
 agent-clippy = true
-
-# The Rust probe images of the vendor comparison (verification/esp32c5/probes).
-[[probe]]
-role = "rust-artifact"
-package = "oer-esp32c5-probe-radio-elf"
 
 # Why the core last reset, which the stand reads through JTAG after a power
 # cycle: the board lost power only if it reads a power-on reset. The field is

@@ -2,9 +2,8 @@
 //! them: the calibration projection of the tracking roots and their
 //! committed state words.
 //!
-//! The comparison probes publish these words for the Blobray tracking
-//! scenario, and the hardware calibration cross-check projects a snapshot
-//! captured on the board through the same functions. The file depends only
+//! The hardware calibration cross-check projects a snapshot captured on the
+//! board through these functions. The file depends only
 //! on `oer_esp32s31_phy`.
 
 /// Committed calibration state in the vendor `phy_param` byte order: the eight

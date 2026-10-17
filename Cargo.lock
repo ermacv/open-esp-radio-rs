@@ -2050,16 +2050,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-check-phy-archive"
-version = "0.1.0"
-dependencies = [
- "oer-elf",
- "oer-process",
- "oer-toolchain",
- "tempfile",
-]
-
-[[package]]
 name = "oer-chip-profile"
 version = "0.1.0"
 dependencies = [
@@ -3272,10 +3262,6 @@ name = "oer-interrupt-table"
 version = "0.1.0"
 
 [[package]]
-name = "oer-markers"
-version = "0.1.0"
-
-[[package]]
 name = "oer-memory"
 version = "0.1.0"
 dependencies = [
@@ -3394,7 +3380,6 @@ dependencies = [
  "oer-register-review",
  "oer-toolchain",
  "oer-vendor-artifacts",
- "oer-vendor-provenance",
  "quote",
  "roxmltree",
  "serde",
@@ -3685,7 +3670,6 @@ dependencies = [
  "object 0.39.1",
  "oer-elf",
  "oer-process",
- "oer-vendor-provenance",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3743,36 +3727,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-vendor-evidence-shard"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "toml",
-]
-
-[[package]]
 name = "oer-vendor-pins"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
  "serde",
- "toml",
-]
-
-[[package]]
-name = "oer-vendor-provenance"
-version = "0.1.0"
-dependencies = [
- "oer-elf",
- "oer-markers",
- "oer-register-model",
- "oer-repo",
- "oer-vendor-artifacts",
- "sha2 0.10.9",
- "tempfile",
  "toml",
 ]
 
@@ -3786,6 +3745,7 @@ dependencies = [
  "oer-process",
  "oer-repo",
  "oer-toolchain",
+ "oer-vendor-artifacts",
  "serde",
  "serde_json",
  "tempfile",

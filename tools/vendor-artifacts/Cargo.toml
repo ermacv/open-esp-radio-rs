@@ -11,10 +11,10 @@ description = "The pinned vendor artifacts of a chip: the host-wide store, fetch
 [dependencies]
 oer-process = { path = "../process" }
 oer-durable = { path = "../durable" }
-oer-chip-profile = { path = "../chip-profile" }
 oer-vendor-pins = { path = "../vendor-pins" }
 
 [dev-dependencies]
+oer-chip-profile = { path = "../chip-profile" }
 tempfile = "=3.27.0"
 
 [lints]

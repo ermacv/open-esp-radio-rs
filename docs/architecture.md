@@ -10,9 +10,9 @@ descriptions, analysis tools and experiments. Detailed APIs and commands belong 
 | [Radio libraries](../crates/README.md) | Portable protocols, typed hardware access, adapters, execution and final composition | Internal libraries depend on specific contracts; only applications depend on the public facade |
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
 | [Blobray](../tools/blobray/README.md) | Binary analysis, reviewed research and bounded comparisons | Generic engine; target facts are selected through providers and projects |
-| [ELF view](../tools/elf/README.md) and [vendor provenance](../tools/vendor-provenance/README.md) | The one ELF/archive reader with the RV32 relocation table; the one vendor function fingerprint | Read by every tool; image placement is audited by the image pipeline |
+| [ELF view](../tools/elf/README.md) and [symbol lineage](../tools/symbol-lineage/README.md) | The one ELF/archive reader with the RV32 relocation table; the one vendor function fingerprint | Read by every tool; image placement is audited by the image pipeline |
 | [Repository tooling](../tools/xtask/README.md) | Push, API docs, firmware lockfiles, worktrees, UI and feature-set checks | Calls domain tools; does not duplicate their validators |
-| [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
+| [Verification](../verification/README.md) | Vendor pins, reviewed facts and vendor reference firmware | Fetched vendor artifacts stay outside the tree, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
 
 A directory identifies an owner. A Cargo workspace identifies a joint build
@@ -85,10 +85,10 @@ packages of its own host layer and the layers below it
 
 | Host layer | Holds | Examples |
 | --- | --- | --- |
-| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-tidy`, `oer-fw`, `oer-stand`, `oer-hil-cli`, `oer-hil-runner`, `oer-register-tool`, `oer-verification-cli`, `blobray-cli` |
+| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-tidy`, `oer-fw`, `oer-stand`, `oer-hil-cli`, `oer-hil-runner`, `oer-register-tool`, `blobray-cli` |
 | `orchestration` | Experiments, run analysis, HIL image builds | `oer-hil-experiment`, `oer-hil-analysis`, `oer-hil-image` |
 | `execution` | HIL execution: protocol, agent, DUT link, scenarios, workloads, families, run bundles, observer identity, the HIL lab | `oer-hil-link`, `oer-hil-workload`, `oer-hil-family-*`, `oer-hil-run-bundle` |
-| `verification` | Vendor evidence and provenance, the register model, vendor scenarios and stands | `oer-vendor-evidence`, `oer-vendor-provenance`, `oer-register-model` |
+| `verification` | The register model, vendor symbol lineage and the PHY calibration relation | `oer-register-model`, `oer-symbol-lineage`, `oer-esp32s31-phy-relation` |
 | `stand` | The stand file, boards, the arbiter, owners, journal, hubs and power, stand hosts | `oer-stand-file`, `oer-stand-board`, `oer-stand-arbiter`, `oer-hil-flash` |
 | `build` | Images and binary analysis | `oer-image`, `oer-riscv-*`, Blobray's libraries |
 | `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins, the devices layer and the data formats | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts`, `oer-device-*`, `oer-devices`, `oer-image-bundle`, `oer-hil-run-bundle-format`, `oer-elf` (the ELF format, read by the image encoder too) |
@@ -97,7 +97,7 @@ So the stand and the build layer never reach HIL execution, verification
 never reaches HIL execution or orchestration, and the foundation depends
 on nothing above it. The shared relation library in
 `hil/phy/esp32s31/relation/` belongs to the `verification` host layer, so
-verification scenarios and probes may depend on it. Only entry crates
+the calibration comparison may depend on it. Only entry crates
 run a repository command line: a non-entry package never spawns `cargo hil`
 or `cargo xtask`; a library calls the owning library instead.
 
@@ -112,7 +112,7 @@ running it as a process or by reading what it wrote.
 | Dev kit | `cargo fw` ([`oer-fw`](../tools/fw/src/main.rs)) | Flash a bundle or a catalog image, monitor a board, list boards, compare images | Images, devices, chip profiles, foundation; nothing of the stand or HIL |
 | Stand | `cargo stand` ([`oer-stand`](../stand/cli/src/main.rs)) | Stand file, boards and hubs, the arbiter's queue and leases, owners (free-form names), journal, host setup, fixture installation | Devices, the stand file format, foundation |
 | HIL | `cargo hil` ([`oer-hil-cli`](../hil/host/cli/README.md)) | Runs, plans, run history, A/B experiments, HIL images | Stand libraries, images with HIL policy checks, devices, the run bundle format |
-| Vendor verification | `cargo verification` (its own workspace, [verification](../verification/README.md)) | Vendor pins and fetch, provenance, typed scenarios, evidence shards, probes | Blobray's engine, binary analysis, vendor pins, the shard format |
+| Vendor references | `oer-symbol-lineage`, the PHY calibration comparison ([verification](../verification/README.md)) | Vendor name maps, the vendor function fingerprint, the calibration relation and comparison | Binary analysis, the register model, foundation |
 | Blobray | `cargo blobray` (its own workspace, [Blobray](../tools/blobray/README.md)) | Binary analysis | Binary analysis libraries, foundation |
 | Registers | `cargo registers` ([register tool](../tools/registers/README.md)) | Register model, review, SVD/PAC/bindings publication | Foundation, chip profiles, the bindings format |
 | Gate | `cargo xtask`, `cargo tidy` ([xtask](../tools/xtask/README.md), [tidy](../tools/tidy/README.md)) | Push and draft PR, API docs, firmware lockfiles, worktrees, workspace and chip discovery | The repository model and foundation; every other application runs as a process |
@@ -184,8 +184,7 @@ exercise ordinary children, selected descendants, malformed contexts and owner
 loss during real I/O, including an external writer surviving both callers.
 
 **Image compile cache.** Every firmware build of a host, whatever the
-checkout, application, chip, image class or example, and the vendor
-comparison probes, compiles in one shared Cargo target directory below the
+checkout, application, chip, image class or example, compiles in one shared Cargo target directory below the
 host build root (`oer_toolchain::image::compile_cache`,
 `$XDG_CACHE_HOME/open-esp-radio/build/cargo`, overridden by
 `OER_BUILD_ROOT`). Compiler flags are identical per chip, so units are
@@ -868,12 +867,9 @@ flowchart LR
     R[Reviewed register model and policy] --> P[cargo registers generate]
     P --> G[Published SVD / PAC / bindings]
     G --> D[Production driver]
-    D --> C[Compiled comparison probes]
-    V[Vendor project and caller artifacts] --> B[Blobray comparison]
-    C --> B
+    V[Pinned vendor artifacts] --> B[Blobray research]
     D --> H[HIL target and runner]
     S[Scenario catalog and stand file] --> H
-    B --> I[Vendor evidence index]
     H --> U[Sealed run bundle]
 ```
 
@@ -903,9 +899,9 @@ pack and evidence catalogs explicitly. It does not select private vendor
 binaries. Full vendor investigations add their own artifact context. These
 compositions have separate validation requirements.
 
-`verification/<chip>/` holds each chip's typed comparison scenarios,
-compiled probes and native evidence index. Generic Blobray crates do not depend
-on a chip project; the scenarios depend on Blobray.
+`verification/<chip>/` holds each chip's vendor pins, reviewed facts and
+vendor reference firmware. Generic Blobray crates do not depend on a chip
+project.
 
 ## Statics in zeroed regions
 

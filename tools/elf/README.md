@@ -40,7 +40,7 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   bytes and relocation `Site`s, each target resolved to an offset in the
   function's own section (`Reference::Local`), a named symbol, an anonymous
   section, or nothing. The vendor fingerprints are computed over it
-  ([`oer-vendor-provenance`](../vendor-provenance/README.md)).
+  ([`oer-symbol-lineage`](../symbol-lineage/README.md)'s `fingerprint`).
 - `dwarf::Symbolizer::frames(address)`: the inline chain at an address with
   each frame's demangled function, file and line. `Symbolizer::new` copies
   each debug section; `Symbolizer::shared` reads them as ranges of the ELF's

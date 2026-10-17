@@ -91,9 +91,8 @@ fn similarity_counts_the_common_subsequence() {
 }
 
 /// The fingerprint of a fixed function, pinned: it changes only with the
-/// relocation table or this algorithm, and then every registered vendor
-/// fingerprint must be regenerated with it
-/// (`cargo verification provenance --chip <chip> --rebuild`).
+/// relocation table or this algorithm, and then the name maps must be
+/// regenerated with it.
 #[test]
 fn the_fingerprint_of_a_fixed_function_is_pinned() {
     let f = load(0x12345, 0x678, "sym_a");

@@ -131,9 +131,8 @@ pub enum Platform {
     Family(String),
 }
 
-/// What a verification package's code does for the evidence shards: decide
-/// a verdict or a recorded set, whose sources a shard records, or only
-/// render a report, whose sources a shard never records.
+/// What a verification package's code does: decide a verdict or a recorded
+/// set, or only render a report.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Evidence {
     Verdict,
@@ -309,7 +308,7 @@ pub struct Classification {
     pub layer: Layer,
     pub scope: Scope,
     pub platform: Platform,
-    /// The role of a verification package in the evidence shards.
+    /// The role of a verification package's code (verdict or report).
     pub evidence: Option<Evidence>,
     /// The role of a HIL package in a run.
     pub hil: Option<Hil>,

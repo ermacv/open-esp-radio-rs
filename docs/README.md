@@ -13,7 +13,5 @@ reference.
   IEEE 802.15.4, Bluetooth and module naming.
 - [Hardware errata](hardware-errata.md): hardware and ROM behaviour the
   stand's boards show.
-- [PHY comparison](phy/README.md): compiled comparison and incomplete
-  outcomes.
 - [ESP32-S31 vendor contracts](vendor/esp32s31/README.md): pinned vendor
   ordering, software state and memory ownership, with each observation's limits.

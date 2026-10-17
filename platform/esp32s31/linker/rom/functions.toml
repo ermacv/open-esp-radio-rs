@@ -5,9 +5,10 @@
 #
 # The analysis checks each address against the symbol of the pinned ROM ELF
 # (`esp32s31_rev0_rom.elf`) and requires a summary to agree with the machine
-# code wherever the analysis bounds the function itself. `cargo verification
-# check provenance` keeps each cited function's code fingerprint, so a changed
-# ROM fails until reviewed.
+# code wherever the analysis bounds the function itself. Each cited
+# function's reviewed code fingerprint is recorded in
+# `verification/esp32s31/facts/provenance.toml`; a changed ROM is reviewed
+# again.
 
 # SOURCE(esp32s31): rev0 ROM `memset` (newlib's RISC-V assembly) never writes
 # `sp` and calls nothing. Its two computed transfers stay inside it: `jr

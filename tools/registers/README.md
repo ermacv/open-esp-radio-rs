@@ -114,8 +114,7 @@ own copy:
   classification and the report; `inventory::run` (behind `cargo registers
   inventory`) runs Blobray over the pinned binaries under the RISC-V integer
   calling convention, with the constants callees return taken at their calls
-  (`--call-returns`), ranks the provenance registry's cited functions first
-  and writes the report. An indexed progression (an array element chosen at
+  (`--call-returns`) and writes the report. An indexed progression (an array element chosen at
   run time) touches each word of a small index bound (a mask), otherwise only
   declared words inside its bound: the elements of the declared register array
   at its stride that has its base as an element, and the run of declared words

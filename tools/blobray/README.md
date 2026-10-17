@@ -2,8 +2,7 @@
 
 Blobray investigates captured RV32 ELF/archive inputs inside the calling
 process and returns analysis and concrete comparison results. `cargo blobray`
-runs the CLI; the typed vendor scenarios call the same operations as a
-library. Inputs are given as bytes and identified by their SHA-256 content;
+runs the CLI; a caller can use the same operations as a library. Inputs are given as bytes and identified by their SHA-256 content;
 nothing is imported, stored or published.
 
 Use Blobray when the missing information is in a captured binary: where a
@@ -54,7 +53,7 @@ top-level command and subcommands. Blobray has no TUI or code generation.
 
 ## Start an investigation
 
-Blobray and the typed vendor scenarios form the separate `tools/blobray` Cargo
+Blobray forms the separate `tools/blobray` Cargo
 workspace, with its own `Cargo.lock` and `tools/blobray/target` directory, so
 Blobray dependencies never change the radio workspace. From the repository
 root, `cargo blobray` and `--manifest-path tools/blobray/Cargo.toml` select it.
@@ -94,8 +93,8 @@ remain conditional on the selected cases and explicit modeling assumptions.
 
 [Reviewed effect contracts](cli/reference/comparison/README.md#reviewed-effect-comparison) are
 implemented and retain their conditional claim ceiling. Unsupported execution
-remains `INCOMPLETE`. The typed vendor scenarios run the same execution and
-comparison inside their own process through
+remains `INCOMPLETE`. A library caller runs the same execution and
+comparison inside its own process through
 [in-process verification](cli/reference/execution/README.md#in-process-verification).
 
 The [architecture](docs/design/architecture.md), [contracts](docs/design/contracts.md)

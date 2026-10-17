@@ -249,8 +249,6 @@ pub struct WordReport {
     pub address: u32,
     pub region: String,
     pub status: Status,
-    /// Some touching function is cited by production or the model.
-    pub cited: bool,
     pub registers: Vec<String>,
     pub loads: usize,
     pub stores: usize,
@@ -274,7 +272,6 @@ pub fn classify(
     declared: &BTreeMap<u32, DeclaredWord>,
     arrays: &[Vec<u32>],
     observations: &[Observation],
-    cited: &BTreeSet<Function>,
 ) -> Vec<WordReport> {
     #[derive(Default)]
     struct Touch {
@@ -335,7 +332,6 @@ pub fn classify(
                 address,
                 region: region_of(regions, address).unwrap_or_default().to_owned(),
                 status,
-                cited: touch.functions.iter().any(|f| cited.contains(f)),
                 registers: declared_word.registers.iter().cloned().collect(),
                 loads: touch.loads,
                 stores: touch.stores,
@@ -370,22 +366,15 @@ fn region_of(regions: &[Region], address: u32) -> Option<&str> {
         .map(|r| r.name.as_str())
 }
 
-/// The words to review first: cited before uncited, then by status, then by
-/// how many functions touch them.
+/// The words to review first: by status, then by how many functions touch
+/// them.
 pub fn rank(words: &mut [WordReport]) {
     words.sort_by(|a, b| {
-        (
-            !a.cited,
-            a.status,
-            std::cmp::Reverse(a.functions.len()),
-            a.address,
-        )
-            .cmp(&(
-                !b.cited,
-                b.status,
-                std::cmp::Reverse(b.functions.len()),
-                b.address,
-            ))
+        (a.status, std::cmp::Reverse(a.functions.len()), a.address).cmp(&(
+            b.status,
+            std::cmp::Reverse(b.functions.len()),
+            b.address,
+        ))
     });
 }
 
@@ -510,12 +499,7 @@ pub struct Report<'a> {
 
 /// The text report: counts by status, then every word not fully declared.
 pub fn render(chip: &str, words: &[WordReport]) -> String {
-    let count = |status: Status, cited: bool| {
-        words
-            .iter()
-            .filter(|w| w.status == status && (!cited || w.cited))
-            .count()
-    };
+    let count = |status: Status| words.iter().filter(|w| w.status == status).count();
     let mut text = format!(
         "Register inventory of {chip}: {} vendor-touched words in owned MMIO ranges\n",
         words.len()
@@ -529,18 +513,13 @@ pub fn render(chip: &str, words: &[WordReport]) -> String {
         (Status::Opaque, "opaque declared bits"),
         (Status::Declared, "fully declared"),
     ] {
-        text.push_str(&format!(
-            "  {:5} {label} ({} touched by a cited function)\n",
-            count(status, false),
-            count(status, true)
-        ));
+        text.push_str(&format!("  {:5} {label}\n", count(status)));
     }
     for word in words.iter().filter(|w| w.status != Status::Declared) {
         text.push_str(&format!(
-            "\n0x{:08x} {:?}{} {}\n  registers: {}\n  loads {} stores {}{} field bits 0x{:08x}{} declared 0x{:08x} undeclared 0x{:08x} opaque 0x{:08x}\n  functions ({}): {}\n",
+            "\n0x{:08x} {:?} {}\n  registers: {}\n  loads {} stores {}{} field bits 0x{:08x}{} declared 0x{:08x} undeclared 0x{:08x} opaque 0x{:08x}\n  functions ({}): {}\n",
             word.address,
             word.status,
-            if word.cited { " cited" } else { "" },
             word.region,
             if word.registers.is_empty() { "-".into() } else { word.registers.join(", ") },
             word.loads,

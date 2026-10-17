@@ -19,8 +19,7 @@
 - reviewed PAC transaction, binding-index and evidence-catalog schemas;
 - the chip memory map (`memory::Memory`, `registers/<chip>/model/memory.toml`):
   its address spaces and regions, validated against the model and its owned
-  ranges, and its MMIO windows, which the register tool and the vendor copy
-  report (`cargo verification copies`) read.
+  ranges, and its MMIO windows, which the register tool reads.
 
 The raw PAC is generated output only. The PAC pack has no module declarations
 for hand-written code; ownership and validation transactions that need raw

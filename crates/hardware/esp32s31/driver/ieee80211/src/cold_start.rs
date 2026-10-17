@@ -250,8 +250,8 @@ pub fn power_up_esp32s31_wifi<W>(
     ))
 }
 
-/// Bring the initialized Wi-Fi client up on the shared PHY domain the radio
-/// system prepared: the second half of the bring-up.
+/// Bring the initialized Wi-Fi client up on the shared PHY domain the shared
+/// radio's owner prepared: the second half of the bring-up.
 ///
 /// `platform` is the shared radio owner's PHY platform token. Initial tracking
 /// runs at once, as the domain's periodic tracking does.

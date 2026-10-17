@@ -313,14 +313,16 @@ service description into `HardwareServices`.
 ## Above the port
 
 What a backend does not report in its `HardwareServices` is software above
-the port, written once in portable packages for every backend:
+the port, written once in portable packages for every backend, with two
+exceptions the backend always does below the port without reporting them:
+the contention draw of its queues and the numbering of protected MPDUs.
 
 | Work | Owner |
 | --- | --- |
 | The retry plan of an MPDU and the rate control that chooses it | `oer-ieee80211-upper-mac` |
 | Which A-MPDU subframes the next aggregate resends after a `BlockAckReport` (`BlockAckReport::acknowledges`), the BlockAckReq, aging | `oer-ieee80211-upper-mac` `ampdu` |
 | RTS/CTS or CTS-to-self and the control-frame rate | `oer-ieee80211-upper-mac` `protection` |
-| Transmit packet numbers and receive replay | `oer-ieee80211-mac` `ccmp` |
+| Receive replay (transmit packet numbers are the backend's, below the port, with `ccmp::CcmpTxPacketNumber`) | `oer-ieee80211-mac` `ccmp` |
 | Receive Block Ack reordering | `oer-ieee80211-mac` `block_ack::reorder` |
 | The station's lifecycle, from its scan to its disconnect | `oer-ieee80211-sta` `machine` |
 

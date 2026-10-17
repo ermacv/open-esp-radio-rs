@@ -33,14 +33,8 @@ impl RateLadder for Ladder {
     }
 }
 
-/// Every draw takes the whole window.
-fn all_ones() -> u32 {
-    u32::MAX
-}
-
 fn planner() -> TxPlanner {
     TxPlanner::new(
-        [EdcaContention::new(4, 6); 4],
         LIMITS,
         AMPDU_POLICY,
         ProtectionPolicy::new(Some(RtsLengthThreshold::new(1_000))),
@@ -83,12 +77,10 @@ fn now(micros: u64) -> Ieee80211Instant {
 }
 
 #[test]
-fn a_delivered_mpdu_reports_one_attempt_and_resets_contention() {
+fn a_delivered_mpdu_reports_one_attempt() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, plan) = planner.begin(mpdu(200), &Ladder, &mut entropy).unwrap();
+    let (mut exchange, plan) = planner.begin(mpdu(200), &Ladder).unwrap();
     assert_eq!(plan.rate, OFDM54);
-    assert_eq!(plan.backoff_slots, 15);
     assert_eq!(
         plan.content,
         AttemptContent::Mpdu {
@@ -101,7 +93,6 @@ fn a_delivered_mpdu_reports_one_attempt_and_resets_contention() {
         &completion(TxStatus::Success, None),
         now(10),
         &Ladder,
-        &mut entropy,
     );
     let TxStep::Done(TxReport::Mpdu(status)) = step else {
         panic!("the exchange ended");
@@ -116,25 +107,22 @@ fn a_delivered_mpdu_reports_one_attempt_and_resets_contention() {
 }
 
 #[test]
-fn ack_timeouts_walk_the_ladder_with_the_retry_bit_and_double_the_window() {
+fn ack_timeouts_walk_the_ladder_with_the_retry_bit() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, _) = planner.begin(mpdu(200), &Ladder, &mut entropy).unwrap();
+    let (mut exchange, _) = planner.begin(mpdu(200), &Ladder).unwrap();
     let timeout = completion(TxStatus::AckTimeout, None);
-    let second = attempt(planner.complete(&mut exchange, &timeout, now(1), &Ladder, &mut entropy));
+    let second = attempt(planner.complete(&mut exchange, &timeout, now(1), &Ladder));
     assert_eq!(second.rate, OFDM48);
-    assert_eq!(second.backoff_slots, 31);
     assert_eq!(
         second.content,
         AttemptContent::Mpdu {
             set_retry_bit: true
         }
     );
-    let third = attempt(planner.complete(&mut exchange, &timeout, now(2), &Ladder, &mut entropy));
+    let third = attempt(planner.complete(&mut exchange, &timeout, now(2), &Ladder));
     assert_eq!(third.rate, OFDM24);
-    assert_eq!(third.backoff_slots, 63);
     let TxStep::Done(TxReport::Mpdu(status)) =
-        planner.complete(&mut exchange, &timeout, now(3), &Ladder, &mut entropy)
+        planner.complete(&mut exchange, &timeout, now(3), &Ladder)
     else {
         panic!("the MPDU retry limit ended the exchange");
     };
@@ -142,20 +130,12 @@ fn ack_timeouts_walk_the_ladder_with_the_retry_bit_and_double_the_window() {
     assert_eq!(status.attempts, 3);
     assert_eq!(status.final_rate, OFDM24);
     assert_eq!(status.acknowledged, Some(false));
-    // The frame ended: the window is back at CWmin.
-    assert_eq!(
-        planner
-            .contention(WmmAccessCategory::BestEffort)
-            .cw_exponent(),
-        4
-    );
 }
 
 #[test]
 fn a_cts_timeout_retries_without_the_retry_bit_under_the_same_protection() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, first) = planner.begin(mpdu(1_500), &Ladder, &mut entropy).unwrap();
+    let (mut exchange, first) = planner.begin(mpdu(1_500), &Ladder).unwrap();
     assert_eq!(
         first.port_protection(),
         oer_ieee80211_lower_mac::Protection::RtsCts
@@ -165,7 +145,6 @@ fn a_cts_timeout_retries_without_the_retry_bit_under_the_same_protection() {
         &completion(TxStatus::CtsTimeout, None),
         now(1),
         &Ladder,
-        &mut entropy,
     ));
     assert_eq!(
         retry.content,
@@ -212,10 +191,7 @@ fn report(start: u16, bitmap: u64) -> Option<BlockAckReport> {
 #[test]
 fn a_partial_block_ack_resends_only_the_missing_subframes() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, first) = planner
-        .begin(ampdu_request(4), &Ladder, &mut entropy)
-        .unwrap();
+    let (mut exchange, first) = planner.begin(ampdu_request(4), &Ladder).unwrap();
     assert_eq!(
         first.content,
         AttemptContent::Ampdu {
@@ -228,7 +204,6 @@ fn a_partial_block_ack_resends_only_the_missing_subframes() {
         &completion(TxStatus::Success, report(100, 0b0101)),
         now(10),
         &Ladder,
-        &mut entropy,
     ));
     assert_eq!(
         second.content,
@@ -243,7 +218,6 @@ fn a_partial_block_ack_resends_only_the_missing_subframes() {
         &completion(TxStatus::Success, report(101, 0b101)),
         now(20),
         &Ladder,
-        &mut entropy,
     ) else {
         panic!("every subframe was acknowledged");
     };
@@ -256,16 +230,12 @@ fn a_partial_block_ack_resends_only_the_missing_subframes() {
 #[test]
 fn one_missing_subframe_leaves_the_aggregate_for_an_individual_retry() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, _) = planner
-        .begin(ampdu_request(3), &Ladder, &mut entropy)
-        .unwrap();
+    let (mut exchange, _) = planner.begin(ampdu_request(3), &Ladder).unwrap();
     let individual = attempt(planner.complete(
         &mut exchange,
         &completion(TxStatus::Success, report(100, 0b011)),
         now(10),
         &Ladder,
-        &mut entropy,
     ));
     assert_eq!(individual.content, AttemptContent::Subframe { index: 2 });
     let TxStep::Done(TxReport::Ampdu(status)) = planner.complete(
@@ -273,7 +243,6 @@ fn one_missing_subframe_leaves_the_aggregate_for_an_individual_retry() {
         &completion(TxStatus::Success, None),
         now(20),
         &Ladder,
-        &mut entropy,
     ) else {
         panic!("the individual retry delivered the last subframe");
     };
@@ -286,13 +255,10 @@ fn one_missing_subframe_leaves_the_aggregate_for_an_individual_retry() {
 #[test]
 fn repeated_protection_failures_end_in_a_block_ack_request() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, _) = planner
-        .begin(ampdu_request(2), &Ladder, &mut entropy)
-        .unwrap();
+    let (mut exchange, _) = planner.begin(ampdu_request(2), &Ladder).unwrap();
     let cts = completion(TxStatus::CtsTimeout, None);
     for _ in 0..3 {
-        let plan = attempt(planner.complete(&mut exchange, &cts, now(1), &Ladder, &mut entropy));
+        let plan = attempt(planner.complete(&mut exchange, &cts, now(1), &Ladder));
         assert_eq!(
             plan.content,
             AttemptContent::Ampdu {
@@ -301,7 +267,7 @@ fn repeated_protection_failures_end_in_a_block_ack_request() {
             }
         );
     }
-    let request = attempt(planner.complete(&mut exchange, &cts, now(1), &Ladder, &mut entropy));
+    let request = attempt(planner.complete(&mut exchange, &cts, now(1), &Ladder));
     assert_eq!(
         request.content,
         AttemptContent::BlockAckRequest {
@@ -315,7 +281,6 @@ fn repeated_protection_failures_end_in_a_block_ack_request() {
         &completion(TxStatus::Success, report(100, 0b11)),
         now(2),
         &Ladder,
-        &mut entropy,
     ) else {
         panic!("the BlockAck acknowledged both subframes");
     };
@@ -325,9 +290,8 @@ fn repeated_protection_failures_end_in_a_block_ack_request() {
 #[test]
 fn request_snapshot_keeps_the_mpdu_context_through_completion() {
     let mut planner = planner();
-    let mut entropy = all_ones;
     let expected = mpdu(733);
-    let (mut exchange, _) = planner.begin(expected, &Ladder, &mut entropy).unwrap();
+    let (mut exchange, _) = planner.begin(expected, &Ladder).unwrap();
     exchange.set_block_ack_operational(false);
     assert_eq!(exchange.request(), expected);
     let step = planner.complete(
@@ -335,7 +299,6 @@ fn request_snapshot_keeps_the_mpdu_context_through_completion() {
         &completion(TxStatus::Success, None),
         now(10),
         &Ladder,
-        &mut entropy,
     );
     assert!(matches!(step, TxStep::Done(TxReport::Mpdu(_))));
     exchange.set_block_ack_operational(true);
@@ -345,7 +308,6 @@ fn request_snapshot_keeps_the_mpdu_context_through_completion() {
 #[test]
 fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
     let mut planner = planner();
-    let mut entropy = all_ones;
     let mut body = AmpduRequest::new(
         7,
         SequenceNumber::new(4094).unwrap(),
@@ -358,7 +320,7 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
         body: TxBody::Ampdu(body),
         ..ampdu_request(3)
     };
-    let (mut exchange, _) = planner.begin(expected, &Ladder, &mut entropy).unwrap();
+    let (mut exchange, _) = planner.begin(expected, &Ladder).unwrap();
     assert_eq!(exchange.request(), expected);
     for _ in 0..3 {
         let plan = attempt(planner.complete(
@@ -366,7 +328,6 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
             &completion(TxStatus::CtsTimeout, None),
             now(1),
             &Ladder,
-            &mut entropy,
         ));
         assert!(matches!(plan.content, AttemptContent::Ampdu { .. }));
         assert_eq!(exchange.request(), expected);
@@ -376,7 +337,6 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
         &completion(TxStatus::CtsTimeout, None),
         now(1),
         &Ladder,
-        &mut entropy,
     ));
     assert_eq!(
         bar.content,
@@ -395,7 +355,6 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
         &completion(TxStatus::Success, report(4094, 0b011)),
         now(2),
         &Ladder,
-        &mut entropy,
     ));
     assert_eq!(individual.content, AttemptContent::Subframe { index: 2 });
     assert_eq!(exchange.request(), expected);
@@ -409,7 +368,6 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
         &completion(TxStatus::Success, None),
         now(3),
         &Ladder,
-        &mut entropy,
     );
     assert!(matches!(finished, TxStep::Done(TxReport::Ampdu(_))));
     assert_eq!(exchange.request(), expected);
@@ -423,7 +381,6 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
             &completion(TxStatus::Success, None),
             now(4),
             &Ladder,
-            &mut entropy,
         ),
         finished
     );
@@ -432,14 +389,10 @@ fn aggregate_body_stays_with_the_bar_individual_and_finished_phases() {
 #[test]
 fn an_unanswered_aggregate_ends_as_a_hardware_timeout() {
     let mut planner = planner();
-    let mut entropy = all_ones;
-    let (mut exchange, _) = planner
-        .begin(ampdu_request(2), &Ladder, &mut entropy)
-        .unwrap();
+    let (mut exchange, _) = planner.begin(ampdu_request(2), &Ladder).unwrap();
     let timeout = completion(TxStatus::AckTimeout, None);
     for _ in 0..3 {
-        let plan =
-            attempt(planner.complete(&mut exchange, &timeout, now(1), &Ladder, &mut entropy));
+        let plan = attempt(planner.complete(&mut exchange, &timeout, now(1), &Ladder));
         assert_eq!(
             plan.content,
             AttemptContent::Ampdu {
@@ -449,7 +402,7 @@ fn an_unanswered_aggregate_ends_as_a_hardware_timeout() {
         );
     }
     let TxStep::Done(TxReport::Ampdu(status)) =
-        planner.complete(&mut exchange, &timeout, now(1), &Ladder, &mut entropy)
+        planner.complete(&mut exchange, &timeout, now(1), &Ladder)
     else {
         panic!("the retry limit ended the aggregate");
     };

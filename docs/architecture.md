@@ -607,7 +607,11 @@ sequence and packet numbers, scanning, beacons, power-save policy) lies above
 it, in portable code shared by every backend. A backend that also performs
 work above the port reports that in its capabilities, and the portable owner
 delegates it instead of performing it. For IEEE 802.11, one port
-publication is one hardware transmission attempt.
+publication is one hardware transmission attempt, and the caller chooses the
+retry plan above the port. Two items of the list are an exception there: the
+backend draws its queue's contention and numbers protected MPDUs (CCMP packet
+numbers) below the port, without reporting either in its capabilities;
+sequence numbers stay above the port.
 
 **Shape.** A port is a trait defined in a `contract` or `protocol` package,
 without an executor or a time driver. It has the same five parts for every

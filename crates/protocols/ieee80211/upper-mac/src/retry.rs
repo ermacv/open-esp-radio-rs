@@ -1,9 +1,10 @@
 //! Retry policy of one individually addressed MPDU.
 //!
 //! One hardware publication supplies one [`TxStatus`]. [`MpduRetryState`]
-//! decides from it whether the frame is done or is sent again, whether the
-//! next attempt sets the Retry bit, and how the access category's contention
-//! window changes. It keeps the retry counters of the EDCA retransmit
+//! decides from it whether the frame is done or is sent again and whether the
+//! next attempt sets the Retry bit; a backend that draws its own contention
+//! resets its window when the frame is done and doubles it when it is sent
+//! again. It keeps the retry counters of the EDCA retransmit
 //! procedures (IEEE Std 802.11-2020 10.23.2): a short counter for failures of short frames and of the
 //! RTS/CTS exchange, a long counter for failures of long frames, and a
 //! counter of the frame's own unacknowledged transmissions. The limits and
@@ -131,22 +132,6 @@ pub enum RetryDecision {
     },
 }
 
-/// How the access category's contention window changes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ContentionUpdate {
-    /// The frame ended: back to CWmin.
-    Reset,
-    /// The frame is retried: double the window up to CWmax.
-    Double,
-}
-
-/// The result of one completion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RetryStep {
-    pub decision: RetryDecision,
-    pub contention: ContentionUpdate,
-}
-
 /// Why a retry state was not created.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RetryStateError {
@@ -206,7 +191,7 @@ impl MpduRetryState {
     }
 
     /// Apply the status of the attempt just completed.
-    pub fn observe(&mut self, status: TxStatus) -> RetryStep {
+    pub fn observe(&mut self, status: TxStatus) -> RetryDecision {
         match status {
             TxStatus::Success => Self::end(RetryOutcome::Delivered),
             TxStatus::AckTimeout => {
@@ -244,11 +229,8 @@ impl MpduRetryState {
         self.counters.long >= self.limits.long
     }
 
-    const fn end(outcome: RetryOutcome) -> RetryStep {
-        RetryStep {
-            decision: RetryDecision::Complete(outcome),
-            contention: ContentionUpdate::Reset,
-        }
+    const fn end(outcome: RetryOutcome) -> RetryDecision {
+        RetryDecision::Complete(outcome)
     }
 
     fn finish_or_retry(
@@ -256,15 +238,12 @@ impl MpduRetryState {
         status: TxStatus,
         reached: bool,
         set_retry_bit: bool,
-    ) -> RetryStep {
+    ) -> RetryDecision {
         if reached {
             Self::end(RetryOutcome::RetryLimit(status))
         } else {
             self.attempts = self.attempts.saturating_add(1);
-            RetryStep {
-                decision: RetryDecision::Retry { set_retry_bit },
-                contention: ContentionUpdate::Double,
-            }
+            RetryDecision::Retry { set_retry_bit }
         }
     }
 }
